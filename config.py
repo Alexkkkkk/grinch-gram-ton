@@ -686,8 +686,12 @@ class Config:
     DCA_MODE = False
 
     # ── Адреса контрактов GRINCH на TON ──────────────────────────────────────
-    GRINCH_TOKEN_ADDRESS = os.getenv("GRINCH_TOKEN_ADDRESS", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL")
-    GRINCH_POOL_ADDRESS = os.getenv("GRINCH_POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z")
+    GRINCH_TOKEN_ADDRESS = os.getenv(
+        "GRINCH_TOKEN_ADDRESS", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL"
+    )
+    GRINCH_POOL_ADDRESS = os.getenv(
+        "GRINCH_POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z"
+    )
     TOKEN_ADDRESS = GRINCH_TOKEN_ADDRESS
     POOL_ADDRESS = GRINCH_POOL_ADDRESS
 
