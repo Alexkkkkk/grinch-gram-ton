@@ -667,7 +667,7 @@ class Config:
     GRID_TICK_INTERVAL = int(os.getenv("GRID_TICK_INTERVAL", "10"))
     GRID_RECENTER_THRESHOLD = float(os.getenv("GRID_RECENTER_THRESHOLD", "1.5"))
     GRID_RECENTER_COOLDOWN = int(os.getenv("GRID_RECENTER_COOLDOWN", "1800"))
-    GRID_DB_PATH = os.getenv("GRID_DB_PATH", "grid_grinch_gram.db")
+    GRID_DB_PATH = os.getenv("GRID_DB_PATH", "/app/data/grid_grinch_gram.db")
 
     # ── GRINCH/GRAM Spot Grid Overrides ─────────────────────────────────────
     GRID_SYMBOL = "GRINCH/TON"

@@ -14,7 +14,7 @@ from typing import List, Optional
 
 log = logging.getLogger("grid")
 
-DATA_DIR = os.getenv("DATA_DIR", ".")
+DATA_DIR = os.getenv("DATA_DIR", "/app/data")
 STATE_FILE = os.path.join(DATA_DIR, "grid_state.json")
 TRADE_HISTORY_FILE = os.path.join(DATA_DIR, "grid_trade_history.json")
 

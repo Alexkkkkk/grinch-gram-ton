@@ -205,7 +205,7 @@ import sqlite3
 import threading
 
 _db_lock = threading.Lock()
-_db_path = os.environ.get("AI_DB_PATH", "/tmp/ai_metrics.db")
+_db_path = os.environ.get("AI_DB_PATH", "/app/data/ai_metrics.db")
 
 
 def _init_db():

@@ -15,7 +15,8 @@ from error_reporter import get_reporter
 from grid_db import GridDatabase
 
 log = logging.getLogger("grid_engine")
-STATE_FILE = "grid_state.json"
+DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+STATE_FILE = os.path.join(DATA_DIR, "grid_state.json")
 
 
 @dataclass

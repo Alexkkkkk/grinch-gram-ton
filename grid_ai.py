@@ -44,7 +44,7 @@ from typing import Dict, List, Optional, Tuple
 
 log = logging.getLogger("grid_ai")
 
-DATA_DIR = os.getenv("DATA_DIR", ".")
+DATA_DIR = os.getenv("DATA_DIR", "/app/data")
 EXPERIENCE_FILE = os.path.join(DATA_DIR, "grid_ai_experience.json")
 SELFDEV_FILE = os.path.join(DATA_DIR, "grid_ai_selfdev.json")
 
