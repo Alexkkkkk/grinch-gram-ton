@@ -16,7 +16,7 @@ import math
 import random
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger("organism")
 
@@ -63,7 +63,7 @@ class Organism:
         # ── 3. Energy / Sleep ──────────────────────────────────────────────
         self.energy = 0.70
         self.sleep_phase = "awake"  # awake / drowsy / sleeping
-        self._price_hist: List[Tuple[float, float]] = []  # (ts, price)
+        self._price_hist: list[tuple[float, float]] = []  # (ts, price)
 
         # ── 4. Evolution ───────────────────────────────────────────────────
         self.generation = 0
@@ -88,7 +88,7 @@ class Organism:
         self.dreams_total = 0
         self.dream_wins = 0
         self.dream_pnl_avg = 0.0
-        self._dream_prices: List[float] = []
+        self._dream_prices: list[float] = []
         self._dream_thread = None
         self._dream_stop = threading.Event()
 
@@ -136,7 +136,7 @@ class Organism:
             except Exception as e:
                 logger.warning(f"Organism restore error: {e}")
 
-    def update_tick(self, price: float, ai: Optional[Dict]) -> None:
+    def update_tick(self, price: float, ai: dict | None) -> None:
         """Главный апдейт — вызывается каждый тик торгового цикла."""
         if price <= 0:
             return
@@ -224,7 +224,7 @@ class Organism:
 
             return round(max(0.40, min(1.80, mult)), 3)
 
-    def get_instinct_override(self) -> Optional[str]:
+    def get_instinct_override(self) -> str | None:
         """Инстинктивный сигнал (приоритет над ML) или None.
 
         BUY_EXCITEMENT однократный; SELL_PANIC повторяется до конца паники.
@@ -275,7 +275,7 @@ class Organism:
                 self._try_evolve()
                 self._trades_since_evolve = 0
 
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> dict[str, Any]:
         """Полный снапшот для /api/organism и дашборда."""
         with self._lock:
             return {
@@ -388,7 +388,7 @@ class Organism:
                 )
 
     # ── 1. Mood ──────────────────────────────────────────────────────────────
-    def _update_mood_from_ai(self, ai: Dict) -> None:
+    def _update_mood_from_ai(self, ai: dict) -> None:
         conf = float(ai.get("confidence", 50) or 50)
         signal = ai.get("ai_signal", "HOLD")
         conf_n = conf / 100.0
@@ -506,7 +506,7 @@ class Organism:
             except Exception as e:
                 logger.debug(f"Dream loop error: {e}")
 
-    def _run_dream(self, prices: List[float]) -> None:
+    def _run_dream(self, prices: list[float]) -> None:
         """Симулирует DREAM_SIM_COUNT «гипотетических» сделок."""
         with self._lock:
             self.dreaming = True

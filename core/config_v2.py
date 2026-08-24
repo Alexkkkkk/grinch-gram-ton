@@ -1,7 +1,6 @@
 """Pydantic-based configuration — type-safe, validated, secure."""
 
-from typing import List, Optional
-from pydantic import Field, field_validator, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings
 
 

@@ -1,7 +1,6 @@
 """Signal generator — entry/exit signals from multiple sources."""
 
 import logging
-from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 

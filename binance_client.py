@@ -2,7 +2,6 @@
 
 import logging
 from decimal import ROUND_DOWN, Decimal
-from typing import Dict, Optional, Tuple
 
 try:
     from binance.client import Client
@@ -32,7 +31,7 @@ class BinanceExchangeClient:
         except Exception as e:
             log.error("Failed to load exchange info: %s", e)
 
-    def get_symbol_info(self) -> Optional[Dict]:
+    def get_symbol_info(self) -> dict | None:
         return self._exchange_info.get(self.symbol) if self._exchange_info else None
 
     def get_price(self) -> float:
@@ -51,7 +50,7 @@ class BinanceExchangeClient:
             log.error("Balance fetch error: %s", e)
             return 0.0
 
-    def get_balances(self) -> Tuple[float, float]:
+    def get_balances(self) -> tuple[float, float]:
         base = self.symbol.replace("USDT", "").replace("BUSD", "").replace("USDC", "")
         quote = (
             "USDT"
@@ -60,7 +59,7 @@ class BinanceExchangeClient:
         )
         return self.get_balance(base), self.get_balance(quote)
 
-    def get_filters(self) -> Dict:
+    def get_filters(self) -> dict:
         info = self.get_symbol_info()
         if not info:
             return {}
@@ -78,7 +77,7 @@ class BinanceExchangeClient:
         d = Decimal(str(price)).quantize(Decimal(step), rounding=ROUND_DOWN)
         return str(d)
 
-    def place_limit_buy(self, quantity: float, price: float) -> Dict:
+    def place_limit_buy(self, quantity: float, price: float) -> dict:
         try:
             order = self.client.order_limit_buy(
                 symbol=self.symbol,
@@ -93,7 +92,7 @@ class BinanceExchangeClient:
             log.error("BUY order failed: %s", e)
             return {"ok": False, "error": str(e)}
 
-    def place_limit_sell(self, quantity: float, price: float) -> Dict:
+    def place_limit_sell(self, quantity: float, price: float) -> dict:
         try:
             order = self.client.order_limit_sell(
                 symbol=self.symbol,
@@ -108,14 +107,14 @@ class BinanceExchangeClient:
             log.error("SELL order failed: %s", e)
             return {"ok": False, "error": str(e)}
 
-    def get_order_status(self, order_id: int) -> Dict:
+    def get_order_status(self, order_id: int) -> dict:
         try:
             order = self.client.get_order(symbol=self.symbol, orderId=order_id)
             return {"ok": True, "order": order}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def cancel_order(self, order_id: int) -> Dict:
+    def cancel_order(self, order_id: int) -> dict:
         try:
             result = self.client.cancel_order(symbol=self.symbol, orderId=order_id)
             log.info("Order %s cancelled", order_id)
@@ -124,7 +123,7 @@ class BinanceExchangeClient:
             log.error("Cancel failed: %s", e)
             return {"ok": False, "error": str(e)}
 
-    def cancel_all_orders(self) -> Dict:
+    def cancel_all_orders(self) -> dict:
         try:
             open_orders = self.client.get_open_orders(symbol=self.symbol)
             for o in open_orders:

@@ -11,7 +11,6 @@ import hashlib
 import logging
 import threading
 from datetime import datetime
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -24,9 +23,8 @@ OWNER_ADDRESS = "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM"
 
 def encrypt_mnemonic(mnemonic: str) -> str:
     try:
-        from cryptography.fernet import Fernet
-
         from config import Config
+        from cryptography.fernet import Fernet
 
         raw = hashlib.sha256(Config.SECRET_KEY.encode()).digest()
         f = Fernet(base64.urlsafe_b64encode(raw))
@@ -37,9 +35,8 @@ def encrypt_mnemonic(mnemonic: str) -> str:
 
 def decrypt_mnemonic(encrypted: str) -> str:
     try:
-        from cryptography.fernet import Fernet
-
         from config import Config
+        from cryptography.fernet import Fernet
 
         raw = hashlib.sha256(Config.SECRET_KEY.encode()).digest()
         f = Fernet(base64.urlsafe_b64encode(raw))
@@ -415,7 +412,7 @@ class UserTradingManager:
 
     # ── API ───────────────────────────────────────────────────────────────────
 
-    def get_status(self, token: str) -> Optional[dict]:
+    def get_status(self, token: str) -> dict | None:
         with self._lock:
             u = self._users.get(token)
         if not u:
@@ -456,6 +453,7 @@ class UserTradingManager:
     def _sync_db(self, token, user):
         try:
             from app import app as flask_app
+
             from database import db
             from models import UserWallet
 
