@@ -40,7 +40,6 @@ import os
 import threading
 import time
 from collections import deque
-from typing import Dict, List, Optional, Tuple
 
 log = logging.getLogger("grid_ai")
 
@@ -60,7 +59,7 @@ BACKTEST_MIN_R2 = -0.5  # мягкий — у малых датасетов R² 
 BACKTEST_MIN_DIR_ACC = 0.45  # 45% → лучше монетки
 
 # Режимо-специфичные границы шага [min%, max%]
-REGIME_STEP_BOUNDS: Dict[str, Tuple[float, float]] = {
+REGIME_STEP_BOUNDS: dict[str, tuple[float, float]] = {
     "SQUEEZE": (3.0, 5.5),
     "SIDEWAYS": (3.5, 7.0),
     "RANGING": (3.5, 7.0),
@@ -123,7 +122,7 @@ class DriftDetector:
     def __init__(self, window: int = 30, threshold: float = 0.6):
         self._window = window
         self._threshold = threshold
-        self._buffer: List[float] = []
+        self._buffer: list[float] = []
         self._drift_count = 0
         self._last_drift_ts = 0.0
 
@@ -175,8 +174,8 @@ class SyntheticDataAug:
     """
 
     def augment(
-        self, experience: List[dict], target_n: int = 150, noise_scale: float = 0.05
-    ) -> List[dict]:
+        self, experience: list[dict], target_n: int = 150, noise_scale: float = 0.05
+    ) -> list[dict]:
         """Вернуть augmented список; синтетические помечены _synthetic=True."""
         if len(experience) >= target_n or len(experience) < 5:
             return experience
@@ -223,8 +222,8 @@ class StepStrategyBandit:
     STRATEGIES = ["conservative", "aggressive", "atr_pure", "kelly", "ml_only"]
 
     def __init__(self):
-        self._counts: Dict[str, int] = {s: 0 for s in self.STRATEGIES}
-        self._rewards: Dict[str, float] = {s: 0.0 for s in self.STRATEGIES}
+        self._counts: dict[str, int] = dict.fromkeys(self.STRATEGIES, 0)
+        self._rewards: dict[str, float] = dict.fromkeys(self.STRATEGIES, 0.0)
         self._total = 0
         self._last_strategy = "ml_only"
         self._pending_strategy = "ml_only"  # ожидает reward
@@ -346,8 +345,8 @@ class RegimeSpecializedModels:
     MIN_REGIME_SAMPLES = 15
 
     def __init__(self):
-        self._models: Dict[str, object] = {}
-        self._sample_counts: Dict[str, int] = {}
+        self._models: dict[str, object] = {}
+        self._sample_counts: dict[str, int] = {}
 
     def train_regime(self, regime: str, X: list, y: list, w: list):
         """Обучить специализированную модель для режима."""
@@ -380,7 +379,7 @@ class RegimeSpecializedModels:
         except Exception as e:
             log.debug("[GridAI v6] regime_model [%s]: %s", regime, e)
 
-    def predict(self, regime: str, feat: list) -> Optional[float]:
+    def predict(self, regime: str, feat: list) -> float | None:
         m = self._models.get(regime)
         if m is None:
             return None
@@ -529,8 +528,8 @@ class RLGridAgent:
     EPSILON = 0.12  # exploration
 
     def __init__(self):
-        self._q: Dict[str, List[float]] = {}
-        self._last_state: Optional[str] = None
+        self._q: dict[str, list[float]] = {}
+        self._last_state: str | None = None
         self._last_action_idx = 2  # default = no offset
         self._total_reward = 0.0
         self._episodes = 0
@@ -621,7 +620,7 @@ class GridAI:
 
     def __init__(self):
         self._lock = threading.RLock()
-        self._experience: List[dict] = []
+        self._experience: list[dict] = []
 
         # ── Модели ансамбля — шаг ────────────────────────────────────────
         self._step_rf = None  # RandomForestRegressor
@@ -651,7 +650,7 @@ class GridAI:
         self._consecutive_losses: int = 0
         self._recent_atrs: deque = deque(maxlen=30)
         self._last_compound_mult: float = 1.0
-        self._regime_profits: Dict[str, list] = {}
+        self._regime_profits: dict[str, list] = {}
 
         # ── v5: рыночный контекст ─────────────────────────────────────────
         self._mkt_ctx: dict = {}
@@ -663,7 +662,7 @@ class GridAI:
         # ── Kelly и калибровка ────────────────────────────────────────────
         self.calibrated_min_step: float = 4.0
         self._kelly_mult: float = 1.0
-        self._kelly_by_regime: Dict[str, float] = {}
+        self._kelly_by_regime: dict[str, float] = {}
 
         self._trained = False
         self._last_train_n = 0
@@ -681,10 +680,10 @@ class GridAI:
         self._regime_models = RegimeSpecializedModels()
         self._hyper_evolver = HyperEvolver()
         self._rl_agent = RLGridAgent()
-        self._selfdev_log: List[dict] = []  # последние события эволюции
+        self._selfdev_log: list[dict] = []  # последние события эволюции
         self._drift_forced_retrain = False  # флаг: следующий _train — из-за дрейфа
         self._nas_next_n: int = 100  # NASLite: через сколько сделок искать
-        self._nas_best_ensemble: Optional[str] = None
+        self._nas_best_ensemble: str | None = None
 
         self._load_experience()
         self._load_selfdev_state()
@@ -969,7 +968,7 @@ class GridAI:
         result = kelly * level_decay * wr_mult * risk_penalty
         return round(max(0.7, min(2.0, result)), 2)
 
-    def get_pyramid_weights(self, n_levels: int) -> List[float]:
+    def get_pyramid_weights(self, n_levels: int) -> list[float]:
         """Веса распределения GRINCH по уровням (учитывает risk_level)."""
         if n_levels <= 0:
             return []
@@ -2096,7 +2095,7 @@ class GridAI:
 
     def _backtest_validate(
         self, X_s: list, y_s: list, w_s: list
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """v5 НОВОЕ: TimeSeriesSplit кросс-валидация качества step-ансамбля.
 
         Возвращает (r2_score, direction_accuracy).
@@ -2609,7 +2608,7 @@ class GridAI:
         try:
             pass
 
-            by_regime: Dict[str, list] = {}
+            by_regime: dict[str, list] = {}
             for e in sells:
                 r = e.get("regime", "UNKNOWN")
                 by_regime.setdefault(r, []).append(e)
@@ -2797,7 +2796,7 @@ class GridAI:
 
 # ── Синглтон ──────────────────────────────────────────────────────────────────
 
-_instance: Optional[GridAI] = None
+_instance: GridAI | None = None
 _init_lock: threading.Lock = threading.Lock()
 
 

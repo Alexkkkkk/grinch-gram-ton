@@ -3,13 +3,10 @@
 Auto-Updater — checks for updates and applies them safely.
 """
 
-import os
-import time
-import json
 import logging
 import subprocess
+import time
 from datetime import datetime, timedelta
-from typing import Dict, Optional
 
 logger = logging.getLogger("autonomy.updater")
 
@@ -19,10 +16,10 @@ class AutoUpdater:
 
     def __init__(self, check_interval_hours: int = 6):
         self.check_interval = timedelta(hours=check_interval_hours)
-        self.last_check: Optional[datetime] = None
+        self.last_check: datetime | None = None
         self.update_log: list = []
 
-    def check_for_updates(self) -> Dict:
+    def check_for_updates(self) -> dict:
         """Check if updates are available."""
         try:
             # Fetch latest from GitHub
@@ -54,7 +51,7 @@ class AutoUpdater:
             logger.error("Update check failed: %s", e)
             return {"updates_available": False, "error": str(e)}
 
-    def apply_update(self) -> Dict:
+    def apply_update(self) -> dict:
         """Apply available updates safely."""
         logger.info("Applying updates...")
 

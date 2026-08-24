@@ -132,48 +132,47 @@ def run_backup() -> bool:
         dest.mkdir(parents=True, exist_ok=True)
 
         meta = {"timestamp": timestamp, "tables": {}}
-        with db_store._conn() as conn:
-            with conn.cursor() as cur:
-                for table in TABLES:
-                    try:
-                        rows = _dump_table(cur, table)
-                        out = dest / f"{table}.json"
-                        out.write_text(
-                            json.dumps(
-                                rows, ensure_ascii=False, indent=2, default=_jdefault
-                            ),
-                            encoding="utf-8",
-                        )
-                        meta["tables"][table] = len(rows)
-                        log.info(f"[Backup] {table}: {len(rows)} строк → {out.name}")
-                    except Exception as e:
-                        log.warning(f"[Backup] {table}: ошибка дампа — {e}")
-                        meta["tables"][table] = f"ERROR: {e}"
-
-                # bot_ai_deep_models — без blob (веса моделей), только метаданные
+        with db_store._conn() as conn, conn.cursor() as cur:
+            for table in TABLES:
                 try:
-                    cur.execute(
-                        f"SELECT model_name, accuracy, n_examples, trained_at, "
-                        f"length(blob) AS blob_bytes FROM {DEEP_MODELS_TABLE}"
-                    )
-                    cols = [d[0] for d in cur.description]
-                    rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-                    out = dest / f"{DEEP_MODELS_TABLE}_meta.json"
+                    rows = _dump_table(cur, table)
+                    out = dest / f"{table}.json"
                     out.write_text(
                         json.dumps(
                             rows, ensure_ascii=False, indent=2, default=_jdefault
                         ),
                         encoding="utf-8",
                     )
-                    meta["tables"][
-                        DEEP_MODELS_TABLE
-                    ] = f"{len(rows)} (meta only, blob excluded)"
-                    log.info(
-                        f"[Backup] {DEEP_MODELS_TABLE}: {len(rows)} моделей (метаданные) → {out.name}"
-                    )
+                    meta["tables"][table] = len(rows)
+                    log.info(f"[Backup] {table}: {len(rows)} строк → {out.name}")
                 except Exception as e:
-                    log.warning(f"[Backup] {DEEP_MODELS_TABLE}: ошибка дампа — {e}")
-                    meta["tables"][DEEP_MODELS_TABLE] = f"ERROR: {e}"
+                    log.warning(f"[Backup] {table}: ошибка дампа — {e}")
+                    meta["tables"][table] = f"ERROR: {e}"
+
+            # bot_ai_deep_models — без blob (веса моделей), только метаданные
+            try:
+                cur.execute(
+                    f"SELECT model_name, accuracy, n_examples, trained_at, "
+                    f"length(blob) AS blob_bytes FROM {DEEP_MODELS_TABLE}"
+                )
+                cols = [d[0] for d in cur.description]
+                rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+                out = dest / f"{DEEP_MODELS_TABLE}_meta.json"
+                out.write_text(
+                    json.dumps(
+                        rows, ensure_ascii=False, indent=2, default=_jdefault
+                    ),
+                    encoding="utf-8",
+                )
+                meta["tables"][
+                    DEEP_MODELS_TABLE
+                ] = f"{len(rows)} (meta only, blob excluded)"
+                log.info(
+                    f"[Backup] {DEEP_MODELS_TABLE}: {len(rows)} моделей (метаданные) → {out.name}"
+                )
+            except Exception as e:
+                log.warning(f"[Backup] {DEEP_MODELS_TABLE}: ошибка дампа — {e}")
+                meta["tables"][DEEP_MODELS_TABLE] = f"ERROR: {e}"
 
         (dest / "_meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2),

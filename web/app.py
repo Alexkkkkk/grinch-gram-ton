@@ -3,7 +3,6 @@
 import logging
 import os
 import time
-from typing import Any
 
 from flask import Flask, jsonify, request
 

@@ -2,7 +2,7 @@
 
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class PositionManager:
@@ -10,34 +10,34 @@ class PositionManager:
 
     def __init__(self, max_history: int = 10000) -> None:
         self._lock = threading.RLock()
-        self._trades: List[Dict[str, Any]] = []
-        self._shorts: List[Dict[str, Any]] = []
-        self._history: List[Dict[str, Any]] = []
+        self._trades: list[dict[str, Any]] = []
+        self._shorts: list[dict[str, Any]] = []
+        self._history: list[dict[str, Any]] = []
         self._max_history = max_history
 
     @property
-    def open_trades(self) -> List[Dict[str, Any]]:
+    def open_trades(self) -> list[dict[str, Any]]:
         with self._lock:
             return list(self._trades)
 
     @property
-    def open_shorts(self) -> List[Dict[str, Any]]:
+    def open_shorts(self) -> list[dict[str, Any]]:
         with self._lock:
             return list(self._shorts)
 
     @property
-    def all_open(self) -> List[Dict[str, Any]]:
+    def all_open(self) -> list[dict[str, Any]]:
         with self._lock:
             return list(self._trades) + list(self._shorts)
 
-    def add(self, trade: Dict[str, Any], is_short: bool = False) -> None:
+    def add(self, trade: dict[str, Any], is_short: bool = False) -> None:
         with self._lock:
             if is_short:
                 self._shorts.append(trade)
             else:
                 self._trades.append(trade)
 
-    def remove(self, trade_id: str, is_short: bool = False) -> Optional[Dict[str, Any]]:
+    def remove(self, trade_id: str, is_short: bool = False) -> dict[str, Any] | None:
         with self._lock:
             pool = self._shorts if is_short else self._trades
             for i, t in enumerate(pool):
@@ -54,7 +54,7 @@ class PositionManager:
                     return True
             return False
 
-    def close(self, trade: Dict[str, Any], pnl: float, is_short: bool = False) -> None:
+    def close(self, trade: dict[str, Any], pnl: float, is_short: bool = False) -> None:
         trade["pnl"] = pnl
         trade["closed_at"] = time.time()
         with self._lock:
@@ -86,7 +86,7 @@ class PositionManager:
             }
             self._trades = [merged]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         with self._lock:
             wins = sum(1 for t in self._history if t.get("pnl", 0) > 0)
             total = len(self._history)

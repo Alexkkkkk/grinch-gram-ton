@@ -1,7 +1,6 @@
 """Ensemble manager — coordinates multiple model wrappers."""
 
 import logging
-from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -16,8 +15,8 @@ class EnsembleManager:
     __slots__ = ("_models", "_weights")
 
     def __init__(self) -> None:
-        self._models: Dict[str, BaseModelWrapper] = {}
-        self._weights: Dict[str, float] = {}
+        self._models: dict[str, BaseModelWrapper] = {}
+        self._weights: dict[str, float] = {}
 
     def add(self, model: BaseModelWrapper, weight: float = 1.0) -> None:
         self._models[model.name] = model
@@ -32,8 +31,8 @@ class EnsembleManager:
                 logger.warning("[Ensemble] %s train failed: %s", name, exc)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        probs: List[np.ndarray] = []
-        weights: List[float] = []
+        probs: list[np.ndarray] = []
+        weights: list[float] = []
         for name, model in self._models.items():
             if not model.is_trained:
                 continue
@@ -51,13 +50,13 @@ class EnsembleManager:
         stacked = np.stack(probs, axis=0)
         return np.average(stacked, axis=0, weights=weights)
 
-    def record(self, predictions: Dict[str, bool]) -> None:
+    def record(self, predictions: dict[str, bool]) -> None:
         for name, correct in predictions.items():
             if name in self._models:
                 self._models[name].record(correct)
 
     @property
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         return {
             name: {
                 "trained": m.is_trained,

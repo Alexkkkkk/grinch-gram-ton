@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 QuantumBrain Trader Tests
 Unit tests for GRINCHTrader trading logic
