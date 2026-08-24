@@ -1,0 +1,19 @@
+[Unit]
+Description=GRINCH-GRAM Autonomy Supervisor
+After=docker.service network.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/bot
+Environment=PYTHONPATH=/opt/bot
+EnvironmentFile=/opt/bot/.env
+ExecStart=/usr/bin/python3 /opt/bot/scripts/supervisor.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

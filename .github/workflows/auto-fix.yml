@@ -1,4 +1,4 @@
-name: Auto-Fix
+name: Auto-Fix v2
 
 on:
   issues:
@@ -28,7 +28,7 @@ jobs:
         run: |
           pip install openai requests
 
-      - name: Analyze error and generate fix
+      - name: Analyze error with Intelligence Engine
         id: fix
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -39,81 +39,86 @@ jobs:
           import re
           import json
           import openai
-
+          
+          sys.path.insert(0, ".")
+          from autonomy.intelligence import get_intelligence
+          
           issue_body = os.environ.get("ISSUE_BODY", "")
           if not issue_body:
-              print("No issue body found")
+              print("No issue body")
               exit(0)
-
+          
           # Extract error info
+          error_type_match = re.search(r'\*\*Error Type\*\*\s*\|\s*`([^`]+)`', issue_body)
+          message_match = re.search(r'\*\*Message\*\*\s*\|\s*`([^`]+)`', issue_body)
+          traceback_match = re.search(r'### Traceback\n```python\n(.*?)\n```', issue_body, re.DOTALL)
           file_match = re.search(r'\*\*File\*\*\s*\|\s*`([^`]+)`', issue_body)
           line_match = re.search(r'\*\*Line\*\*\s*\|\s*(\d+)', issue_body)
-          traceback_match = re.search(r'```python\n(.*?)\n```', issue_body, re.DOTALL)
-
-          file_path = file_match.group(1) if file_match else "unknown"
-          line_num = int(line_match.group(1)) if line_match else 0
-          traceback_text = traceback_match.group(1) if traceback_match else ""
-
-          print(f"File: {file_path}")
-          print(f"Line: {line_num}")
-
-          # Read the problematic file
-          if os.path.exists(file_path):
-              with open(file_path, 'r') as f:
-                  code = f.read()
-          else:
-              print(f"File not found: {file_path}")
-              exit(0)
-
-          # Use OpenAI to generate fix
-          client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
           
-          prompt = f"""You are a Python expert. Fix the error in this code.
+          error_type = error_type_match.group(1) if error_type_match else "Unknown"
+          message = message_match.group(1) if message_match else ""
+          traceback_text = traceback_match.group(1) if traceback_match else ""
+          file_path = file_match.group(1) if file_match else ""
+          line_num = int(line_match.group(1)) if line_match else 0
+          
+          # Use Intelligence Engine
+          intel = get_intelligence()
+          analysis = intel.analyze(error_type, message, traceback_text)
+          
+          if analysis:
+              print(f"::set-output name=pattern::{analysis['pattern']}")
+              print(f"::set-output name=confidence::{analysis['confidence']}")
+              print(f"::set-output name=severity::{analysis['severity']}")
+              
+              # Generate fix
+              fix_code = intel.generate_fix_code(analysis, file_path, line_num)
+              
+              with open("/tmp/fix_code.py", "w") as f:
+                  f.write(fix_code)
+              
+              print("Fix generated successfully")
+          else:
+              # Fallback to OpenAI
+              client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+              prompt = f"""Fix this Python error:
+Error: {error_type}: {message}
+File: {file_path}:{line_num}
+Traceback: {traceback_text[:2000]}
 
-Error traceback:
-{traceback_text}
-
-File: {file_path}
-Line: {line_num}
-
-Code:
-```python
-{code}
-```
-
-Provide ONLY the fixed code. Do not include explanations."""
-
-          response = client.chat.completions.create(
-              model="gpt-4o-mini",
-              messages=[{"role": "user", "content": prompt}],
-              temperature=0.1,
-          )
-
-          fixed_code = response.choices[0].message.content
-          # Extract code from markdown
-          code_match = re.search(r'```python\n(.*?)\n```', fixed_code, re.DOTALL)
-          if code_match:
-              fixed_code = code_match.group(1)
-
-          with open(file_path, 'w') as f:
-              f.write(fixed_code)
-
-          print("Fix applied successfully")
+Provide only the fixed code section."""
+              
+              response = client.chat.completions.create(
+                  model="gpt-4o-mini",
+                  messages=[{"role": "user", "content": prompt}],
+                  temperature=0.1,
+              )
+              
+              fix_code = response.choices[0].message.content
+              with open("/tmp/fix_code.py", "w") as f:
+                  f.write(fix_code)
+              
+              print("OpenAI fix generated")
           PYEOF
 
-      - name: Create fix branch and PR
+      - name: Apply fix and create PR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
-          git config user.name "Auto-Fix Bot"
+          git config user.name "GRINCH Auto-Fix Bot"
           git config user.email "auto-fix@grinch-gram.local"
           
           BRANCH="auto-fix/issue-${{ github.event.issue.number || github.event.inputs.issue_number }}-$(date +%s)"
           git checkout -b "$BRANCH"
-          git add -A
-          git commit -m "auto-fix: resolve issue #${{ github.event.issue.number || github.event.inputs.issue_number }}"
-          git push origin "$BRANCH"
+          
+          # Apply fix if file exists
+          if [ -f /tmp/fix_code.py ]; then
+              # Here you would integrate the fix into the actual file
+              # For now, we create a patch file
+              cp /tmp/fix_code.py "fixes/fix_${{ github.event.issue.number || github.event.inputs.issue_number }}.py"
+              git add -A
+              git commit -m "auto-fix: resolve issue #${{ github.event.issue.number || github.event.inputs.issue_number }}"
+              git push origin "$BRANCH"
+          fi
           
           # Create PR
           curl -X POST \
@@ -122,8 +127,20 @@ Provide ONLY the fixed code. Do not include explanations."""
             https://api.github.com/repos/${{ github.repository }}/pulls \
             -d "{
               \"title\": \"[AUTO-FIX] Resolve issue #${{ github.event.issue.number || github.event.inputs.issue_number }}\",
-              \"body\": \"Automatically generated fix for issue #${{ github.event.issue.number || github.event.inputs.issue_number }}\",
+              \"body\": \"Automatically generated fix.\\n\\nPattern: ${{ steps.fix.outputs.pattern || 'unknown' }}\\nConfidence: ${{ steps.fix.outputs.confidence || 'N/A' }}\\nSeverity: ${{ steps.fix.outputs.severity || 'unknown' }}\",
               \"head\": \"$BRANCH\",
               \"base\": \"main\",
               \"labels\": [\"auto-fix\", \"bot\"]
+            }"
+
+      - name: Comment on issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
+            -d "{
+              \"body\": \"🤖 Auto-fix generated!\\n\\n- Pattern detected: ${{ steps.fix.outputs.pattern || 'unknown' }}\\n- Confidence: ${{ steps.fix.outputs.confidence || 'N/A' }}%\\n- Severity: ${{ steps.fix.outputs.severity || 'unknown' }}\\n\\nA pull request has been created with the proposed fix.\"
             }"

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Error Reporter v2 — VPS → GitHub Issues + Auto-Fix
+Error Reporter v3 — VPS → GitHub Issues + Auto-Fix with Intelligence Engine
 
 Отправляет ошибки с VPS в GitHub Issues.
 При повторяющихся ошибках — создаёт PR с автоматическим исправлением.
+Uses autonomy.intelligence for ML-powered error analysis.
 """
 import os
 import re
@@ -20,7 +21,15 @@ from pathlib import Path
 
 import requests
 
-logger = logging.getLogger("error_reporter_v2")
+# Add project root for autonomy imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    from autonomy.intelligence import get_intelligence, ErrorIntelligence
+except ImportError:
+    get_intelligence = None
+
+logger = logging.getLogger("error_reporter_v3")
 
 GITHUB_API = "https://api.github.com"
 REPO = os.getenv("GITHUB_REPO", "Alexkkkkk/grinch-gram-ton")
@@ -38,9 +47,10 @@ class ErrorReport:
     file_path: str
     line_number: int
     function: str
-    severity: str  # critical, error, warning
+    severity: str
     count: int = 1
     hash_id: str = ""
+    intelligence_analysis: Optional[Dict] = None
     
     def __post_init__(self):
         if not self.hash_id:
@@ -76,11 +86,9 @@ class GitHubIssueManager:
             return {}
     
     def find_issue_by_hash(self, hash_id: str) -> Optional[dict]:
-        """Find existing issue by error hash."""
         if hash_id in self._issue_cache:
             return self._issue_cache[hash_id]
         
-        # Search open issues with the hash
         issues = self._api(f"issues?state=open&labels=auto-error,needs-fix&per_page=100")
         for issue in issues:
             if hash_id in issue.get("body", ""):
@@ -89,8 +97,22 @@ class GitHubIssueManager:
         return None
     
     def create_issue(self, report: ErrorReport) -> Optional[dict]:
-        """Create new GitHub Issue for error."""
         title = f"[{report.severity.upper()}] {report.error_type}: {report.message[:80]}"
+        
+        # Add intelligence analysis if available
+        intel_section = ""
+        if report.intelligence_analysis:
+            intel = report.intelligence_analysis
+            intel_section = f"""
+### Intelligence Analysis
+| Field | Value |
+|-------|-------|
+| **Pattern** | `{intel.get('pattern', 'unknown')}` |
+| **Confidence** | {intel.get('confidence', 0)}% |
+| **Severity** | {intel.get('severity', 'unknown')} |
+| **Suggested Fixes** | {', '.join(intel.get('fixes', [])[:3])} |
+"""
+        
         body = f"""## Error Report
 
 | Field | Value |
@@ -103,6 +125,7 @@ class GitHubIssueManager:
 | **Line** | {report.line_number} |
 | **Function** | `{report.function}` |
 | **Count** | {report.count} |
+{intel_section}
 
 ### Traceback
 ```python
@@ -110,7 +133,7 @@ class GitHubIssueManager:
 ```
 
 ---
-*This issue was created automatically by error_reporter_v2*
+*This issue was created automatically by error_reporter_v3 with Intelligence Engine*
 """
         data = {
             "title": title,
@@ -124,7 +147,6 @@ class GitHubIssueManager:
         return result
     
     def update_issue(self, issue_number: int, report: ErrorReport) -> Optional[dict]:
-        """Update existing issue with new occurrence."""
         body_addition = f"\n\n### New occurrence at {report.timestamp}\nCount: {report.count}"
         issue = self._api(f"issues/{issue_number}")
         new_body = issue.get("body", "") + body_addition
@@ -132,24 +154,17 @@ class GitHubIssueManager:
         return self._api(f"issues/{issue_number}", "PATCH", data)
     
     def create_fix_branch(self, error_hash: str, file_path: str, fix_description: str) -> str:
-        """Create a new branch for auto-fix."""
         branch_name = f"auto-fix/{error_hash[:8]}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        
-        # Get main SHA
         main_ref = self._api("git/refs/heads/main")
         sha = main_ref.get("object", {}).get("sha", "")
-        
-        # Create branch
         self._api("git/refs", "POST", {
             "ref": f"refs/heads/{branch_name}",
             "sha": sha,
         })
-        
         logger.info("Created fix branch: %s", branch_name)
         return branch_name
     
     def create_pull_request(self, branch: str, title: str, body: str) -> Optional[dict]:
-        """Create PR with auto-fix."""
         data = {
             "title": f"[AUTO-FIX] {title}",
             "body": body,
@@ -164,112 +179,44 @@ class GitHubIssueManager:
 
 
 class AutoFixEngine:
-    """Automatically generate fixes for common errors."""
-    
-    COMMON_FIXES = {
-        r"KeyError:\s*'(\w+)'": {
-            "type": "add_key_check",
-            "description": "Add .get() or key check",
-        },
-        r"IndexError:\s*list index out of range": {
-            "type": "add_bounds_check",
-            "description": "Add bounds checking",
-        },
-        r"AttributeError:\s*'NoneType'.*has no attribute '(\w+)'": {
-            "type": "add_none_check",
-            "description": "Add None check before attribute access",
-        },
-        r"ConnectionError|TimeoutError|requests\.exceptions\.ConnectionError": {
-            "type": "add_retry",
-            "description": "Add retry logic with backoff",
-        },
-        r"ValueError:\s*invalid literal for int\(\) with base 10:\s*'(\w+)'": {
-            "type": "add_type_check",
-            "description": "Add type validation before conversion",
-        },
-        r"ModuleNotFoundError|ImportError": {
-            "type": "fix_import",
-            "description": "Fix or add missing import",
-        },
-    }
+    """Automatically generate fixes for common errors using Intelligence Engine."""
     
     def __init__(self, project_root: str = "."):
         self.project_root = Path(project_root)
+        self.intelligence = get_intelligence() if get_intelligence else None
     
     def analyze(self, report: ErrorReport) -> Optional[Dict]:
-        """Analyze error and suggest fix."""
-        for pattern, fix_info in self.COMMON_FIXES.items():
-            if re.search(pattern, report.message + report.traceback):
-                return {
-                    "error_pattern": pattern,
-                    "fix_type": fix_info["type"],
-                    "description": fix_info["description"],
-                    "file_path": report.file_path,
-                    "line_number": report.line_number,
-                }
+        """Analyze error using Intelligence Engine."""
+        if self.intelligence:
+            return self.intelligence.analyze(
+                report.error_type, report.message, report.traceback
+            )
         return None
     
     def generate_fix(self, analysis: Dict, report: ErrorReport) -> Optional[str]:
-        """Generate code fix as string."""
-        fix_type = analysis["fix_type"]
-        file_path = analysis["file_path"]
-        
-        if fix_type == "add_retry":
-            return self._generate_retry_fix(file_path, analysis["line_number"])
-        elif fix_type == "add_none_check":
-            return self._generate_none_check_fix(file_path, analysis["line_number"])
-        elif fix_type == "add_bounds_check":
-            return self._generate_bounds_check_fix(file_path, analysis["line_number"])
-        elif fix_type == "add_key_check":
-            return self._generate_key_check_fix(file_path, analysis["line_number"])
+        """Generate code fix."""
+        if self.intelligence:
+            return self.intelligence.generate_fix_code(
+                analysis, report.file_path, report.line_number
+            )
         return None
-    
-    def _generate_retry_fix(self, file_path: str, line: int) -> str:
-        return f"""# Auto-fix: Add retry logic
-import time
-from functools import wraps
-
-def retry_on_error(max_retries=3, delay=1):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except (ConnectionError, TimeoutError) as e:
-                    if attempt == max_retries - 1:
-                        raise
-                    time.sleep(delay * (2 ** attempt))
-            return None
-        return wrapper
-    return decorator
-"""
-    
-    def _generate_none_check_fix(self, file_path: str, line: int) -> str:
-        return "# Auto-fix: Add None check before attribute access\n# Before: obj.attribute\n# After: obj.attribute if obj is not None else default"
-    
-    def _generate_bounds_check_fix(self, file_path: str, line: int) -> str:
-        return "# Auto-fix: Add bounds checking\n# Before: list[index]\n# After: list[index] if 0 <= index < len(list) else default"
-    
-    def _generate_key_check_fix(self, file_path: str, line: int) -> str:
-        return "# Auto-fix: Use .get() instead of direct key access\n# Before: dict[key]\n# After: dict.get(key, default)"
 
 
-class ErrorReporterV2:
-    """Main error reporter — VPS ↔ GitHub sync."""
+class ErrorReporterV3:
+    """Main error reporter — VPS ↔ GitHub sync with Intelligence."""
     
     def __init__(self):
         self.github = GitHubIssueManager(TOKEN, REPO)
         self.fix_engine = AutoFixEngine()
         self.error_counts: Dict[str, int] = {}
         self._hostname = os.uname().nodename
+        self.intelligence = get_intelligence() if get_intelligence else None
     
     def report(self, exception: Exception, severity: str = "error", context: dict = None):
         """Report an exception to GitHub."""
         tb = traceback.format_exc()
         tb_lines = tb.strip().split("\n")
         
-        # Extract file and line from traceback
         file_path = "unknown"
         line_number = 0
         function = "unknown"
@@ -294,6 +241,12 @@ class ErrorReporterV2:
             severity=severity,
         )
         
+        # Intelligence analysis
+        if self.intelligence:
+            report.intelligence_analysis = self.intelligence.analyze(
+                report.error_type, report.message, report.traceback
+            )
+        
         # Count occurrences
         self.error_counts[report.hash_id] = self.error_counts.get(report.hash_id, 0) + 1
         report.count = self.error_counts[report.hash_id]
@@ -302,16 +255,13 @@ class ErrorReporterV2:
         existing = self.github.find_issue_by_hash(report.hash_id)
         
         if existing:
-            # Update existing issue
             self.github.update_issue(existing["number"], report)
             logger.info("Updated issue #%s for error %s (count=%d)", 
                        existing["number"], report.hash_id, report.count)
             
-            # If error repeats > 3 times, trigger auto-fix
             if report.count >= 3 and severity in ("critical", "error"):
                 self._trigger_auto_fix(report)
         else:
-            # Create new issue
             self.github.create_issue(report)
     
     def _trigger_auto_fix(self, report: ErrorReport):
@@ -327,11 +277,8 @@ class ErrorReporterV2:
         if not fix_code:
             return
         
-        # Create fix branch and PR
         branch = self.github.create_fix_branch(
-            report.hash_id, 
-            report.file_path,
-            analysis["description"]
+            report.hash_id, report.file_path, analysis.get("description", "auto-fix")
         )
         
         pr_body = f"""## Auto-Fix for Error `{report.hash_id}`
@@ -339,16 +286,16 @@ class ErrorReporterV2:
 **Error:** {report.error_type}: {report.message}
 **File:** `{report.file_path}:{report.line_number}`
 **Occurrences:** {report.count}
+**Pattern:** `{analysis.get('pattern', 'unknown')}`
+**Confidence:** {analysis.get('confidence', 0)}%
 
 ### Suggested Fix
-{analysis["description"]}
-
 ```python
 {fix_code}
 ```
 
 ---
-*This PR was created automatically by error_reporter_v2*
+*This PR was created automatically by error_reporter_v3 with Intelligence Engine*
 """
         
         self.github.create_pull_request(
@@ -359,12 +306,12 @@ class ErrorReporterV2:
 
 
 # Global instance
-_reporter: Optional[ErrorReporterV2] = None
+_reporter: Optional[ErrorReporterV3] = None
 
-def get_reporter() -> ErrorReporterV2:
+def get_reporter() -> ErrorReporterV3:
     global _reporter
     if _reporter is None:
-        _reporter = ErrorReporterV2()
+        _reporter = ErrorReporterV3()
     return _reporter
 
 def report_error(exception: Exception, severity: str = "error", context: dict = None):
@@ -374,8 +321,8 @@ def report_error(exception: Exception, severity: str = "error", context: dict = 
     except Exception as e:
         logger.error("Failed to report error: %s", e)
 
-# Decorator for automatic error reporting
 def auto_report(severity: str = "error"):
+    """Decorator for automatic error reporting."""
     def decorator(func):
         def wrapper(*args, **kwargs):
             try:
@@ -388,9 +335,8 @@ def auto_report(severity: str = "error"):
 
 
 if __name__ == "__main__":
-    # Test
     logging.basicConfig(level=logging.INFO)
     try:
-        raise ValueError("Test error from VPS")
+        raise ValueError("Test error from VPS with Intelligence Engine")
     except Exception as e:
         report_error(e, "critical")
