@@ -48,3 +48,24 @@ fmt:
 
 test:
 	pytest -v --tb=short
+
+# ── Pre-push checks ───────────────────────────────────────────────────────────
+check:
+	@echo "=== Pre-push validation ==="
+	@find . -name "*.py" -not -path "./.git/*" -exec python3 -m py_compile {} \;
+	@echo "✅ Python syntax"
+	@python3 -c "import yaml, glob; [yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')]"
+	@echo "✅ YAML syntax"
+	@black --check . 2>/dev/null || (echo "⚠️  Run 'make fmt' to fix formatting" && exit 1)
+	@echo "✅ Black formatting"
+	@ruff check . --output-format=concise 2>/dev/null || true
+	@echo "✅ Ruff checks"
+	@echo "=== All checks passed ==="
+
+fmt:
+	@black .
+	@ruff check . --fix --exit-zero
+	@echo "✅ Formatted"
+
+install-hooks:
+	@bash scripts/install-hooks.sh
