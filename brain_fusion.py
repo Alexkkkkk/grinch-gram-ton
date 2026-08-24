@@ -39,7 +39,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from config import Config
+from core.config import Config
 
 log = logging.getLogger("brain_fusion")
 

@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional
 
 from binance_client import BinanceExchangeClient
-from config import Config
+from core.config import Config
 from error_reporter import get_reporter
 from grid_db import GridDatabase
 

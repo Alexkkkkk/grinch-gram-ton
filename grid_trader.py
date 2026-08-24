@@ -12,7 +12,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional
 
-from config import Config
+from core.config import Config
 
 log = logging.getLogger("grid")
 

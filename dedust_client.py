@@ -16,7 +16,7 @@ from pytoniq import Address, LiteBalancer, WalletV5R1
 from pytoniq_core import Address as CoreAddress
 from pytoniq_core import begin_cell
 
-from config import Config
+from core.config import Config
 from http_client import SESSION as _HTTP
 from price_feed import price_feed
 

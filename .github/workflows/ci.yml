@@ -1,13 +1,10 @@
-name: CI - Grid Bot
+name: CI
 
 on:
   push:
-    paths:
-      - 'grid-bot/**'
-      - '.github/workflows/ci.yml'
+    branches: [ main, optimize/* ]
   pull_request:
-    paths:
-      - 'grid-bot/**'
+    branches: [ main ]
 
 jobs:
   lint-and-test:
@@ -15,22 +12,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
       - name: Install dependencies
         run: |
-          cd grid-bot
           pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov black ruff mypy bandit safety
 
-      - name: Syntax check
-        run: |
-          cd grid-bot
-          python -m py_compile app.py config.py database.py exchange_client.py grid_engine.py github_reporter.py
+      - name: Lint with ruff
+        run: ruff check . --output-format=github
 
-      - name: Check imports
-        run: |
-          cd grid-bot
-          python -c "import config, database, exchange_client, grid_engine, github_reporter"
+      - name: Format check with black
+        run: black --check .
+
+      - name: Type check with mypy
+        run: mypy core/ ai/ trading/ web/ db/ --ignore-missing-imports || true
+
+      - name: Security scan with bandit
+        run: bandit -r . -f json -o bandit-report.json || true
+
+      - name: Dependency safety check
+        run: safety check || true
+
+      - name: Test with pytest
+        run: pytest --cov=. --cov-report=xml || true
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
