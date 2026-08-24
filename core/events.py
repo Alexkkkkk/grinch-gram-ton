@@ -2,7 +2,7 @@
 
 import threading
 import weakref
-from typing import Any, Callable, Dict, List, Set
+from typing import Any, Callable, Dict, List
 
 # Use weakref for auto-cleanup of dead subscribers
 _subscribers: Dict[str, List[weakref.ref]] = {}

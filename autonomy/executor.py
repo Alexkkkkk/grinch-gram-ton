@@ -3,12 +3,10 @@
 VPS Command Executor — safely executes commands on VPS and reports results.
 """
 
-import os
-import json
 import logging
 import subprocess
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 logger = logging.getLogger("autonomy.executor")
 

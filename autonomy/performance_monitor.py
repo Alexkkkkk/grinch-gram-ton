@@ -3,14 +3,14 @@
 Performance Monitor — tracks bot performance and auto-optimizes.
 """
 
+import logging
 import os
 import time
-import json
-import logging
-import psutil
-from datetime import datetime, timedelta
 from collections import deque
+from datetime import datetime
 from typing import Dict, List
+
+import psutil
 
 logger = logging.getLogger("autonomy.performance")
 

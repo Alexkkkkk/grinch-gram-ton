@@ -1509,7 +1509,7 @@ def wallets_load() -> tuple[dict, list, dict, float]:
 
         events = json.loads(meta.get("events", "[]"))
         # Возвращаем dict вместо set — сохраняет порядок вставки для LRU-дедупликации
-        seen = {k: 1 for k in json.loads(meta.get("seen", "[]"))}
+        seen = dict.fromkeys(json.loads(meta.get("seen", "[]")), 1)
         last_poll = float(meta.get("last_poll", "0") or 0)
         return wallets, events, seen, last_poll
     except Exception as e:

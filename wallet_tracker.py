@@ -533,7 +533,7 @@ class WalletTracker:
                     self.events = events
                     # seen из DB может быть set или dict — нормализуем в dict-LRU
                     self._seen = (
-                        seen if isinstance(seen, dict) else {k: 1 for k in seen}
+                        seen if isinstance(seen, dict) else dict.fromkeys(seen, 1)
                     )
                     self.last_poll = last_poll
                     loaded_from_db = True
@@ -552,7 +552,7 @@ class WalletTracker:
                     data = json.load(fh)
                 self.wallets = data.get("wallets", {}) or {}
                 self.events = data.get("events", []) or []
-                self._seen = {k: 1 for k in (data.get("seen", []) or [])}
+                self._seen = dict.fromkeys(data.get("seen", []) or [], 1)
                 self.last_poll = data.get("last_poll", 0.0) or 0.0
                 logger.info(
                     f"[WalletTracker] Загружено из JSON: {len(self.wallets)} кошельков"

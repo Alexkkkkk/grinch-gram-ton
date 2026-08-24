@@ -1,7 +1,7 @@
 """Ensemble manager — coordinates multiple model wrappers."""
 
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 

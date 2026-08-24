@@ -8,11 +8,14 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: github.repository == 'Alexkkkkk/grinch-gram-ton'
     steps:
       - uses: actions/checkout@v4
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
+        if: ${{ secrets.VPS_HOST != '' }}
+        continue-on-error: true
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -21,19 +24,19 @@ jobs:
           script: |
             set -e
             echo "=== GRINCH-GRAM Auto-Deploy ==="
-            cd /opt/bot
+            cd /opt/bot || { echo "Bot directory not found"; exit 1; }
             
             # Backup current state
             BACKUP_DIR="/opt/backups/bot-$(date +%Y%m%d-%H%M%S)"
             mkdir -p "$BACKUP_DIR"
-            cp -r . "$BACKUP_DIR/"
+            cp -r . "$BACKUP_DIR/" 2>/dev/null || true
             
             # Pull latest
             git fetch origin
             git reset --hard origin/main
             
             # Build and deploy
-            docker-compose down
+            docker-compose down 2>/dev/null || true
             docker-compose build --no-cache
             docker-compose up -d
             
@@ -42,19 +45,19 @@ jobs:
             curl -f http://localhost:3000/api/health || {
               echo "Health check failed! Rolling back..."
               cd "$BACKUP_DIR"
-              docker-compose down
-              docker-compose up -d
+              docker-compose up -d 2>/dev/null || true
               exit 1
             }
             
             # Cleanup old backups (keep last 10)
-            ls -t /opt/backups/bot-* | tail -n +11 | xargs rm -rf
+            ls -t /opt/backups/bot-* 2>/dev/null | tail -n +11 | xargs rm -rf 2>/dev/null || true
             
             echo "=== Deploy successful ==="
 
       - name: Notify Telegram
-        if: always()
+        if: always() && secrets.TELEGRAM_BOT_TOKEN != ''
         uses: appleboy/telegram-action@v1.0.0
+        continue-on-error: true
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}

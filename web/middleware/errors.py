@@ -1,7 +1,7 @@
 """Error handling middleware — JSON error responses."""
 
 import logging
-import traceback
+
 from flask import jsonify
 
 logger = logging.getLogger(__name__)

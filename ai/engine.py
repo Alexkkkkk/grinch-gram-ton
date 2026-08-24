@@ -9,12 +9,12 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 try:
-    from sklearn.preprocessing import StandardScaler
     from sklearn.ensemble import (
-        RandomForestClassifier,
         ExtraTreesClassifier,
         GradientBoostingClassifier,
+        RandomForestClassifier,
     )
+    from sklearn.preprocessing import StandardScaler
 except ImportError:
     StandardScaler = None
     RandomForestClassifier = None

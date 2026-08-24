@@ -3,11 +3,9 @@
 Auto-Updater — checks for updates and applies them safely.
 """
 
-import os
-import time
-import json
 import logging
 import subprocess
+import time
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 

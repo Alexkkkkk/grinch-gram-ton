@@ -1367,7 +1367,7 @@ class DedustClient:
                 return {
                     "ok": False,
                     "side": "sell",
-                    "error": f"GRINCH-баланс на кошельке равен 0 (нечего продавать).",
+                    "error": "GRINCH-баланс на кошельке равен 0 (нечего продавать).",
                 }
             log.info(
                 f"[DeDust] SELL {amount_nano/1e9:.6f} GRINCH (requested={grinch_amount:.6f}, on-chain={baseline_nano/1e9:.6f})"

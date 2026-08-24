@@ -4,17 +4,16 @@ Self-Healing Engine — automatically fixes common problems on VPS.
 Runs as daemon, monitors system health, applies fixes without human intervention.
 """
 
-import os
-import sys
-import time
 import json
-import signal
 import logging
+import os
+import signal
 import subprocess
-import psutil
+import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-from pathlib import Path
+from typing import Dict, List
+
+import psutil
 
 logger = logging.getLogger("autonomy.self_healing")
 

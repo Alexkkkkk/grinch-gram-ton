@@ -7,18 +7,16 @@ Error Reporter v3 — VPS → GitHub Issues + Auto-Fix with Intelligence Engine
 Uses autonomy.intelligence for ML-powered error analysis.
 """
 
+import hashlib
+import logging
 import os
 import re
 import sys
-import json
-import hashlib
-import logging
 import traceback
-import subprocess
-from datetime import datetime, timedelta
-from typing import Optional, Dict, List
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import Dict, Optional
 
 import requests
 
@@ -26,7 +24,7 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from autonomy.intelligence import get_intelligence, ErrorIntelligence
+    from autonomy.intelligence import get_intelligence
 except ImportError:
     get_intelligence = None
 
@@ -93,9 +91,7 @@ class GitHubIssueManager:
         if hash_id in self._issue_cache:
             return self._issue_cache[hash_id]
 
-        issues = self._api(
-            f"issues?state=open&labels=auto-error,needs-fix&per_page=100"
-        )
+        issues = self._api("issues?state=open&labels=auto-error,needs-fix&per_page=100")
         for issue in issues:
             if hash_id in issue.get("body", ""):
                 self._issue_cache[hash_id] = issue

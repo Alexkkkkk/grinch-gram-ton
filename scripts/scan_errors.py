@@ -3,11 +3,9 @@
 Scan logs for errors and report to GitHub.
 """
 
-import os
+import glob
 import re
 import sys
-import glob
-from datetime import datetime, timedelta
 
 sys.path.insert(0, "/opt/bot")
 from error_reporter_v2 import report_error

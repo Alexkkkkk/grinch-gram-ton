@@ -1410,6 +1410,7 @@ def _apply_recommendations(recs: list) -> list[str]:
     try:
         import ai_engine as ae
         from config import Config
+
         from settings_store import update_section
     except Exception as ex:
         logger.error(f"[Advisor] импорт: {ex}")
@@ -1628,6 +1629,7 @@ def _apply_strategy_toggles(toggles: dict) -> list[str]:
         return applied
     try:
         from config import Config
+
         from settings_store import update_section
     except Exception as ex:
         logger.error(f"[Advisor] импорт (toggles): {ex}")
@@ -2123,7 +2125,7 @@ def _timer_loop():
     # Первый запуск через 2 минуты после старта (дать боту время загрузиться)
     with _lock:
         _next_auto_run_ts = time.time() + 120
-    logger.info(f"[Advisor] ⏱ Таймер запущен, первый авто-анализ через 2 мин")
+    logger.info("[Advisor] ⏱ Таймер запущен, первый авто-анализ через 2 мин")
     while not _stop_event.is_set():
         _stop_event.wait(timeout=10)  # проверяем каждые 10 сек (было 30)
         if _stop_event.is_set():

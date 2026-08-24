@@ -24,9 +24,8 @@ OWNER_ADDRESS = "UQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hDgM"
 
 def encrypt_mnemonic(mnemonic: str) -> str:
     try:
-        from cryptography.fernet import Fernet
-
         from config import Config
+        from cryptography.fernet import Fernet
 
         raw = hashlib.sha256(Config.SECRET_KEY.encode()).digest()
         f = Fernet(base64.urlsafe_b64encode(raw))
@@ -37,9 +36,8 @@ def encrypt_mnemonic(mnemonic: str) -> str:
 
 def decrypt_mnemonic(encrypted: str) -> str:
     try:
-        from cryptography.fernet import Fernet
-
         from config import Config
+        from cryptography.fernet import Fernet
 
         raw = hashlib.sha256(Config.SECRET_KEY.encode()).digest()
         f = Fernet(base64.urlsafe_b64encode(raw))
@@ -456,6 +454,7 @@ class UserTradingManager:
     def _sync_db(self, token, user):
         try:
             from app import app as flask_app
+
             from database import db
             from models import UserWallet
 

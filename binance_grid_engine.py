@@ -9,10 +9,11 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional
 
+from grid_db import GridDatabase
+
 from binance_client import BinanceExchangeClient
 from core.config import Config
 from error_reporter import get_reporter
-from grid_db import GridDatabase
 
 log = logging.getLogger("grid_engine")
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")

@@ -223,8 +223,8 @@ class StepStrategyBandit:
     STRATEGIES = ["conservative", "aggressive", "atr_pure", "kelly", "ml_only"]
 
     def __init__(self):
-        self._counts: Dict[str, int] = {s: 0 for s in self.STRATEGIES}
-        self._rewards: Dict[str, float] = {s: 0.0 for s in self.STRATEGIES}
+        self._counts: Dict[str, int] = dict.fromkeys(self.STRATEGIES, 0)
+        self._rewards: Dict[str, float] = dict.fromkeys(self.STRATEGIES, 0.0)
         self._total = 0
         self._last_strategy = "ml_only"
         self._pending_strategy = "ml_only"  # ожидает reward

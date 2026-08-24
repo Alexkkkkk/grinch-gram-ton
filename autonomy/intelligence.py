@@ -4,15 +4,14 @@ Autonomy Intelligence — ML-powered error analysis and prediction.
 Predicts failures before they happen and suggests preventive fixes.
 """
 
+import json
+import logging
 import os
 import re
-import json
-import hashlib
-import logging
-from datetime import datetime, timedelta
 from collections import defaultdict, deque
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from typing import Dict, List, Optional
 
 logger = logging.getLogger("autonomy.intelligence")
 
