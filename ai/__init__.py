@@ -11,6 +11,7 @@ def get_ai_engine():
     global _ai_engine
     if _ai_engine is None:
         from ai.engine import AIEngine
+
         _ai_engine = AIEngine()
     return _ai_engine
 

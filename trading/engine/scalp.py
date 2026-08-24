@@ -1,4 +1,5 @@
 """Scalping engine — quick in-and-out trades."""
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -20,4 +21,8 @@ class ScalpEngine:
             return {"signal": "hold", "confidence": 0, "reason": "volatility_too_high"}
         if spread_pct < target * 0.5:
             return {"signal": "hold", "confidence": 0, "reason": "spread_too_low"}
-        return {"signal": "scalp", "confidence": min(100, spread_pct / target * 50), "target": target}
+        return {
+            "signal": "scalp",
+            "confidence": min(100, spread_pct / target * 50),
+            "target": target,
+        }

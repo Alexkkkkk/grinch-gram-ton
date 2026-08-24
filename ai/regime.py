@@ -68,4 +68,9 @@ class PumpDetector:
             score += 0.4
         if price_spike:
             score += 0.6
-        return {"score": score * 100, "detected": score > 0.5, "vol_spike": vol_spike, "price_spike": price_spike}
+        return {
+            "score": score * 100,
+            "detected": score > 0.5,
+            "vol_spike": vol_spike,
+            "price_spike": price_spike,
+        }

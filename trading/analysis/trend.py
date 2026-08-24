@@ -1,4 +1,5 @@
 """Trend analyzer — determine market regime."""
+
 import logging
 
 logger = logging.getLogger(__name__)

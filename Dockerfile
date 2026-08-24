@@ -1,9 +1,9 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# GRINCH-GRAM v3.0 — Multi-stage Production Dockerfile
+# GRINCH-GRAM v3.1 — Multi-stage Production Dockerfile
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Stage 1: Builder ──────────────────────────────────────────────────────────
-FROM python:3.14-slim AS builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
@@ -14,12 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python packages
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --user \
-    -r requirements.txt \
-    gunicorn==23.0.0
+RUN pip install --no-cache-dir --user -r requirements.txt
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM python:3.14-slim AS runtime
+FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
@@ -58,6 +56,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:3000/api/health || exit 1
 
-# Production: gunicorn with eventlet worker
-# Development: override CMD with "python main.py"
+# Production: gunicorn with gevent worker (eventlet conflicts with asyncio)
 CMD ["gunicorn", "-c", "gunicorn.conf.py", "main:app"]

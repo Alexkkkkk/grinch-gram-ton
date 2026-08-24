@@ -3,6 +3,7 @@
 Autonomy Intelligence — ML-powered error analysis and prediction.
 Predicts failures before they happen and suggests preventive fixes.
 """
+
 import os
 import re
 import json
@@ -19,6 +20,7 @@ logger = logging.getLogger("autonomy.intelligence")
 @dataclass
 class ErrorPattern:
     """Learned error pattern with fix history."""
+
     pattern: str
     regex: str
     fix_type: str
@@ -31,7 +33,7 @@ class ErrorPattern:
 
 class ErrorIntelligence:
     """Learns from errors and predicts/prevents future failures."""
-    
+
     # Advanced error patterns with context-aware fixes
     PATTERN_DB = {
         "key_error": {
@@ -44,7 +46,10 @@ class ErrorIntelligence:
             "severity": "medium",
         },
         "index_error": {
-            "patterns": [r"IndexError:\s*list index out of range", r"IndexError:\s*string index out of range"],
+            "patterns": [
+                r"IndexError:\s*list index out of range",
+                r"IndexError:\s*string index out of range",
+            ],
             "fixes": [
                 "if 0 <= index < len(seq):",
                 "seq[index] if len(seq) > index else default",
@@ -100,7 +105,10 @@ class ErrorIntelligence:
             "severity": "critical",
         },
         "import_error": {
-            "patterns": [r"ModuleNotFoundError:\s*No module named '(\w+)'", r"ImportError"],
+            "patterns": [
+                r"ModuleNotFoundError:\s*No module named '(\w+)'",
+                r"ImportError",
+            ],
             "fixes": [
                 "pip install {module}",
                 "try:\n    import module\nexcept ImportError:\n    pass",
@@ -132,7 +140,12 @@ class ErrorIntelligence:
             "severity": "high",
         },
         "sql_error": {
-            "patterns": [r"sqlalchemy\.exc", r"psycopg2\.Error", r"sqlite3\.Error", r"OperationalError"],
+            "patterns": [
+                r"sqlalchemy\.exc",
+                r"psycopg2\.Error",
+                r"sqlite3\.Error",
+                r"OperationalError",
+            ],
             "fixes": [
                 "session.rollback()",
                 "with session.begin():",
@@ -158,13 +171,13 @@ class ErrorIntelligence:
             "severity": "medium",
         },
     }
-    
+
     def __init__(self, data_dir: str = "/app/data"):
         self.data_dir = data_dir
         self.error_history: deque = deque(maxlen=1000)
         self.pattern_stats: Dict[str, ErrorPattern] = {}
         self._load_stats()
-    
+
     def _load_stats(self):
         """Load learned patterns from disk."""
         path = os.path.join(self.data_dir, "error_intelligence.json")
@@ -176,7 +189,7 @@ class ErrorIntelligence:
                     self.pattern_stats[k] = ErrorPattern(**v)
             except Exception as e:
                 logger.warning("Failed to load intelligence: %s", e)
-    
+
     def _save_stats(self):
         """Save learned patterns to disk."""
         path = os.path.join(self.data_dir, "error_intelligence.json")
@@ -184,14 +197,14 @@ class ErrorIntelligence:
         with open(path, "w") as f:
             data = {k: asdict(v) for k, v in self.pattern_stats.items()}
             json.dump(data, f, indent=2)
-    
+
     def analyze(self, error_type: str, message: str, traceback: str) -> Optional[Dict]:
         """Analyze error and return best fix with confidence."""
         full_text = f"{error_type}: {message}\n{traceback}"
-        
+
         best_match = None
         best_score = 0
-        
+
         for pattern_name, pattern_data in self.PATTERN_DB.items():
             for regex in pattern_data["patterns"]:
                 matches = re.findall(regex, full_text, re.I)
@@ -202,7 +215,7 @@ class ErrorIntelligence:
                         stat = self.pattern_stats[pattern_name]
                         score += stat.success_rate * 20
                         score += min(stat.occurrences, 50)
-                    
+
                     if score > best_score:
                         best_score = score
                         best_match = {
@@ -212,12 +225,12 @@ class ErrorIntelligence:
                             "matches": matches,
                             "confidence": min(score, 100),
                         }
-        
+
         if best_match:
             self._update_stats(best_match["pattern"], error_type, message)
-        
+
         return best_match
-    
+
     def _update_stats(self, pattern_name: str, error_type: str, message: str):
         """Update pattern statistics."""
         now = datetime.utcnow().isoformat()
@@ -236,43 +249,52 @@ class ErrorIntelligence:
             stat = self.pattern_stats[pattern_name]
             stat.occurrences += 1
             stat.last_seen = now
-        
+
         self._save_stats()
-    
+
     def predict_failure(self, recent_errors: List[Dict]) -> List[Dict]:
         """Predict upcoming failures based on error trends."""
         predictions = []
-        
+
         # Group by pattern
         pattern_counts = defaultdict(int)
         for err in recent_errors:
-            analysis = self.analyze(err.get("type", ""), err.get("message", ""), err.get("traceback", ""))
+            analysis = self.analyze(
+                err.get("type", ""), err.get("message", ""), err.get("traceback", "")
+            )
             if analysis:
                 pattern_counts[analysis["pattern"]] += 1
-        
+
         # Predict failures for patterns with increasing frequency
         for pattern, count in pattern_counts.items():
             if count >= 3:
                 stat = self.pattern_stats.get(pattern)
                 if stat and stat.occurrences > 5:
-                    predictions.append({
-                        "pattern": pattern,
-                        "risk": "high" if count > 5 else "medium",
-                        "prediction": f"{pattern} failure likely within next hour",
-                        "preventive_action": "Apply fix proactively",
-                    })
-        
+                    predictions.append(
+                        {
+                            "pattern": pattern,
+                            "risk": "high" if count > 5 else "medium",
+                            "prediction": f"{pattern} failure likely within next hour",
+                            "preventive_action": "Apply fix proactively",
+                        }
+                    )
+
         return predictions
-    
-    def generate_fix_code(self, analysis: Dict, file_path: str, line_number: int, 
-                          surrounding_code: str = "") -> str:
+
+    def generate_fix_code(
+        self,
+        analysis: Dict,
+        file_path: str,
+        line_number: int,
+        surrounding_code: str = "",
+    ) -> str:
         """Generate actual Python fix code."""
         pattern = analysis["pattern"]
         fixes = analysis["fixes"]
-        
+
         # Select best fix based on context
         best_fix = fixes[0]
-        
+
         if pattern == "key_error":
             key = analysis["matches"][0] if analysis["matches"] else "key"
             return f"""# FIX: KeyError protection
@@ -357,7 +379,7 @@ except json.JSONDecodeError:
     logger.warning(f"Invalid JSON: {raw[:100]}...")
     data = {}
 """
-        
+
         return f"""# FIX: {pattern}
 # Suggested fix: {best_fix}
 # TODO: Apply context-specific fix
@@ -366,6 +388,7 @@ except json.JSONDecodeError:
 
 # Singleton
 _intelligence: Optional[ErrorIntelligence] = None
+
 
 def get_intelligence() -> ErrorIntelligence:
     global _intelligence

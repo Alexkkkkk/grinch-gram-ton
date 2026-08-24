@@ -1,4 +1,5 @@
 """Auth blueprint — login/logout with rate limiting."""
+
 import time
 from flask import Blueprint, request, session, jsonify
 

@@ -2,6 +2,7 @@
 """
 Health Monitor — runs on VPS, reports status to GitHub.
 """
+
 import os
 import sys
 import json
@@ -25,8 +26,11 @@ def check_health() -> dict:
     """Check bot health."""
     try:
         resp = requests.get(HEALTH_URL, timeout=10)
-        return {"status": "ok" if resp.status_code == 200 else "error", 
-                "code": resp.status_code, "response": resp.json()}
+        return {
+            "status": "ok" if resp.status_code == 200 else "error",
+            "code": resp.status_code,
+            "response": resp.json(),
+        }
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
@@ -36,7 +40,9 @@ def check_docker() -> dict:
     try:
         result = subprocess.run(
             ["docker-compose", "ps", "--format", "json"],
-            capture_output=True, text=True, cwd="/opt/bot"
+            capture_output=True,
+            text=True,
+            cwd="/opt/bot",
         )
         return {"status": "ok", "containers": result.stdout}
     except Exception as e:
@@ -46,16 +52,15 @@ def check_docker() -> dict:
 def check_disk() -> dict:
     """Check disk usage."""
     try:
-        result = subprocess.run(
-            ["df", "-h", "/"],
-            capture_output=True, text=True
-        )
+        result = subprocess.run(["df", "-h", "/"], capture_output=True, text=True)
         lines = result.stdout.strip().split("\n")
         if len(lines) > 1:
             parts = lines[1].split()
             usage = parts[4].replace("%", "")
-            return {"status": "ok" if int(usage) < 90 else "warning", 
-                    "usage_percent": int(usage)}
+            return {
+                "status": "ok" if int(usage) < 90 else "warning",
+                "usage_percent": int(usage),
+            }
     except Exception as e:
         return {"status": "error", "error": str(e)}
     return {"status": "unknown"}
@@ -65,18 +70,18 @@ def report_to_github(status: dict):
     """Report health status to GitHub."""
     if not TOKEN:
         return
-    
+
     headers = {
         "Authorization": f"token {TOKEN}",
         "Accept": "application/vnd.github.v3+json",
     }
-    
+
     # Check for existing health issue
     issues_url = f"{GITHUB_API}/repos/{REPO}/issues?state=open&labels=health-check"
     try:
         resp = requests.get(issues_url, headers=headers, timeout=30)
         issues = resp.json()
-        
+
         body = f"""## VPS Health Report
 
 | Check | Status | Details |
@@ -88,7 +93,7 @@ def report_to_github(status: dict):
 **Timestamp:** {status['timestamp']}
 **Hostname:** {status['hostname']}
 """
-        
+
         if issues:
             # Update existing
             issue_num = issues[0]["number"]
@@ -96,7 +101,7 @@ def report_to_github(status: dict):
                 f"{GITHUB_API}/repos/{REPO}/issues/{issue_num}",
                 headers=headers,
                 json={"body": body},
-                timeout=30
+                timeout=30,
             )
         else:
             # Create new
@@ -108,7 +113,7 @@ def report_to_github(status: dict):
                     "body": body,
                     "labels": ["health-check", "vps"],
                 },
-                timeout=30
+                timeout=30,
             )
     except Exception as e:
         logger.error("Failed to report to GitHub: %s", e)
@@ -123,18 +128,18 @@ def main():
             "docker": check_docker(),
             "disk": check_disk(),
         }
-        
-        logger.info("Health: %s", status['health']['status'])
-        
+
+        logger.info("Health: %s", status["health"]["status"])
+
         # Report to GitHub every 5 minutes
         if int(time.time()) % 300 < CHECK_INTERVAL:
             report_to_github(status)
-        
+
         # Auto-restart if bot is down
-        if status['health']['status'] != 'ok':
+        if status["health"]["status"] != "ok":
             logger.warning("Bot unhealthy, attempting restart...")
             subprocess.run(["docker-compose", "restart", "bot"], cwd="/opt/bot")
-        
+
         time.sleep(CHECK_INTERVAL)
 
 

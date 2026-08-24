@@ -1,10 +1,11 @@
 """Gunicorn configuration — production-optimized."""
+
 import os
 import multiprocessing
 
 bind = f"0.0.0.0:{os.getenv('PORT', '3000')}"
-workers = int(os.getenv('WEB_CONCURRENCY', multiprocessing.cpu_count() * 2 + 1))
-worker_class = "eventlet"
+workers = int(os.getenv("WEB_CONCURRENCY", multiprocessing.cpu_count() * 2 + 1))
+worker_class = "sync"
 worker_connections = 1000
 
 # Timeouts
@@ -15,7 +16,7 @@ graceful_timeout = 10
 # Logging
 accesslog = "-"
 errorlog = "-"
-loglevel = os.getenv('LOG_LEVEL', 'info')
+loglevel = os.getenv("LOG_LEVEL", "info")
 capture_output = True
 enable_stdio_inheritance = True
 

@@ -1,4 +1,5 @@
 """Entry point — GRINCH-GRAM v2.1 (production-ready)."""
+
 import logging
 import os
 import signal
@@ -39,7 +40,12 @@ if __name__ == "__main__":
     workers = int(os.environ.get("WEB_CONCURRENCY", 1))
     use_gunicorn = os.environ.get("GUNICORN", "false").lower() == "true"
 
-    logger.info("GRINCH-GRAM v2.1 starting | port=%d workers=%d gunicorn=%s", port, workers, use_gunicorn)
+    logger.info(
+        "GRINCH-GRAM v2.1 starting | port=%d workers=%d gunicorn=%s",
+        port,
+        workers,
+        use_gunicorn,
+    )
 
     if use_gunicorn and workers > 1:
         # Production: gunicorn + eventlet
@@ -59,15 +65,18 @@ if __name__ == "__main__":
             def load(self):
                 return self.application
 
-        GrinchApp(app, {
-            "bind": f"0.0.0.0:{port}",
-            "workers": workers,
-            "worker_class": "eventlet",
-            "accesslog": "-",
-            "errorlog": "-",
-            "capture_output": True,
-            "enable_stdio_inheritance": True,
-        }).run()
+        GrinchApp(
+            app,
+            {
+                "bind": f"0.0.0.0:{port}",
+                "workers": workers,
+                "worker_class": "eventlet",
+                "accesslog": "-",
+                "errorlog": "-",
+                "capture_output": True,
+                "enable_stdio_inheritance": True,
+            },
+        ).run()
     else:
         # Development / single-worker
         socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")

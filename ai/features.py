@@ -28,13 +28,14 @@ def extract_features(ohlcv: List[dict], n_features: int = 32) -> Optional[np.nda
     # Simple features
     features = [
         close[-1] / close[-20] - 1.0,  # 20-period return
-        close[-1] / close[-5] - 1.0,   # 5-period return
-        np.mean(returns[-10:]),         # mean return
-        np.std(returns[-10:]),          # volatility
+        close[-1] / close[-5] - 1.0,  # 5-period return
+        np.mean(returns[-10:]),  # mean return
+        np.std(returns[-10:]),  # volatility
         np.mean(returns[-20:]),
         np.std(returns[-20:]),
         float(volume[-1]) / (float(np.mean(volume[-20:])) + 1e-9),  # volume ratio
-        (close[-1] - np.min(close[-20:])) / (np.max(close[-20:]) - np.min(close[-20:]) + 1e-9),  # position in range
+        (close[-1] - np.min(close[-20:]))
+        / (np.max(close[-20:]) - np.min(close[-20:]) + 1e-9),  # position in range
         (close[-1] - np.mean(close[-20:])) / (np.std(close[-20:]) + 1e-9),  # z-score
     ]
     # Pad or truncate to n_features
@@ -58,7 +59,10 @@ def build_training_data(ohlcv: List[dict], profit_bias_pct: float = 2.0) -> tupl
     close = df["close"].values
     X, y = [], []
     for i in range(20, len(close) - 5):
-        window = [{"close": c, "volume": v} for c, v in zip(close[i - 20 : i], df["volume"].values[i - 20 : i])]
+        window = [
+            {"close": c, "volume": v}
+            for c, v in zip(close[i - 20 : i], df["volume"].values[i - 20 : i])
+        ]
         feat = extract_features(window)
         if feat is None:
             continue

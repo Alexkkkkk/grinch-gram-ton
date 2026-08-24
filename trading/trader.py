@@ -1,4 +1,5 @@
 """Refactored Trader — orchestrates PositionManager + AI + Exchange."""
+
 import logging
 import os
 import threading
@@ -14,8 +15,13 @@ logger = logging.getLogger(__name__)
 
 class Trader(BaseWorker):
     __slots__ = (
-        "exchange", "_ai", "_positions", "_trading_enabled",
-        "_last_disabled_log_ts", "_balance_cache", "_balance_cache_ts",
+        "exchange",
+        "_ai",
+        "_positions",
+        "_trading_enabled",
+        "_last_disabled_log_ts",
+        "_balance_cache",
+        "_balance_cache_ts",
     )
 
     def __init__(self):
@@ -32,6 +38,7 @@ class Trader(BaseWorker):
     def ai(self):
         if self._ai is None:
             from ai import get_ai_engine
+
             self._ai = get_ai_engine()
         return self._ai
 
@@ -39,10 +46,12 @@ class Trader(BaseWorker):
     def positions(self):
         if self._positions is None:
             from trading.position_manager import PositionManager
+
             self._positions = PositionManager()
             try:
                 import db_store
-                if hasattr(db_store, 'is_available') and db_store.is_available():
+
+                if hasattr(db_store, "is_available") and db_store.is_available():
                     for t in db_store.open_trades_get():
                         self._positions.add(t)
             except Exception:
@@ -53,6 +62,7 @@ class Trader(BaseWorker):
         if self.exchange is None:
             try:
                 from exchange import ExchangeClient
+
                 self.exchange = ExchangeClient()
             except Exception as exc:
                 logger.warning("Exchange init failed: %s", exc)
@@ -95,6 +105,7 @@ class Trader(BaseWorker):
     def _grid_tick(self, price: float) -> None:
         try:
             from grid_trader import get_grid_trader
+
             grid = get_grid_trader()
             grid.tick(price)
         except Exception as exc:

@@ -2,6 +2,7 @@
 """
 Scan logs for errors and report to GitHub.
 """
+
 import os
 import re
 import sys
@@ -17,7 +18,7 @@ LOG_PATTERNS = [
 ]
 
 ERROR_PATTERNS = [
-    re.compile(r'(ERROR|CRITICAL|Exception|Traceback)', re.I),
+    re.compile(r"(ERROR|CRITICAL|Exception|Traceback)", re.I),
 ]
 
 
@@ -25,9 +26,9 @@ def scan_logs():
     """Scan log files for new errors."""
     for pattern in LOG_PATTERNS:
         for log_file in glob.glob(pattern):
-            with open(log_file, 'r') as f:
+            with open(log_file, "r") as f:
                 lines = f.readlines()
-            
+
             # Check last 100 lines
             for line in lines[-100:]:
                 for pattern in ERROR_PATTERNS:
@@ -35,6 +36,7 @@ def scan_logs():
                         # Create synthetic exception
                         class LogError(Exception):
                             pass
+
                         try:
                             raise LogError(line.strip())
                         except Exception as e:

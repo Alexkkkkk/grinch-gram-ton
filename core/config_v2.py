@@ -1,4 +1,5 @@
 """Pydantic-based configuration — type-safe, validated, secure."""
+
 from typing import List, Optional
 from pydantic import Field, field_validator, SecretStr
 from pydantic_settings import BaseSettings
@@ -123,18 +124,26 @@ class AppConfig(BaseSettings):
     stop_loss_pct: float = Field(default=5.0, ge=0, alias="STOP_LOSS_PCT")
 
     # Security
-    secret_key: SecretStr = Field(default_factory=lambda: SecretStr(""), alias="SECRET_KEY")
+    secret_key: SecretStr = Field(
+        default_factory=lambda: SecretStr(""), alias="SECRET_KEY"
+    )
     report_errors: bool = Field(default=True, alias="REPORT_ERRORS")
 
     # TON Blockchain
     ton_wallet: str = Field(default="", alias="TON_WALLET")
     token_address: str = Field(default="", alias="TOKEN_ADDRESS")
     pool_address: str = Field(default="", alias="POOL_ADDRESS")
-    ton_mnemonic: SecretStr = Field(default_factory=lambda: SecretStr(""), alias="TON_MNEMONIC")
+    ton_mnemonic: SecretStr = Field(
+        default_factory=lambda: SecretStr(""), alias="TON_MNEMONIC"
+    )
 
     # Binance
-    binance_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""), alias="BINANCE_API_KEY")
-    binance_api_secret: SecretStr = Field(default_factory=lambda: SecretStr(""), alias="BINANCE_API_SECRET")
+    binance_api_key: SecretStr = Field(
+        default_factory=lambda: SecretStr(""), alias="BINANCE_API_KEY"
+    )
+    binance_api_secret: SecretStr = Field(
+        default_factory=lambda: SecretStr(""), alias="BINANCE_API_SECRET"
+    )
     use_binance_testnet: bool = Field(default=True, alias="USE_BINANCE_TESTNET")
 
     # Sub-configs

@@ -1,4 +1,5 @@
 """Position sizing — Kelly, risk-based, and fixed sizing."""
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,9 @@ class PositionSizer:
     def fixed(self, capital: float, pct: float = 10.0) -> float:
         return capital * pct / 100
 
-    def risk_based(self, capital: float, risk_pct: float, stop_loss_pct: float) -> float:
+    def risk_based(
+        self, capital: float, risk_pct: float, stop_loss_pct: float
+    ) -> float:
         """Risk-based sizing: risk $X per trade."""
         if stop_loss_pct <= 0:
             return 0

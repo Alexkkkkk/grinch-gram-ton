@@ -1,4 +1,5 @@
 """Trailing stop engine — multi-stage trailing."""
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,9 @@ class TrailingStopEngine:
     def __init__(self, config=None):
         self.config = config
 
-    def update(self, entry_price: float, current_price: float, side: str = "long") -> dict:
+    def update(
+        self, entry_price: float, current_price: float, side: str = "long"
+    ) -> dict:
         """Update trailing stop level."""
         profit_pct = abs(current_price - entry_price) / entry_price * 100
         stage = "base"
@@ -30,4 +33,9 @@ class TrailingStopEngine:
             stop = current_price * (1 - trail_pct / 100)
         else:
             stop = current_price * (1 + trail_pct / 100)
-        return {"stage": stage, "stop_price": stop, "trail_pct": trail_pct, "profit_pct": profit_pct}
+        return {
+            "stage": stage,
+            "stop_price": stop,
+            "trail_pct": trail_pct,
+            "profit_pct": profit_pct,
+        }

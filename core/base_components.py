@@ -15,6 +15,7 @@ class NpEncoder(json.JSONEncoder):
 
     def default(self, o: Any) -> Any:
         import numpy as np
+
         if isinstance(o, (np.integer, np.int8, np.int16, np.int32, np.int64)):
             return int(o)
         if isinstance(o, (np.floating, np.float16, np.float32, np.float64)):
@@ -66,7 +67,14 @@ class GridLevel:
 class BaseWorker(ABC):
     """Base class for all background workers — unified lifecycle."""
 
-    __slots__ = ("_name", "_thread", "_stop_event", "_running", "_interval_sec", "_logger")
+    __slots__ = (
+        "_name",
+        "_thread",
+        "_stop_event",
+        "_running",
+        "_interval_sec",
+        "_logger",
+    )
 
     def __init__(self, name: str, interval_sec: float = 15.0) -> None:
         self._name: str = name

@@ -1,4 +1,5 @@
 """Thread-safe position manager with memory optimization."""
+
 import threading
 import time
 from typing import Any, Dict, List, Optional
@@ -59,7 +60,7 @@ class PositionManager:
         with self._lock:
             self._history.append(trade)
             if len(self._history) > self._max_history:
-                self._history = self._history[-self._max_history:]
+                self._history = self._history[-self._max_history :]
             self._shorts = [t for t in self._shorts if t.get("id") != trade.get("id")]
             self._trades = [t for t in self._trades if t.get("id") != trade.get("id")]
 
@@ -69,7 +70,9 @@ class PositionManager:
                 return
             total_stake = sum(t.get("stake_ton", 0) for t in self._trades)
             total_amount = sum(t.get("amount", 0) for t in self._trades)
-            avg_price = sum(t.get("entry_price", 0) * t.get("amount", 0) for t in self._trades) / (total_amount or 1)
+            avg_price = sum(
+                t.get("entry_price", 0) * t.get("amount", 0) for t in self._trades
+            ) / (total_amount or 1)
             merged = {
                 "id": f"merged_{self._trades[0].get('id', '0')}",
                 "entry_price": avg_price,
@@ -77,7 +80,9 @@ class PositionManager:
                 "stake_ton": total_stake,
                 "trade_type": "long",
                 "merged_count": len(self._trades),
-                "opened_at": min((t.get("opened_at", "") for t in self._trades), default=""),
+                "opened_at": min(
+                    (t.get("opened_at", "") for t in self._trades), default=""
+                ),
             }
             self._trades = [merged]
 

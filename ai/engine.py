@@ -8,6 +8,19 @@ import time
 import warnings
 from typing import Any, Dict, List, Optional
 
+try:
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.ensemble import (
+        RandomForestClassifier,
+        ExtraTreesClassifier,
+        GradientBoostingClassifier,
+    )
+except ImportError:
+    StandardScaler = None
+    RandomForestClassifier = None
+    ExtraTreesClassifier = None
+    GradientBoostingClassifier = None
+
 import numpy as np
 
 from core.config import Config
@@ -16,20 +29,37 @@ logger = logging.getLogger(__name__)
 
 _sklearn_loaded = False
 
+
 def _ensure_sklearn():
     global _sklearn_loaded
     if _sklearn_loaded:
         return
     warnings.filterwarnings("ignore", category=UserWarning)
-    globals()["RandomForestClassifier"] = __import__("sklearn.ensemble", fromlist=["RandomForestClassifier"]).RandomForestClassifier
-    globals()["ExtraTreesClassifier"] = __import__("sklearn.ensemble", fromlist=["ExtraTreesClassifier"]).ExtraTreesClassifier
-    globals()["GradientBoostingClassifier"] = __import__("sklearn.ensemble", fromlist=["GradientBoostingClassifier"]).GradientBoostingClassifier
-    globals()["StandardScaler"] = __import__("sklearn.preprocessing", fromlist=["StandardScaler"]).StandardScaler
+    globals()["RandomForestClassifier"] = __import__(
+        "sklearn.ensemble", fromlist=["RandomForestClassifier"]
+    ).RandomForestClassifier
+    globals()["ExtraTreesClassifier"] = __import__(
+        "sklearn.ensemble", fromlist=["ExtraTreesClassifier"]
+    ).ExtraTreesClassifier
+    globals()["GradientBoostingClassifier"] = __import__(
+        "sklearn.ensemble", fromlist=["GradientBoostingClassifier"]
+    ).GradientBoostingClassifier
+    globals()["StandardScaler"] = __import__(
+        "sklearn.preprocessing", fromlist=["StandardScaler"]
+    ).StandardScaler
     _sklearn_loaded = True
 
 
 class AIEngine:
-    __slots__ = ("_lock", "_models", "_scaler", "_trained", "_examples", "_last_train", "_n_features")
+    __slots__ = (
+        "_lock",
+        "_models",
+        "_scaler",
+        "_trained",
+        "_examples",
+        "_last_train",
+        "_n_features",
+    )
 
     def __init__(self, n_features: int = 32) -> None:
         self._lock = threading.RLock()
@@ -43,17 +73,27 @@ class AIEngine:
     def pretrain(self, ohlcv: List[dict], on_progress=None) -> bool:
         _ensure_sklearn()
         from ai.features import build_training_data
+
         X, y = build_training_data(ohlcv, profit_bias_pct=2.0)
         if X is None or len(X) < 20:
-            logger.warning("Not enough data for pretrain (%s samples)", len(X) if X is not None else 0)
+            logger.warning(
+                "Not enough data for pretrain (%s samples)",
+                len(X) if X is not None else 0,
+            )
             return False
         with self._lock:
             self._scaler = StandardScaler()
             Xs = self._scaler.fit_transform(X)
             self._models = {
-                "rf": RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42, n_jobs=-1),
-                "et": ExtraTreesClassifier(n_estimators=100, max_depth=8, random_state=42, n_jobs=-1),
-                "gb": GradientBoostingClassifier(n_estimators=80, max_depth=4, random_state=42),
+                "rf": RandomForestClassifier(
+                    n_estimators=100, max_depth=8, random_state=42, n_jobs=-1
+                ),
+                "et": ExtraTreesClassifier(
+                    n_estimators=100, max_depth=8, random_state=42, n_jobs=-1
+                ),
+                "gb": GradientBoostingClassifier(
+                    n_estimators=80, max_depth=4, random_state=42
+                ),
             }
             for name, model in self._models.items():
                 try:
@@ -109,7 +149,10 @@ class AIEngine:
         avg_loss = np.mean(losses[-14:]) if len(losses) >= 14 else 1e-9
         rsi = 100 - (100 / (1 + avg_gain / avg_loss))
 
-        trs = np.maximum(high[1:] - low[1:], np.maximum(np.abs(high[1:] - close[:-1]), np.abs(low[1:] - close[:-1])))
+        trs = np.maximum(
+            high[1:] - low[1:],
+            np.maximum(np.abs(high[1:] - close[:-1]), np.abs(low[1:] - close[:-1])),
+        )
         atr = np.mean(trs[-14:]) if len(trs) >= 14 else 0
         atr_pct = atr / close[-1] * 100 if close[-1] > 0 else 0
 
@@ -136,17 +179,20 @@ class AIEngine:
 
     def capture_buy_context(self, ohlcv: List[dict], **kwargs) -> Optional[List[float]]:
         from ai.features import extract_features
+
         feat = extract_features(ohlcv, self._n_features)
         return feat[0].tolist() if feat is not None else None
 
     def export_experience(self) -> bytes:
         with self._lock:
-            return pickle.dumps({
-                "examples": self._examples,
-                "models": {k: pickle.dumps(v) for k, v in self._models.items()},
-                "scaler": pickle.dumps(self._scaler) if self._scaler else None,
-                "trained": self._trained,
-            })
+            return pickle.dumps(
+                {
+                    "examples": self._examples,
+                    "models": {k: pickle.dumps(v) for k, v in self._models.items()},
+                    "scaler": pickle.dumps(self._scaler) if self._scaler else None,
+                    "trained": self._trained,
+                }
+            )
 
     def import_experience(self, data: bytes) -> bool:
         try:
@@ -185,6 +231,7 @@ def _release_memory():
     gc.collect()
     try:
         import ctypes
+
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except Exception:
         pass

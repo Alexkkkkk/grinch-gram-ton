@@ -1,4 +1,5 @@
 """Signal generator — entry/exit signals from multiple sources."""
+
 import logging
 from typing import Dict, List
 
@@ -27,4 +28,9 @@ class SignalGenerator:
             score += 20
             reasons.append("trending")
         signal = "buy" if score > 20 else "sell" if score < -20 else "hold"
-        return {"signal": signal, "score": score, "confidence": abs(score), "reasons": reasons}
+        return {
+            "signal": signal,
+            "score": score,
+            "confidence": abs(score),
+            "reasons": reasons,
+        }

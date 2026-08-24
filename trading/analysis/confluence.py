@@ -1,4 +1,5 @@
 """Confluence filter — require multiple confirmations."""
+
 import logging
 
 logger = logging.getLogger(__name__)

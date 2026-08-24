@@ -1,4 +1,5 @@
 """Stop-loss engine — fixed and ATR-based stops."""
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -10,7 +11,9 @@ class StopLossEngine:
     def __init__(self, config=None):
         self.config = config
 
-    def calculate(self, entry_price: float, atr: float = 0, side: str = "long") -> float:
+    def calculate(
+        self, entry_price: float, atr: float = 0, side: str = "long"
+    ) -> float:
         """Calculate stop-loss price."""
         if not self.config:
             return entry_price * 0.95

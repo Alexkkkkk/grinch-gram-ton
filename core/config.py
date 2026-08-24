@@ -38,8 +38,12 @@ def _str_env(key: str, default: str) -> str:
 class FeeConfig:
     pct: float = field(default_factory=lambda: _float_env("FEE_PCT", 1.0))
     slippage: float = field(default_factory=lambda: _float_env("SLIPPAGE_PCT", 5.0))
-    gas_reserve_ton: float = field(default_factory=lambda: _float_env("GAS_RESERVE_TON", 0.45))
-    sell_gas_ton: float = field(default_factory=lambda: _float_env("SELL_GAS_TON", 0.253))
+    gas_reserve_ton: float = field(
+        default_factory=lambda: _float_env("GAS_RESERVE_TON", 0.45)
+    )
+    sell_gas_ton: float = field(
+        default_factory=lambda: _float_env("SELL_GAS_TON", 0.253)
+    )
     buy_gas_ton: float = field(default_factory=lambda: _float_env("BUY_GAS_TON", 0.103))
 
     @property
@@ -53,128 +57,273 @@ class GridConfig:
     symbol: str = field(default_factory=lambda: _str_env("GRID_SYMBOL", "GRINCH/TON"))
     count: int = field(default_factory=lambda: _int_env("GRID_COUNT", 40))
     step_pct: float = field(default_factory=lambda: _float_env("GRID_STEP_PCT", 3.5))
-    min_step_pct: float = field(default_factory=lambda: _float_env("GRID_MIN_STEP_PCT", 3.0))
-    max_step_pct: float = field(default_factory=lambda: _float_env("GRID_MAX_STEP_PCT", 8.0))
+    min_step_pct: float = field(
+        default_factory=lambda: _float_env("GRID_MIN_STEP_PCT", 3.0)
+    )
+    max_step_pct: float = field(
+        default_factory=lambda: _float_env("GRID_MAX_STEP_PCT", 8.0)
+    )
     sell_levels: int = field(default_factory=lambda: _int_env("GRID_SELL_LEVELS", 20))
     buy_levels: int = field(default_factory=lambda: _int_env("GRID_BUY_LEVELS", 20))
-    adaptive_step: bool = field(default_factory=lambda: _bool_env("GRID_ADAPTIVE_STEP", True))
+    adaptive_step: bool = field(
+        default_factory=lambda: _bool_env("GRID_ADAPTIVE_STEP", True)
+    )
     tick_sec: int = field(default_factory=lambda: _int_env("GRID_TICK_SEC", 15))
-    tick_interval: int = field(default_factory=lambda: _int_env("GRID_TICK_INTERVAL", 15))
-    recenter_threshold: float = field(default_factory=lambda: _float_env("GRID_RECENTER_THRESHOLD", 1.8))
-    recenter_cooldown: int = field(default_factory=lambda: _int_env("GRID_RECENTER_COOLDOWN", 1800))
+    tick_interval: int = field(
+        default_factory=lambda: _int_env("GRID_TICK_INTERVAL", 15)
+    )
+    recenter_threshold: float = field(
+        default_factory=lambda: _float_env("GRID_RECENTER_THRESHOLD", 1.8)
+    )
+    recenter_cooldown: int = field(
+        default_factory=lambda: _int_env("GRID_RECENTER_COOLDOWN", 1800)
+    )
     min_order_ton: float = 15.0
     gas_reserve_ton: float = 5.0
-    db_path: str = field(default_factory=lambda: _str_env("GRID_DB_PATH", "/app/data/grid_grinch_gram.db"))
+    db_path: str = field(
+        default_factory=lambda: _str_env(
+            "GRID_DB_PATH", "/app/data/grid_grinch_gram.db"
+        )
+    )
 
 
 @dataclass
 class TrailConfig:
-    breakeven_at: float = field(default_factory=lambda: _float_env("TRAIL_BREAKEVEN_AT", 6.0))
-    stage2_at: float = field(default_factory=lambda: _float_env("TRAIL_STAGE2_AT", 12.0))
-    stage2_pct: float = field(default_factory=lambda: _float_env("TRAIL_STAGE2_PCT", 17.0))
-    stage3_at: float = field(default_factory=lambda: _float_env("TRAIL_STAGE3_AT", 18.0))
-    stage3_pct: float = field(default_factory=lambda: _float_env("TRAIL_STAGE3_PCT", 12.0))
-    stage4_at: float = field(default_factory=lambda: _float_env("TRAIL_STAGE4_AT", 26.0))
-    stage4_pct: float = field(default_factory=lambda: _float_env("TRAIL_STAGE4_PCT", 6.0))
-    base_pct: float = field(default_factory=lambda: _float_env("TRAILING_STOP_PCT", 13.0))
-    trend_widen: float = field(default_factory=lambda: _float_env("TRAIL_TREND_WIDEN", 1.5))
-    chop_tighten: float = field(default_factory=lambda: _float_env("TRAIL_CHOP_TIGHTEN", 0.8))
-    trend_adx: float = field(default_factory=lambda: _float_env("TRAIL_TREND_ADX", 28.0))
+    breakeven_at: float = field(
+        default_factory=lambda: _float_env("TRAIL_BREAKEVEN_AT", 6.0)
+    )
+    stage2_at: float = field(
+        default_factory=lambda: _float_env("TRAIL_STAGE2_AT", 12.0)
+    )
+    stage2_pct: float = field(
+        default_factory=lambda: _float_env("TRAIL_STAGE2_PCT", 17.0)
+    )
+    stage3_at: float = field(
+        default_factory=lambda: _float_env("TRAIL_STAGE3_AT", 18.0)
+    )
+    stage3_pct: float = field(
+        default_factory=lambda: _float_env("TRAIL_STAGE3_PCT", 12.0)
+    )
+    stage4_at: float = field(
+        default_factory=lambda: _float_env("TRAIL_STAGE4_AT", 26.0)
+    )
+    stage4_pct: float = field(
+        default_factory=lambda: _float_env("TRAIL_STAGE4_PCT", 6.0)
+    )
+    base_pct: float = field(
+        default_factory=lambda: _float_env("TRAILING_STOP_PCT", 13.0)
+    )
+    trend_widen: float = field(
+        default_factory=lambda: _float_env("TRAIL_TREND_WIDEN", 1.5)
+    )
+    chop_tighten: float = field(
+        default_factory=lambda: _float_env("TRAIL_CHOP_TIGHTEN", 0.8)
+    )
+    trend_adx: float = field(
+        default_factory=lambda: _float_env("TRAIL_TREND_ADX", 28.0)
+    )
 
 
 @dataclass
 class DcaConfig:
     enabled: bool = False
     stake_ton: float = field(default_factory=lambda: _float_env("DCA_STAKE_TON", 100))
-    target_profit_pct: float = field(default_factory=lambda: _float_env("DCA_TARGET_PROFIT_PCT", 22))
-    drop_trigger_pct: float = field(default_factory=lambda: _float_env("DCA_DROP_TRIGGER_PCT", 10))
-    pullback_wait_pct: float = field(default_factory=lambda: _float_env("DCA_PULLBACK_WAIT_PCT", 13))
+    target_profit_pct: float = field(
+        default_factory=lambda: _float_env("DCA_TARGET_PROFIT_PCT", 22)
+    )
+    drop_trigger_pct: float = field(
+        default_factory=lambda: _float_env("DCA_DROP_TRIGGER_PCT", 10)
+    )
+    pullback_wait_pct: float = field(
+        default_factory=lambda: _float_env("DCA_PULLBACK_WAIT_PCT", 13)
+    )
     max_entries: int = field(default_factory=lambda: _int_env("DCA_MAX_ENTRIES", 10))
-    cascade_enabled: bool = field(default_factory=lambda: _bool_env("DCA_CASCADE_ENABLED", True))
-    cascade_l1_pct: float = field(default_factory=lambda: _float_env("DCA_CASCADE_LEVEL1_PCT", 28))
-    cascade_l2_pct: float = field(default_factory=lambda: _float_env("DCA_CASCADE_LEVEL2_PCT", 52))
-    smart_reentry: bool = field(default_factory=lambda: _bool_env("DCA_SMART_REENTRY_ENABLED", True))
-    smart_reentry_pullback: float = field(default_factory=lambda: _float_env("DCA_SMART_REENTRY_PULLBACK_PCT", 7))
-    smart_reentry_min_conf: float = field(default_factory=lambda: _float_env("DCA_SMART_REENTRY_MIN_AI_CONF", 50))
-    reentry_cooldown_sec: int = field(default_factory=lambda: _int_env("DCA_REENTRY_COOLDOWN_SEC", 30))
-    compound_enabled: bool = field(default_factory=lambda: _bool_env("DCA_COMPOUND_ENABLED", True))
-    compound_ratio: float = field(default_factory=lambda: _float_env("DCA_COMPOUND_RATIO", 0.45))
-    compound_max_ton: float = field(default_factory=lambda: _float_env("DCA_COMPOUND_MAX_TON", 500))
-    adaptive_trigger: bool = field(default_factory=lambda: _bool_env("DCA_ADAPTIVE_TRIGGER_ENABLED", True))
-    adaptive_fast_move: float = field(default_factory=lambda: _float_env("DCA_ADAPTIVE_FAST_MOVE_PCT", 6))
-    adaptive_fast_drop: float = field(default_factory=lambda: _float_env("DCA_ADAPTIVE_FAST_DROP_PCT", 4))
-    ai_adapt_min_cycles: int = field(default_factory=lambda: _int_env("DCA_AI_ADAPT_MIN_CYCLES", 3))
-    ai_target_cap: float = field(default_factory=lambda: _float_env("DCA_AI_TARGET_CAP", 60))
-    ai_drop_cap: float = field(default_factory=lambda: _float_env("DCA_AI_DROP_CAP", 50))
-    ai_pullback_cap: float = field(default_factory=lambda: _float_env("DCA_AI_PULLBACK_CAP", 50))
-    ai_sell_block_conf: float = field(default_factory=lambda: _float_env("DCA_AI_SELL_BLOCK_CONF", 85))
+    cascade_enabled: bool = field(
+        default_factory=lambda: _bool_env("DCA_CASCADE_ENABLED", True)
+    )
+    cascade_l1_pct: float = field(
+        default_factory=lambda: _float_env("DCA_CASCADE_LEVEL1_PCT", 28)
+    )
+    cascade_l2_pct: float = field(
+        default_factory=lambda: _float_env("DCA_CASCADE_LEVEL2_PCT", 52)
+    )
+    smart_reentry: bool = field(
+        default_factory=lambda: _bool_env("DCA_SMART_REENTRY_ENABLED", True)
+    )
+    smart_reentry_pullback: float = field(
+        default_factory=lambda: _float_env("DCA_SMART_REENTRY_PULLBACK_PCT", 7)
+    )
+    smart_reentry_min_conf: float = field(
+        default_factory=lambda: _float_env("DCA_SMART_REENTRY_MIN_AI_CONF", 50)
+    )
+    reentry_cooldown_sec: int = field(
+        default_factory=lambda: _int_env("DCA_REENTRY_COOLDOWN_SEC", 30)
+    )
+    compound_enabled: bool = field(
+        default_factory=lambda: _bool_env("DCA_COMPOUND_ENABLED", True)
+    )
+    compound_ratio: float = field(
+        default_factory=lambda: _float_env("DCA_COMPOUND_RATIO", 0.45)
+    )
+    compound_max_ton: float = field(
+        default_factory=lambda: _float_env("DCA_COMPOUND_MAX_TON", 500)
+    )
+    adaptive_trigger: bool = field(
+        default_factory=lambda: _bool_env("DCA_ADAPTIVE_TRIGGER_ENABLED", True)
+    )
+    adaptive_fast_move: float = field(
+        default_factory=lambda: _float_env("DCA_ADAPTIVE_FAST_MOVE_PCT", 6)
+    )
+    adaptive_fast_drop: float = field(
+        default_factory=lambda: _float_env("DCA_ADAPTIVE_FAST_DROP_PCT", 4)
+    )
+    ai_adapt_min_cycles: int = field(
+        default_factory=lambda: _int_env("DCA_AI_ADAPT_MIN_CYCLES", 3)
+    )
+    ai_target_cap: float = field(
+        default_factory=lambda: _float_env("DCA_AI_TARGET_CAP", 60)
+    )
+    ai_drop_cap: float = field(
+        default_factory=lambda: _float_env("DCA_AI_DROP_CAP", 50)
+    )
+    ai_pullback_cap: float = field(
+        default_factory=lambda: _float_env("DCA_AI_PULLBACK_CAP", 50)
+    )
+    ai_sell_block_conf: float = field(
+        default_factory=lambda: _float_env("DCA_AI_SELL_BLOCK_CONF", 85)
+    )
 
 
 @dataclass
 class AiConfig:
     autonomous_mode: bool = True
-    full_rights: bool = field(default_factory=lambda: _bool_env("AI_FULL_RIGHTS", False))
-    full_rights_min_conf: float = field(default_factory=lambda: _float_env("AI_FULL_RIGHTS_MIN_CONF", 52))
-    autonomous_min_conf: float = field(default_factory=lambda: _float_env("AI_AUTONOMOUS_MIN_CONF", 50))
-    min_confidence: float = field(default_factory=lambda: _float_env("MIN_AI_CONFIDENCE", 50))
-    override_confidence: float = field(default_factory=lambda: _float_env("AI_OVERRIDE_CONFIDENCE", 78))
-    hard_override_confidence: float = field(default_factory=lambda: _float_env("AI_HARD_OVERRIDE_CONFIDENCE", 93))
-    atr_feasibility_mult: float = field(default_factory=lambda: _float_env("AI_ATR_FEASIBILITY_MULT", 1.2))
+    full_rights: bool = field(
+        default_factory=lambda: _bool_env("AI_FULL_RIGHTS", False)
+    )
+    full_rights_min_conf: float = field(
+        default_factory=lambda: _float_env("AI_FULL_RIGHTS_MIN_CONF", 52)
+    )
+    autonomous_min_conf: float = field(
+        default_factory=lambda: _float_env("AI_AUTONOMOUS_MIN_CONF", 50)
+    )
+    min_confidence: float = field(
+        default_factory=lambda: _float_env("MIN_AI_CONFIDENCE", 50)
+    )
+    override_confidence: float = field(
+        default_factory=lambda: _float_env("AI_OVERRIDE_CONFIDENCE", 78)
+    )
+    hard_override_confidence: float = field(
+        default_factory=lambda: _float_env("AI_HARD_OVERRIDE_CONFIDENCE", 93)
+    )
+    atr_feasibility_mult: float = field(
+        default_factory=lambda: _float_env("AI_ATR_FEASIBILITY_MULT", 1.2)
+    )
     size_mult: float = field(default_factory=lambda: _float_env("AI_SIZE_MULT", 1.5))
 
 
 @dataclass
 class SmartConfig:
-    buy_enabled: bool = field(default_factory=lambda: _bool_env("SMART_BUY_ENABLED", True))
-    buy_pullback_pct: float = field(default_factory=lambda: _float_env("SMART_BUY_PULLBACK_PCT", 0.2))
-    buy_max_wait_ticks: int = field(default_factory=lambda: _int_env("SMART_BUY_MAX_WAIT_TICKS", 2))
-    buy_skip_conf: float = field(default_factory=lambda: _float_env("SMART_BUY_SKIP_CONF", 88.0))
-    tp_enabled: bool = field(default_factory=lambda: _bool_env("SMART_TP_ENABLED", True))
-    tp_min_conf: float = field(default_factory=lambda: _float_env("SMART_TP_MIN_CONF", 70.0))
-    tp_tight_trail_pct: float = field(default_factory=lambda: _float_env("SMART_TP_TIGHT_TRAIL_PCT", 10.0))
+    buy_enabled: bool = field(
+        default_factory=lambda: _bool_env("SMART_BUY_ENABLED", True)
+    )
+    buy_pullback_pct: float = field(
+        default_factory=lambda: _float_env("SMART_BUY_PULLBACK_PCT", 0.2)
+    )
+    buy_max_wait_ticks: int = field(
+        default_factory=lambda: _int_env("SMART_BUY_MAX_WAIT_TICKS", 2)
+    )
+    buy_skip_conf: float = field(
+        default_factory=lambda: _float_env("SMART_BUY_SKIP_CONF", 88.0)
+    )
+    tp_enabled: bool = field(
+        default_factory=lambda: _bool_env("SMART_TP_ENABLED", True)
+    )
+    tp_min_conf: float = field(
+        default_factory=lambda: _float_env("SMART_TP_MIN_CONF", 70.0)
+    )
+    tp_tight_trail_pct: float = field(
+        default_factory=lambda: _float_env("SMART_TP_TIGHT_TRAIL_PCT", 10.0)
+    )
 
 
 @dataclass
 class ProtectionConfig:
-    profit_protect_enabled: bool = field(default_factory=lambda: _bool_env("PROFIT_PROTECT_ENABLED", True))
-    profit_protect_ton: float = field(default_factory=lambda: _float_env("PROFIT_PROTECT_TON", 3.0))
-    profit_protect_drop_pct: float = field(default_factory=lambda: _float_env("PROFIT_PROTECT_DROP_PCT", 9.0))
-    profit_protect_ai_sell: bool = field(default_factory=lambda: _bool_env("PROFIT_PROTECT_AI_SELL", True))
-    circuit_breaker_enabled: bool = field(default_factory=lambda: _bool_env("CIRCUIT_BREAKER_ENABLED", True))
-    circuit_breaker_daily_loss_pct: float = field(default_factory=lambda: _float_env("CIRCUIT_BREAKER_DAILY_LOSS_PCT", 15.0))
-    stale_position_enabled: bool = field(default_factory=lambda: _bool_env("STALE_POSITION_ENABLED", False))
-    stale_position_max_hours: float = field(default_factory=lambda: _float_env("STALE_POSITION_MAX_HOURS", 72.0))
-    stale_position_min_profit_pct: float = field(default_factory=lambda: _float_env("STALE_POSITION_MIN_PROFIT_PCT", 1.0))
-    loss_cooldown_sec: int = field(default_factory=lambda: _int_env("LOSS_COOLDOWN_SEC", 120))
+    profit_protect_enabled: bool = field(
+        default_factory=lambda: _bool_env("PROFIT_PROTECT_ENABLED", True)
+    )
+    profit_protect_ton: float = field(
+        default_factory=lambda: _float_env("PROFIT_PROTECT_TON", 3.0)
+    )
+    profit_protect_drop_pct: float = field(
+        default_factory=lambda: _float_env("PROFIT_PROTECT_DROP_PCT", 9.0)
+    )
+    profit_protect_ai_sell: bool = field(
+        default_factory=lambda: _bool_env("PROFIT_PROTECT_AI_SELL", True)
+    )
+    circuit_breaker_enabled: bool = field(
+        default_factory=lambda: _bool_env("CIRCUIT_BREAKER_ENABLED", True)
+    )
+    circuit_breaker_daily_loss_pct: float = field(
+        default_factory=lambda: _float_env("CIRCUIT_BREAKER_DAILY_LOSS_PCT", 15.0)
+    )
+    stale_position_enabled: bool = field(
+        default_factory=lambda: _bool_env("STALE_POSITION_ENABLED", False)
+    )
+    stale_position_max_hours: float = field(
+        default_factory=lambda: _float_env("STALE_POSITION_MAX_HOURS", 72.0)
+    )
+    stale_position_min_profit_pct: float = field(
+        default_factory=lambda: _float_env("STALE_POSITION_MIN_PROFIT_PCT", 1.0)
+    )
+    loss_cooldown_sec: int = field(
+        default_factory=lambda: _int_env("LOSS_COOLDOWN_SEC", 120)
+    )
 
 
 @dataclass
 class ShortConfig:
-    enabled: bool = field(default_factory=lambda: _bool_env("SHORT_TRADING_ENABLED", True))
-    trail_pct: float = field(default_factory=lambda: _float_env("SHORT_TRAIL_PCT", 10.0))
+    enabled: bool = field(
+        default_factory=lambda: _bool_env("SHORT_TRADING_ENABLED", True)
+    )
+    trail_pct: float = field(
+        default_factory=lambda: _float_env("SHORT_TRAIL_PCT", 10.0)
+    )
     reserve: float = field(default_factory=lambda: _float_env("GRINCH_RESERVE", 500))
-    min_ai_conf: float = field(default_factory=lambda: _float_env("SHORT_MIN_AI_CONF", 58.0))
+    min_ai_conf: float = field(
+        default_factory=lambda: _float_env("SHORT_MIN_AI_CONF", 58.0)
+    )
 
 
 @dataclass
 class ScalpConfig:
     enabled: bool = field(default_factory=lambda: _bool_env("SCALPING_ENABLED", True))
-    target_net_pct: float = field(default_factory=lambda: _float_env("SCALP_TARGET_NET_PCT", 3.0))
+    target_net_pct: float = field(
+        default_factory=lambda: _float_env("SCALP_TARGET_NET_PCT", 3.0)
+    )
     tp_pct: float = field(default_factory=lambda: _float_env("SCALP_TP_PCT", 5.0))
     trail_pct: float = field(default_factory=lambda: _float_env("SCALP_TRAIL_PCT", 7.0))
-    min_ai_conf: float = field(default_factory=lambda: _float_env("SCALP_MIN_AI_CONF", 52.0))
-    max_atr_pct: float = field(default_factory=lambda: _float_env("SCALP_MAX_ATR_PCT", 8.0))
+    min_ai_conf: float = field(
+        default_factory=lambda: _float_env("SCALP_MIN_AI_CONF", 52.0)
+    )
+    max_atr_pct: float = field(
+        default_factory=lambda: _float_env("SCALP_MAX_ATR_PCT", 8.0)
+    )
 
 
 @dataclass
 class FusionConfig:
     enabled: bool = field(default_factory=lambda: _bool_env("FUSION_ENABLED", True))
-    skip_confirm_conf: float = field(default_factory=lambda: _float_env("FUSION_SKIP_CONFIRM_CONF", 68.0))
-    pump_boost_max: float = field(default_factory=lambda: _float_env("FUSION_PUMP_BOOST_MAX", 1.8))
+    skip_confirm_conf: float = field(
+        default_factory=lambda: _float_env("FUSION_SKIP_CONFIRM_CONF", 68.0)
+    )
+    pump_boost_max: float = field(
+        default_factory=lambda: _float_env("FUSION_PUMP_BOOST_MAX", 1.8)
+    )
 
 
 class _ConfigMeta(type):
     """Metaclass allowing Config.SYMBOL style access."""
+
     _instance = None
 
     def __call__(cls, *args, **kwargs):
@@ -227,7 +376,11 @@ class Config(metaclass=_ConfigMeta):
         self.CONFLUENCE_RSI_MAX = _float_env("CONFLUENCE_RSI_MAX", 78)
         self.CONFLUENCE_VOL_MIN_RATIO = _float_env("CONFLUENCE_VOL_MIN_RATIO", 0.6)
         self.EV_THRESHOLD = _float_env("EV_THRESHOLD", -1.0)
-        self.DEAD_HOURS_UTC = [int(h) for h in _str_env("DEAD_HOURS_UTC", "0,3,8,12,14").split(",") if h.strip().lstrip("-").isdigit()]
+        self.DEAD_HOURS_UTC = [
+            int(h)
+            for h in _str_env("DEAD_HOURS_UTC", "0,3,8,12,14").split(",")
+            if h.strip().lstrip("-").isdigit()
+        ]
         self.DEAD_HOURS_DROP_MULT = _float_env("DEAD_HOURS_DROP_MULT", 1.5)
         self.ALLIN_ON_BOTTOM = _bool_env("ALLIN_ON_BOTTOM", False)
         self.ALLIN_BOTTOM_CONF = _float_env("ALLIN_BOTTOM_CONF", 65)
@@ -252,9 +405,15 @@ class Config(metaclass=_ConfigMeta):
         self.FAST_REENTRY_MIN_CONF = _float_env("FAST_REENTRY_MIN_CONF", 55.0)
         self.SECRET_KEY = _str_env("SECRET_KEY", "")
         self.REPORT_ERRORS = _bool_env("REPORT_ERRORS", True)
-        self.TON_WALLET = _str_env("TON_WALLET", "EQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hGXJ")
-        self.TOKEN_ADDRESS = _str_env("TOKEN_ADDRESS", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL")
-        self.POOL_ADDRESS = _str_env("POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z")
+        self.TON_WALLET = _str_env(
+            "TON_WALLET", "EQDDgb2BTM-KCjntOoUg6uHllvnu3KGqEquKw6IySVP3hGXJ"
+        )
+        self.TOKEN_ADDRESS = _str_env(
+            "TOKEN_ADDRESS", "EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL"
+        )
+        self.POOL_ADDRESS = _str_env(
+            "POOL_ADDRESS", "EQDpVwTQr53cwgaT_VCFsmrleg5fBvStTjMrvyvprF_ROC9Z"
+        )
         self.GRINCH_TOKEN_ADDRESS = self.TOKEN_ADDRESS
         self.GRINCH_POOL_ADDRESS = self.POOL_ADDRESS
         self.BINANCE_API_KEY = _str_env("BINANCE_API_KEY", "")

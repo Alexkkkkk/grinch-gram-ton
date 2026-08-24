@@ -1,4 +1,5 @@
 """Circuit breaker — halt trading on excessive losses."""
+
 import logging
 from datetime import datetime, timedelta
 
@@ -27,6 +28,10 @@ class CircuitBreaker:
             return False
         limit = getattr(self.config, "circuit_breaker_daily_loss_pct", 15.0)
         if self.daily_pnl < -limit:
-            logger.warning("CIRCUIT BREAKER: daily loss %.2f%% exceeds %.2f%%", abs(self.daily_pnl), limit)
+            logger.warning(
+                "CIRCUIT BREAKER: daily loss %.2f%% exceeds %.2f%%",
+                abs(self.daily_pnl),
+                limit,
+            )
             return True
         return False

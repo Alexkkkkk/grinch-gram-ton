@@ -1,4 +1,5 @@
 """Error handling middleware — JSON error responses."""
+
 import logging
 import traceback
 from flask import jsonify
@@ -13,7 +14,10 @@ class ErrorHandlerMiddleware:
     def register(app):
         @app.errorhandler(404)
         def not_found(e):
-            return jsonify({"error": "Not found", "path": getattr(e, "path", None)}), 404
+            return (
+                jsonify({"error": "Not found", "path": getattr(e, "path", None)}),
+                404,
+            )
 
         @app.errorhandler(500)
         def internal_error(e):
@@ -22,7 +26,15 @@ class ErrorHandlerMiddleware:
 
         @app.errorhandler(429)
         def rate_limit(e):
-            return jsonify({"error": "Rate limit exceeded", "retry_after": getattr(e, "retry_after", 60)}), 429
+            return (
+                jsonify(
+                    {
+                        "error": "Rate limit exceeded",
+                        "retry_after": getattr(e, "retry_after", 60),
+                    }
+                ),
+                429,
+            )
 
         @app.errorhandler(400)
         def bad_request(e):
