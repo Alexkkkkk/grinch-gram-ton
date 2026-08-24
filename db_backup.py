@@ -159,9 +159,7 @@ def run_backup() -> bool:
                 rows = [dict(zip(cols, row)) for row in cur.fetchall()]
                 out = dest / f"{DEEP_MODELS_TABLE}_meta.json"
                 out.write_text(
-                    json.dumps(
-                        rows, ensure_ascii=False, indent=2, default=_jdefault
-                    ),
+                    json.dumps(rows, ensure_ascii=False, indent=2, default=_jdefault),
                     encoding="utf-8",
                 )
                 meta["tables"][
