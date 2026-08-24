@@ -133,7 +133,7 @@ def migrate_to_db():
 # ─── JSON helpers ─────────────────────────────────────────────────────────────
 def _load_json() -> dict:
     try:
-        with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
+        with open(_SETTINGS_FILE, encoding="utf-8") as f:
             data = json.load(f)
             return data if isinstance(data, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):

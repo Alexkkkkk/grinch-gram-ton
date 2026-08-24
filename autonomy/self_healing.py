@@ -4,17 +4,15 @@ Self-Healing Engine — automatically fixes common problems on VPS.
 Runs as daemon, monitors system health, applies fixes without human intervention.
 """
 
-import os
-import sys
-import time
 import json
-import signal
 import logging
+import os
+import signal
 import subprocess
-import psutil
+import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-from pathlib import Path
+
+import psutil
 
 logger = logging.getLogger("autonomy.self_healing")
 
@@ -68,8 +66,8 @@ class SelfHealingEngine:
     def __init__(self, check_interval: int = 30):
         self.check_interval = check_interval
         self.running = False
-        self.healing_log: List[Dict] = []
-        self.last_heal_time: Dict[str, datetime] = {}
+        self.healing_log: list[dict] = []
+        self.last_heal_time: dict[str, datetime] = {}
         self.heal_cooldown = timedelta(minutes=5)
 
         # Setup signal handlers
@@ -80,7 +78,7 @@ class SelfHealingEngine:
         logger.info("Self-healing engine shutting down...")
         self.running = False
 
-    def check_bot_health(self) -> Dict:
+    def check_bot_health(self) -> dict:
         """Check if bot is healthy."""
         health = {"status": "unknown", "checks": {}}
 
@@ -147,7 +145,7 @@ class SelfHealingEngine:
 
         return health
 
-    def heal(self, health: Dict) -> List[Dict]:
+    def heal(self, health: dict) -> list[dict]:
         """Apply healing actions based on health status."""
         actions_taken = []
         now = datetime.utcnow()
@@ -193,7 +191,7 @@ class SelfHealingEngine:
             return True
         return now - last > self.heal_cooldown
 
-    def _execute_heal(self, action_name: str) -> Dict:
+    def _execute_heal(self, action_name: str) -> dict:
         """Execute a healing action."""
         action = self.HEALING_ACTIONS.get(action_name)
         if not action:

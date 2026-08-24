@@ -4,20 +4,19 @@ GRINCH-GRAM Supervisor — orchestrates all autonomy modules.
 Single entry point for self-healing, monitoring, updating.
 """
 
-import os
-import sys
-import time
-import signal
 import logging
+import os
+import signal
+import sys
 import threading
-from pathlib import Path
+import time
 
 # Add project root to path
 sys.path.insert(0, "/opt/bot")
 
-from autonomy.self_healing import SelfHealingEngine
-from autonomy.performance_monitor import PerformanceMonitor
 from autonomy.auto_updater import AutoUpdater
+from autonomy.performance_monitor import PerformanceMonitor
+from autonomy.self_healing import SelfHealingEngine
 
 logging.basicConfig(
     level=logging.INFO,
