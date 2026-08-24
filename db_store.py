@@ -966,9 +966,12 @@ def ai_examples_export_all():
     if not _check_available():
         return
     try:
-        with _conn() as conn, conn.cursor(
-            name="export_cur", cursor_factory=psycopg2.extras.RealDictCursor
-        ) as cur:
+        with (
+            _conn() as conn,
+            conn.cursor(
+                name="export_cur", cursor_factory=psycopg2.extras.RealDictCursor
+            ) as cur,
+        ):
             cur.itersize = 1000
             cur.execute("""
                     SELECT id, created_at, label, weight, features

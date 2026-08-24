@@ -90,9 +90,7 @@ class GitHubIssueManager:
         if hash_id in self._issue_cache:
             return self._issue_cache[hash_id]
 
-        issues = self._api(
-            "issues?state=open&labels=auto-error,needs-fix&per_page=100"
-        )
+        issues = self._api("issues?state=open&labels=auto-error,needs-fix&per_page=100")
         for issue in issues:
             if hash_id in issue.get("body", ""):
                 self._issue_cache[hash_id] = issue
