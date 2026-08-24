@@ -1,0 +1,36 @@
+name: CI - Grid Bot
+
+on:
+  push:
+    paths:
+      - 'grid-bot/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'grid-bot/**'
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd grid-bot
+          pip install -r requirements.txt
+
+      - name: Syntax check
+        run: |
+          cd grid-bot
+          python -m py_compile app.py config.py database.py exchange_client.py grid_engine.py github_reporter.py
+
+      - name: Check imports
+        run: |
+          cd grid-bot
+          python -c "import config, database, exchange_client, grid_engine, github_reporter"
