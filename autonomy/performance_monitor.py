@@ -3,14 +3,13 @@
 Performance Monitor — tracks bot performance and auto-optimizes.
 """
 
+import logging
 import os
 import time
-import json
-import logging
-import psutil
-from datetime import datetime, timedelta
 from collections import deque
-from typing import Dict, List
+from datetime import datetime
+
+import psutil
 
 logger = logging.getLogger("autonomy.performance")
 
@@ -21,10 +20,10 @@ class PerformanceMonitor:
     def __init__(self, window_minutes: int = 60):
         self.window_minutes = window_minutes
         self.metrics: deque = deque(maxlen=window_minutes * 60)
-        self.alerts: List[Dict] = []
-        self.optimizations_applied: List[Dict] = []
+        self.alerts: list[dict] = []
+        self.optimizations_applied: list[dict] = []
 
-    def collect(self) -> Dict:
+    def collect(self) -> dict:
         """Collect current performance metrics."""
         metric = {
             "timestamp": datetime.utcnow().isoformat(),
@@ -42,7 +41,7 @@ class PerformanceMonitor:
         self.metrics.append(metric)
         return metric
 
-    def _get_network_stats(self) -> Dict:
+    def _get_network_stats(self) -> dict:
         """Get network I/O stats."""
         try:
             net = psutil.net_io_counters()
@@ -55,7 +54,7 @@ class PerformanceMonitor:
         except:
             return {}
 
-    def _get_bot_processes(self) -> List[Dict]:
+    def _get_bot_processes(self) -> list[dict]:
         """Find GRINCH-GRAM processes."""
         processes = []
         for proc in psutil.process_iter(
@@ -74,7 +73,7 @@ class PerformanceMonitor:
                 )
         return processes
 
-    def analyze(self) -> List[Dict]:
+    def analyze(self) -> list[dict]:
         """Analyze metrics and suggest optimizations."""
         if len(self.metrics) < 10:
             return []
@@ -120,7 +119,7 @@ class PerformanceMonitor:
 
         return suggestions
 
-    def apply_optimization(self, suggestion: Dict) -> bool:
+    def apply_optimization(self, suggestion: dict) -> bool:
         """Apply an optimization suggestion."""
         action = suggestion.get("action")
 

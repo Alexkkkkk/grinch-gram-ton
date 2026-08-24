@@ -3,14 +3,13 @@
 Health Monitor — runs on VPS, reports status to GitHub.
 """
 
-import os
-import sys
-import json
-import time
 import logging
+import os
 import subprocess
-import requests
+import time
 from datetime import datetime
+
+import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("health_monitor")

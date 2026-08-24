@@ -7,17 +7,14 @@ Error Reporter v3 — VPS → GitHub Issues + Auto-Fix with Intelligence Engine
 Uses autonomy.intelligence for ML-powered error analysis.
 """
 
+import hashlib
+import logging
 import os
 import re
 import sys
-import json
-import hashlib
-import logging
 import traceback
-import subprocess
-from datetime import datetime, timedelta
-from typing import Optional, Dict, List
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -26,7 +23,7 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from autonomy.intelligence import get_intelligence, ErrorIntelligence
+    from autonomy.intelligence import ErrorIntelligence, get_intelligence
 except ImportError:
     get_intelligence = None
 
@@ -52,7 +49,7 @@ class ErrorReport:
     severity: str
     count: int = 1
     hash_id: str = ""
-    intelligence_analysis: Optional[Dict] = None
+    intelligence_analysis: dict | None = None
 
     def __post_init__(self):
         if not self.hash_id:
@@ -72,7 +69,7 @@ class GitHubIssueManager:
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         }
-        self._issue_cache: Dict[str, dict] = {}
+        self._issue_cache: dict[str, dict] = {}
 
     def _api(self, endpoint: str, method="GET", data=None) -> dict:
         url = f"{GITHUB_API}/repos/{self.repo}/{endpoint}"
@@ -89,12 +86,12 @@ class GitHubIssueManager:
             logger.error("GitHub API error: %s", e)
             return {}
 
-    def find_issue_by_hash(self, hash_id: str) -> Optional[dict]:
+    def find_issue_by_hash(self, hash_id: str) -> dict | None:
         if hash_id in self._issue_cache:
             return self._issue_cache[hash_id]
 
         issues = self._api(
-            f"issues?state=open&labels=auto-error,needs-fix&per_page=100"
+            "issues?state=open&labels=auto-error,needs-fix&per_page=100"
         )
         for issue in issues:
             if hash_id in issue.get("body", ""):
@@ -102,7 +99,7 @@ class GitHubIssueManager:
                 return issue
         return None
 
-    def create_issue(self, report: ErrorReport) -> Optional[dict]:
+    def create_issue(self, report: ErrorReport) -> dict | None:
         title = (
             f"[{report.severity.upper()}] {report.error_type}: {report.message[:80]}"
         )
@@ -158,7 +155,7 @@ class GitHubIssueManager:
             )
         return result
 
-    def update_issue(self, issue_number: int, report: ErrorReport) -> Optional[dict]:
+    def update_issue(self, issue_number: int, report: ErrorReport) -> dict | None:
         body_addition = (
             f"\n\n### New occurrence at {report.timestamp}\nCount: {report.count}"
         )
@@ -186,7 +183,7 @@ class GitHubIssueManager:
         logger.info("Created fix branch: %s", branch_name)
         return branch_name
 
-    def create_pull_request(self, branch: str, title: str, body: str) -> Optional[dict]:
+    def create_pull_request(self, branch: str, title: str, body: str) -> dict | None:
         data = {
             "title": f"[AUTO-FIX] {title}",
             "body": body,
@@ -207,7 +204,7 @@ class AutoFixEngine:
         self.project_root = Path(project_root)
         self.intelligence = get_intelligence() if get_intelligence else None
 
-    def analyze(self, report: ErrorReport) -> Optional[Dict]:
+    def analyze(self, report: ErrorReport) -> dict | None:
         """Analyze error using Intelligence Engine."""
         if self.intelligence:
             return self.intelligence.analyze(
@@ -215,7 +212,7 @@ class AutoFixEngine:
             )
         return None
 
-    def generate_fix(self, analysis: Dict, report: ErrorReport) -> Optional[str]:
+    def generate_fix(self, analysis: dict, report: ErrorReport) -> str | None:
         """Generate code fix."""
         if self.intelligence:
             return self.intelligence.generate_fix_code(
@@ -230,7 +227,7 @@ class ErrorReporterV3:
     def __init__(self):
         self.github = GitHubIssueManager(TOKEN, REPO)
         self.fix_engine = AutoFixEngine()
-        self.error_counts: Dict[str, int] = {}
+        self.error_counts: dict[str, int] = {}
         self._hostname = os.uname().nodename
         self.intelligence = get_intelligence() if get_intelligence else None
 
@@ -332,7 +329,7 @@ class ErrorReporterV3:
 
 
 # Global instance
-_reporter: Optional[ErrorReporterV3] = None
+_reporter: ErrorReporterV3 | None = None
 
 
 def get_reporter() -> ErrorReporterV3:

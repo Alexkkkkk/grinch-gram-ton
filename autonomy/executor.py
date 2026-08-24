@@ -3,12 +3,9 @@
 VPS Command Executor — safely executes commands on VPS and reports results.
 """
 
-import os
-import json
 import logging
 import subprocess
 from datetime import datetime
-from typing import Dict, List, Optional
 
 logger = logging.getLogger("autonomy.executor")
 
@@ -26,7 +23,7 @@ class SafeExecutor:
     }
 
     def __init__(self):
-        self.history: List[Dict] = []
+        self.history: list[dict] = []
 
     def validate(self, command: str) -> bool:
         """Validate if command is allowed."""
@@ -54,7 +51,7 @@ class SafeExecutor:
 
         return True
 
-    def execute(self, command: str, timeout: int = 60) -> Dict:
+    def execute(self, command: str, timeout: int = 60) -> dict:
         """Execute a validated command."""
         if not self.validate(command):
             return {"status": "blocked", "command": command}
@@ -96,16 +93,16 @@ class SafeExecutor:
                 "error": str(e),
             }
 
-    def docker_health(self) -> Dict:
+    def docker_health(self) -> dict:
         """Check Docker health."""
         return self.execute(
             "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'"
         )
 
-    def bot_logs(self, lines: int = 50) -> Dict:
+    def bot_logs(self, lines: int = 50) -> dict:
         """Get bot logs."""
         return self.execute(f"cd /opt/bot && docker-compose logs --tail={lines} bot")
 
-    def system_info(self) -> Dict:
+    def system_info(self) -> dict:
         """Get system information."""
         return self.execute("uptime && free -h && df -h /")

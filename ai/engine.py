@@ -6,15 +6,15 @@ import pickle
 import threading
 import time
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
-    from sklearn.preprocessing import StandardScaler
     from sklearn.ensemble import (
-        RandomForestClassifier,
         ExtraTreesClassifier,
         GradientBoostingClassifier,
+        RandomForestClassifier,
     )
+    from sklearn.preprocessing import StandardScaler
 except ImportError:
     StandardScaler = None
     RandomForestClassifier = None
@@ -63,14 +63,14 @@ class AIEngine:
 
     def __init__(self, n_features: int = 32) -> None:
         self._lock = threading.RLock()
-        self._models: Dict[str, Any] = {}
-        self._scaler: Optional[Any] = None
+        self._models: dict[str, Any] = {}
+        self._scaler: Any | None = None
         self._trained = False
-        self._examples: List[Dict] = []
+        self._examples: list[dict] = []
         self._last_train = 0.0
         self._n_features = n_features
 
-    def pretrain(self, ohlcv: List[dict], on_progress=None) -> bool:
+    def pretrain(self, ohlcv: list[dict], on_progress=None) -> bool:
         _ensure_sklearn()
         from ai.features import build_training_data
 
@@ -107,7 +107,7 @@ class AIEngine:
             on_progress({"stage": "pretrain", "done": True, "samples": len(X)})
         return True
 
-    def analyze(self, ohlcv: List[dict], **kwargs) -> Dict[str, Any]:
+    def analyze(self, ohlcv: list[dict], **kwargs) -> dict[str, Any]:
         from ai.features import extract_features
         from ai.regime import BreakoutEngine, MomentumEngine, PumpDetector
 
@@ -172,12 +172,12 @@ class AIEngine:
             "ev_ok": True,
         }
 
-    def feedback(self, features: List[float], label: int) -> None:
+    def feedback(self, features: list[float], label: int) -> None:
         self._examples.append({"features": features, "label": label, "ts": time.time()})
         if len(self._examples) > 5000:
             self._examples = self._examples[-4000:]
 
-    def capture_buy_context(self, ohlcv: List[dict], **kwargs) -> Optional[List[float]]:
+    def capture_buy_context(self, ohlcv: list[dict], **kwargs) -> list[float] | None:
         from ai.features import extract_features
 
         feat = extract_features(ohlcv, self._n_features)
@@ -212,7 +212,7 @@ class AIEngine:
     def load_deep_models(self) -> bool:
         return False
 
-    def _default_signal(self) -> Dict[str, Any]:
+    def _default_signal(self) -> dict[str, Any]:
         return {
             "ai_signal": "HOLD",
             "confidence": 0.0,

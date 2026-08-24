@@ -1,7 +1,6 @@
 """Market regime detection — momentum, breakout, pump detection."""
 
 import logging
-from typing import Dict, List
 
 import numpy as np
 
@@ -12,7 +11,7 @@ class MomentumEngine:
     """Detects momentum regime from price series."""
 
     @staticmethod
-    def detect(close: np.ndarray) -> Dict[str, any]:
+    def detect(close: np.ndarray) -> dict[str, any]:
         if len(close) < 10:
             return {"signal": "CALM", "score": 0.0}
         ret_5 = (close[-1] - close[-5]) / close[-5] * 100 if close[-5] > 0 else 0
@@ -33,7 +32,7 @@ class BreakoutEngine:
     """Detects breakout patterns."""
 
     @staticmethod
-    def detect(close: np.ndarray, high: np.ndarray, low: np.ndarray) -> Dict[str, any]:
+    def detect(close: np.ndarray, high: np.ndarray, low: np.ndarray) -> dict[str, any]:
         if len(close) < 20:
             return {"signal": "FLAT", "score": 0.0}
         upper = np.max(high[-20:-1])
@@ -55,7 +54,7 @@ class PumpDetector:
     """Detects pump conditions (volume + price acceleration)."""
 
     @staticmethod
-    def detect(close: np.ndarray, volume: np.ndarray) -> Dict[str, any]:
+    def detect(close: np.ndarray, volume: np.ndarray) -> dict[str, any]:
         if len(close) < 10 or len(volume) < 10:
             return {"score": 0.0, "detected": False}
         vol_ma = np.mean(volume[-10:-1])

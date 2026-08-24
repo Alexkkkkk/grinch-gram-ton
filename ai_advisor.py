@@ -12,7 +12,6 @@ import threading
 import time
 from collections import deque
 from datetime import datetime
-from typing import Optional, Tuple
 
 try:
     import brain_fusion as _bf
@@ -45,7 +44,7 @@ _GROQ_KEY_FILE = os.path.join(_DATA_DIR, "groq_key.txt")
 def _read_key_file() -> str:
     """Читает ключ из файла. Возвращает пустую строку если файл отсутствует."""
     try:
-        with open(_GROQ_KEY_FILE, "r", encoding="utf-8") as f:
+        with open(_GROQ_KEY_FILE, encoding="utf-8") as f:
             return f.read().strip()
     except (FileNotFoundError, OSError):
         return ""
@@ -139,7 +138,7 @@ PROVIDER_CONFIGS = {
 _provider_keys: dict = {}
 
 # Выбранный пользователем провайдер (None = авто)
-_selected_provider: Optional[str] = None
+_selected_provider: str | None = None
 
 
 def _provider_key_file(provider_id: str) -> str:
@@ -160,7 +159,7 @@ def _read_provider_key(provider_id: str) -> str:
     key = os.getenv(cfg.get("env_key", ""), "")
     if not key:
         try:
-            with open(_provider_key_file(provider_id), "r", encoding="utf-8") as f:
+            with open(_provider_key_file(provider_id), encoding="utf-8") as f:
                 key = f.read().strip()
         except (FileNotFoundError, OSError):
             pass
@@ -183,7 +182,7 @@ def _write_provider_key(provider_id: str, key: str):
         logger.error(f"[Advisor] ❌ Не удалось сохранить ключ {provider_id}: {e}")
 
 
-def _get_best_provider() -> Tuple[str, dict]:
+def _get_best_provider() -> tuple[str, dict]:
     """Возвращает (provider_id, config) лучшего доступного провайдера.
     Если пользователь выбрал конкретный — используем его (если ключ есть).
     Иначе — авто: по приоритету от лучшего к фолбэку."""
@@ -413,7 +412,7 @@ TUNABLE_DESCRIPTIONS = {
 # ── Внутреннее состояние ───────────────────────────────────────────────────
 _lock = threading.RLock()
 _history: deque = deque(maxlen=20)
-_last_advice: Optional[dict] = None
+_last_advice: dict | None = None
 
 
 def _persist_history():
@@ -484,12 +483,12 @@ _trades_since_last_run: int = 0
 _last_auto_run_ts: float = 0.0
 _next_auto_run_ts: float = 0.0
 _adaptation_log: deque = deque(maxlen=50)
-_rate_limit: Optional[dict] = None  # инфо о лимите токенов Groq (если получен 429)
+_rate_limit: dict | None = None  # инфо о лимите токенов Groq (если получен 429)
 _failed_providers: dict = {}  # provider_id -> timestamp провала (блокировка 6ч)
 PROVIDER_BLACKLIST_SECS = 6 * 3600
 
 # ── Фоновый поток автономии ────────────────────────────────────────────────
-_bg_thread: Optional[threading.Thread] = None
+_bg_thread: threading.Thread | None = None
 _stop_event = threading.Event()
 
 
@@ -1410,6 +1409,7 @@ def _apply_recommendations(recs: list) -> list[str]:
     try:
         import ai_engine as ae
         from config import Config
+
         from settings_store import update_section
     except Exception as ex:
         logger.error(f"[Advisor] импорт: {ex}")
@@ -1628,6 +1628,7 @@ def _apply_strategy_toggles(toggles: dict) -> list[str]:
         return applied
     try:
         from config import Config
+
         from settings_store import update_section
     except Exception as ex:
         logger.error(f"[Advisor] импорт (toggles): {ex}")
@@ -2029,7 +2030,7 @@ def _record_rate_limit(err_text: str) -> None:
         pass
 
 
-def _rate_limit_status() -> Optional[dict]:
+def _rate_limit_status() -> dict | None:
     """Возвращает инфо о лимите Groq, сбрасывая её, если время ожидания уже прошло."""
     with _lock:
         rl = _rate_limit
@@ -2123,7 +2124,7 @@ def _timer_loop():
     # Первый запуск через 2 минуты после старта (дать боту время загрузиться)
     with _lock:
         _next_auto_run_ts = time.time() + 120
-    logger.info(f"[Advisor] ⏱ Таймер запущен, первый авто-анализ через 2 мин")
+    logger.info("[Advisor] ⏱ Таймер запущен, первый авто-анализ через 2 мин")
     while not _stop_event.is_set():
         _stop_event.wait(timeout=10)  # проверяем каждые 10 сек (было 30)
         if _stop_event.is_set():

@@ -4,15 +4,13 @@ Autonomy Intelligence — ML-powered error analysis and prediction.
 Predicts failures before they happen and suggests preventive fixes.
 """
 
+import json
+import logging
 import os
 import re
-import json
-import hashlib
-import logging
-from datetime import datetime, timedelta
 from collections import defaultdict, deque
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
+from datetime import datetime
 
 logger = logging.getLogger("autonomy.intelligence")
 
@@ -28,7 +26,7 @@ class ErrorPattern:
     occurrences: int
     last_seen: str
     avg_fix_time: float
-    files_affected: List[str]
+    files_affected: list[str]
 
 
 class ErrorIntelligence:
@@ -175,7 +173,7 @@ class ErrorIntelligence:
     def __init__(self, data_dir: str = "/app/data"):
         self.data_dir = data_dir
         self.error_history: deque = deque(maxlen=1000)
-        self.pattern_stats: Dict[str, ErrorPattern] = {}
+        self.pattern_stats: dict[str, ErrorPattern] = {}
         self._load_stats()
 
     def _load_stats(self):
@@ -183,7 +181,7 @@ class ErrorIntelligence:
         path = os.path.join(self.data_dir, "error_intelligence.json")
         if os.path.exists(path):
             try:
-                with open(path, "r") as f:
+                with open(path) as f:
                     data = json.load(f)
                 for k, v in data.items():
                     self.pattern_stats[k] = ErrorPattern(**v)
@@ -198,7 +196,7 @@ class ErrorIntelligence:
             data = {k: asdict(v) for k, v in self.pattern_stats.items()}
             json.dump(data, f, indent=2)
 
-    def analyze(self, error_type: str, message: str, traceback: str) -> Optional[Dict]:
+    def analyze(self, error_type: str, message: str, traceback: str) -> dict | None:
         """Analyze error and return best fix with confidence."""
         full_text = f"{error_type}: {message}\n{traceback}"
 
@@ -252,7 +250,7 @@ class ErrorIntelligence:
 
         self._save_stats()
 
-    def predict_failure(self, recent_errors: List[Dict]) -> List[Dict]:
+    def predict_failure(self, recent_errors: list[dict]) -> list[dict]:
         """Predict upcoming failures based on error trends."""
         predictions = []
 
@@ -283,7 +281,7 @@ class ErrorIntelligence:
 
     def generate_fix_code(
         self,
-        analysis: Dict,
+        analysis: dict,
         file_path: str,
         line_number: int,
         surrounding_code: str = "",
@@ -387,7 +385,7 @@ except json.JSONDecodeError:
 
 
 # Singleton
-_intelligence: Optional[ErrorIntelligence] = None
+_intelligence: ErrorIntelligence | None = None
 
 
 def get_intelligence() -> ErrorIntelligence:
