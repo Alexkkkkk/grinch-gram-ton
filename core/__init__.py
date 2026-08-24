@@ -2,17 +2,17 @@
 
 from .base_components import BaseWorker, GridLevel, NpEncoder
 from .config import (
-    Config,
-    FeeConfig,
-    GridConfig,
-    TrailConfig,
-    DcaConfig,
     AiConfig,
-    SmartConfig,
-    ProtectionConfig,
-    ShortConfig,
-    ScalpConfig,
+    Config,
+    DcaConfig,
+    FeeConfig,
     FusionConfig,
+    GridConfig,
+    ProtectionConfig,
+    ScalpConfig,
+    ShortConfig,
+    SmartConfig,
+    TrailConfig,
 )
 from .events import emit, subscribe
 

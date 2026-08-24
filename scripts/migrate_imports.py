@@ -21,7 +21,7 @@ for root, dirs, files in os.walk(PROJECT_ROOT):
             continue
         path = os.path.join(root, f)
         try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+            with open(path, encoding="utf-8", errors="ignore") as fh:
                 content = fh.read()
         except Exception as e:
             print(f"Skip {path}: {e}")

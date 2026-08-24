@@ -1,15 +1,14 @@
 """CI smoke test — verifies all imports and basic functionality."""
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_core():
+    from core.base_components import GridLevel, NpEncoder
     from core.config import Config
-    from core.base_components import BaseWorker, GridLevel, NpEncoder
-    from core.events import emit, subscribe, EVENT_AI_SIGNAL
 
     assert Config.SYMBOL == "GRINCH/TON"
     assert Config.GRID.step_pct == 3.5
@@ -42,7 +41,6 @@ def test_ai():
 
 def test_trading():
     from trading.position_manager import PositionManager
-    from trading.trader import Trader
 
     pm = PositionManager()
     assert pm.open_trades == []

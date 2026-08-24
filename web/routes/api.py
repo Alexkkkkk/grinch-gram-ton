@@ -1,7 +1,8 @@
 """API blueprint — production REST endpoints."""
 
 import time
-from flask import Blueprint, jsonify, request
+
+from flask import Blueprint, jsonify
 
 from core.config import Config
 
