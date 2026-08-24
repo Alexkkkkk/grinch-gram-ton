@@ -1,5 +1,4 @@
 """Refactored Trader — orchestrates PositionManager + AI + Exchange."""
-import json
 import logging
 import os
 import threading
@@ -9,29 +8,21 @@ from datetime import datetime
 from core.base_components import BaseWorker
 from core.config import Config
 from core.events import emit, EVENT_TRADE_CLOSED, EVENT_TRADE_OPENED
-from exchange import ExchangeClient
 
 logger = logging.getLogger(__name__)
 
 
 class Trader(BaseWorker):
-    """Simplified trader using BaseWorker lifecycle."""
-
     __slots__ = (
-        "exchange",
-        "_ai",
-        "_positions",
-        "_trading_enabled",
-        "_last_disabled_log_ts",
-        "_balance_cache",
-        "_balance_cache_ts",
+        "exchange", "_ai", "_positions", "_trading_enabled",
+        "_last_disabled_log_ts", "_balance_cache", "_balance_cache_ts",
     )
 
     def __init__(self):
         super().__init__(name="trader", interval_sec=Config.GRID.tick_sec)
-        self.exchange = ExchangeClient()
-        self._ai = None  # lazy
-        self._positions = None  # lazy
+        self.exchange = None  # lazy init
+        self._ai = None
+        self._positions = None
         self._trading_enabled = True
         self._last_disabled_log_ts = 0.0
         self._balance_cache: dict = {}
@@ -49,16 +40,23 @@ class Trader(BaseWorker):
         if self._positions is None:
             from trading.position_manager import PositionManager
             self._positions = PositionManager()
-            # Restore from DB
             try:
                 import db_store
-                if db_store.is_available():
-                    saved = db_store.open_trades_get()
-                    for t in saved:
+                if hasattr(db_store, 'is_available') and db_store.is_available():
+                    for t in db_store.open_trades_get():
                         self._positions.add(t)
             except Exception:
                 pass
         return self._positions
+
+    def _get_exchange(self):
+        if self.exchange is None:
+            try:
+                from exchange import ExchangeClient
+                self.exchange = ExchangeClient()
+            except Exception as exc:
+                logger.warning("Exchange init failed: %s", exc)
+        return self.exchange
 
     def _tick(self) -> None:
         if not self._trading_enabled:
@@ -68,9 +66,13 @@ class Trader(BaseWorker):
                 self._last_disabled_log_ts = now
             return
 
+        ex = self._get_exchange()
+        if ex is None:
+            return
+
         try:
-            price = self.exchange.get_live_price()
-            ohlcv = self.exchange.get_ohlcv(limit=30)
+            price = ex.get_live_price()
+            ohlcv = ex.get_ohlcv(limit=30)
             if not ohlcv:
                 return
 
@@ -78,28 +80,25 @@ class Trader(BaseWorker):
             conf = signal.get("confidence", 0)
             action = signal.get("ai_signal", "HOLD")
 
-            # Grid logic takes precedence if enabled
             if Config.GRID.enabled:
                 self._grid_tick(price)
                 return
 
-            # Simple AI-driven spot logic
             if action == "BUY" and conf >= Config.AI.min_confidence:
                 self._maybe_buy(price, signal)
             elif action == "SELL":
                 self._maybe_sell(price, signal)
 
         except Exception as exc:
-            logger.warning("[Trader] tick error: %s", exc)
+            logger.warning("Tick error: %s", exc)
 
     def _grid_tick(self, price: float) -> None:
-        """Delegate to grid trader if available."""
         try:
             from grid_trader import get_grid_trader
             grid = get_grid_trader()
             grid.tick(price)
         except Exception as exc:
-            logger.debug("[Trader] grid tick: %s", exc)
+            logger.debug("Grid tick: %s", exc)
 
     def _maybe_buy(self, price: float, signal: dict) -> None:
         bal = self._get_balance()
@@ -119,7 +118,7 @@ class Trader(BaseWorker):
         }
         self.positions.add(trade)
         emit(EVENT_TRADE_OPENED, trade)
-        logger.info("[Trader] BUY %.4f TON @ %.8f", stake, price)
+        logger.info("BUY %.4f TON @ %.8f", stake, price)
 
     def _maybe_sell(self, price: float, signal: dict) -> None:
         for t in self.positions.open_trades:
@@ -127,7 +126,6 @@ class Trader(BaseWorker):
             if entry <= 0:
                 continue
             gross_pct = (price - entry) / entry * 100
-            # Only profit exit
             if gross_pct < Config.FEES.round_trip:
                 continue
             pnl = t.get("amount", 0) * (price - entry)
@@ -135,26 +133,28 @@ class Trader(BaseWorker):
                 continue
             self.positions.close(t, pnl)
             emit(EVENT_TRADE_CLOSED, {"trade": t, "pnl": pnl, "price": price})
-            logger.info("[Trader] SELL pnl=%.4f TON @ %.8f", pnl, price)
+            logger.info("SELL pnl=%.4f TON @ %.8f", pnl, price)
 
     def _get_balance(self) -> dict:
         now = time.time()
         if now - self._balance_cache_ts < 30 and self._balance_cache:
             return self._balance_cache
         try:
-            self._balance_cache = self.exchange.get_balance()
-            self._balance_cache_ts = now
+            ex = self._get_exchange()
+            if ex:
+                self._balance_cache = ex.get_balance()
+                self._balance_cache_ts = now
         except Exception:
             pass
         return self._balance_cache
 
     def enable_trading(self) -> None:
         self._trading_enabled = True
-        logger.info("[Trader] Trading ENABLED")
+        logger.info("Trading ENABLED")
 
     def disable_trading(self) -> None:
         self._trading_enabled = False
-        logger.info("[Trader] Trading DISABLED")
+        logger.info("Trading DISABLED")
 
     def get_status(self) -> dict:
         stats = self.positions.get_stats()
@@ -162,5 +162,4 @@ class Trader(BaseWorker):
             "running": self._running,
             "trading_enabled": self._trading_enabled,
             "positions": stats,
-            "ai_signal": "HOLD",  # cached
         }

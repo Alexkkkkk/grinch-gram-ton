@@ -1,8 +1,7 @@
-"""AIEngine v2 — refactored, modular, lazy-loaded."""
+"""AIEngine v2.1 — refactored, modular, lazy-loaded, memory-optimized."""
 
 import gc
 import logging
-import os
 import pickle
 import threading
 import time
@@ -15,7 +14,6 @@ from core.config import Config
 
 logger = logging.getLogger(__name__)
 
-# Lazy sklearn imports — only when needed
 _sklearn_loaded = False
 
 def _ensure_sklearn():
@@ -23,43 +21,15 @@ def _ensure_sklearn():
     if _sklearn_loaded:
         return
     warnings.filterwarnings("ignore", category=UserWarning)
-    globals()["RandomForestClassifier"] = __import__(
-        "sklearn.ensemble", fromlist=["RandomForestClassifier"]
-    ).RandomForestClassifier
-    globals()["ExtraTreesClassifier"] = __import__(
-        "sklearn.ensemble", fromlist=["ExtraTreesClassifier"]
-    ).ExtraTreesClassifier
-    globals()["GradientBoostingClassifier"] = __import__(
-        "sklearn.ensemble", fromlist=["GradientBoostingClassifier"]
-    ).GradientBoostingClassifier
-    globals()["HistGradientBoostingClassifier"] = __import__(
-        "sklearn.ensemble", fromlist=["HistGradientBoostingClassifier"]
-    ).HistGradientBoostingClassifier
-    globals()["MLPClassifier"] = __import__(
-        "sklearn.neural_network", fromlist=["MLPClassifier"]
-    ).MLPClassifier
-    globals()["StandardScaler"] = __import__(
-        "sklearn.preprocessing", fromlist=["StandardScaler"]
-    ).StandardScaler
-    globals()["Pipeline"] = __import__(
-        "sklearn.pipeline", fromlist=["Pipeline"]
-    ).Pipeline
+    globals()["RandomForestClassifier"] = __import__("sklearn.ensemble", fromlist=["RandomForestClassifier"]).RandomForestClassifier
+    globals()["ExtraTreesClassifier"] = __import__("sklearn.ensemble", fromlist=["ExtraTreesClassifier"]).ExtraTreesClassifier
+    globals()["GradientBoostingClassifier"] = __import__("sklearn.ensemble", fromlist=["GradientBoostingClassifier"]).GradientBoostingClassifier
+    globals()["StandardScaler"] = __import__("sklearn.preprocessing", fromlist=["StandardScaler"]).StandardScaler
     _sklearn_loaded = True
 
 
 class AIEngine:
-    """Refactored AI engine with lazy model loading and modular components."""
-
-    __slots__ = (
-        "_lock",
-        "_models",
-        "_scaler",
-        "_trained",
-        "_examples",
-        "_last_train",
-        "_feature_cols",
-        "_n_features",
-    )
+    __slots__ = ("_lock", "_models", "_scaler", "_trained", "_examples", "_last_train", "_n_features")
 
     def __init__(self, n_features: int = 32) -> None:
         self._lock = threading.RLock()
@@ -68,19 +38,14 @@ class AIEngine:
         self._trained = False
         self._examples: List[Dict] = []
         self._last_train = 0.0
-        self._feature_cols = n_features
         self._n_features = n_features
 
-    # ── Training ──
-
     def pretrain(self, ohlcv: List[dict], on_progress=None) -> bool:
-        """Pre-train on historical OHLCV data."""
         _ensure_sklearn()
         from ai.features import build_training_data
-
         X, y = build_training_data(ohlcv, profit_bias_pct=2.0)
         if X is None or len(X) < 20:
-            logger.warning("[AI] Not enough data for pretrain (%s samples)", len(X) if X is not None else 0)
+            logger.warning("Not enough data for pretrain (%s samples)", len(X) if X is not None else 0)
             return False
         with self._lock:
             self._scaler = StandardScaler()
@@ -93,37 +58,16 @@ class AIEngine:
             for name, model in self._models.items():
                 try:
                     model.fit(Xs, y)
-                    logger.info("[AI] %s pre-trained (acc=%.3f)", name, model.score(Xs, y))
+                    logger.info("%s pre-trained (acc=%.3f)", name, model.score(Xs, y))
                 except Exception as exc:
-                    logger.warning("[AI] %s pretrain failed: %s", name, exc)
+                    logger.warning("%s pretrain failed: %s", name, exc)
             self._trained = True
             self._last_train = time.time()
         if on_progress:
             on_progress({"stage": "pretrain", "done": True, "samples": len(X)})
         return True
 
-    def deep_retrain_from_db(self, window: int = 2000) -> bool:
-        """Retrain from DB examples."""
-        try:
-            import db_store
-            if not db_store.is_available():
-                return False
-            rows = db_store.ai_examples_get_recent(window)
-            if not rows or len(rows) < 50:
-                return False
-            X = np.array([r["features"] for r in rows if "features" in r])
-            y = np.array([r["label"] for r in rows if "label" in r])
-            if len(X) < 50:
-                return False
-            return self.pretrain([{"close": 0, "volume": 0}] * 10)  # trigger retrain via pretrain logic
-        except Exception as exc:
-            logger.warning("[AI] deep_retrain_from_db: %s", exc)
-            return False
-
-    # ── Analysis ──
-
     def analyze(self, ohlcv: List[dict], **kwargs) -> Dict[str, Any]:
-        """Analyze market and return signal dict."""
         from ai.features import extract_features
         from ai.regime import BreakoutEngine, MomentumEngine, PumpDetector
 
@@ -147,10 +91,8 @@ class AIEngine:
 
         avg_prob = np.mean(probs, axis=0)
         prob_up = float(avg_prob[1]) if len(avg_prob) > 1 else 0.5
-        prob_down = float(avg_prob[0]) if len(avg_prob) > 0 else 0.5
-        confidence = abs(prob_up - 0.5) * 200  # 0-100 scale
+        confidence = abs(prob_up - 0.5) * 200
 
-        # Regime detection
         close = np.array([c["close"] for c in ohlcv if "close" in c])
         high = np.array([c.get("high", c["close"]) for c in ohlcv if "close" in c])
         low = np.array([c.get("low", c["close"]) for c in ohlcv if "close" in c])
@@ -160,7 +102,6 @@ class AIEngine:
         breakout = BreakoutEngine.detect(close, high, low)
         pump = PumpDetector.detect(close, volume)
 
-        # Simple RSI
         deltas = np.diff(close)
         gains = np.where(deltas > 0, deltas, 0)
         losses = np.where(deltas < 0, -deltas, 0)
@@ -168,7 +109,6 @@ class AIEngine:
         avg_loss = np.mean(losses[-14:]) if len(losses) >= 14 else 1e-9
         rsi = 100 - (100 / (1 + avg_gain / avg_loss))
 
-        # ATR
         trs = np.maximum(high[1:] - low[1:], np.maximum(np.abs(high[1:] - close[:-1]), np.abs(low[1:] - close[:-1])))
         atr = np.mean(trs[-14:]) if len(trs) >= 14 else 0
         atr_pct = atr / close[-1] * 100 if close[-1] > 0 else 0
@@ -181,11 +121,7 @@ class AIEngine:
             "ai_signal": signal,
             "confidence": confidence,
             "prob_up": prob_up,
-            "prob_down": prob_down,
-            "regime": {
-                "name": momentum["signal"],
-                "atr_pct": atr_pct,
-            },
+            "regime": {"name": momentum["signal"], "atr_pct": atr_pct},
             "momentum": momentum,
             "breakout": breakout,
             "pump_detector": pump,
@@ -194,19 +130,16 @@ class AIEngine:
         }
 
     def feedback(self, features: List[float], label: int) -> None:
-        """Record a labeled example for future retraining."""
         self._examples.append({"features": features, "label": label, "ts": time.time()})
         if len(self._examples) > 5000:
             self._examples = self._examples[-4000:]
 
     def capture_buy_context(self, ohlcv: List[dict], **kwargs) -> Optional[List[float]]:
-        """Capture feature vector at buy time."""
         from ai.features import extract_features
         feat = extract_features(ohlcv, self._n_features)
         return feat[0].tolist() if feat is not None else None
 
     def export_experience(self) -> bytes:
-        """Serialize internal state."""
         with self._lock:
             return pickle.dumps({
                 "examples": self._examples,
@@ -216,7 +149,6 @@ class AIEngine:
             })
 
     def import_experience(self, data: bytes) -> bool:
-        """Deserialize internal state."""
         try:
             state = pickle.loads(data)
             with self._lock:
@@ -228,11 +160,10 @@ class AIEngine:
                     self._models[k] = pickle.loads(v)
             return True
         except Exception as exc:
-            logger.warning("[AI] import_experience failed: %s", exc)
+            logger.warning("import_experience failed: %s", exc)
             return False
 
     def load_deep_models(self) -> bool:
-        """Stub for deep model loading from DB."""
         return False
 
     def _default_signal(self) -> Dict[str, Any]:
@@ -251,7 +182,6 @@ class AIEngine:
 
 
 def _release_memory():
-    """Release memory after training."""
     gc.collect()
     try:
         import ctypes

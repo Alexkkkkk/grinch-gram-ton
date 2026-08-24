@@ -1,17 +1,18 @@
-"""Thread-safe position manager — replaces open_trades logic in trader.py."""
+"""Thread-safe position manager with memory optimization."""
 import threading
 import time
 from typing import Any, Dict, List, Optional
 
 
 class PositionManager:
-    __slots__ = ("_lock", "_trades", "_history", "_shorts")
+    __slots__ = ("_lock", "_trades", "_shorts", "_history", "_max_history")
 
-    def __init__(self):
+    def __init__(self, max_history: int = 10000) -> None:
         self._lock = threading.RLock()
         self._trades: List[Dict[str, Any]] = []
         self._shorts: List[Dict[str, Any]] = []
         self._history: List[Dict[str, Any]] = []
+        self._max_history = max_history
 
     @property
     def open_trades(self) -> List[Dict[str, Any]]:
@@ -22,6 +23,11 @@ class PositionManager:
     def open_shorts(self) -> List[Dict[str, Any]]:
         with self._lock:
             return list(self._shorts)
+
+    @property
+    def all_open(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            return list(self._trades) + list(self._shorts)
 
     def add(self, trade: Dict[str, Any], is_short: bool = False) -> None:
         with self._lock:
@@ -52,12 +58,12 @@ class PositionManager:
         trade["closed_at"] = time.time()
         with self._lock:
             self._history.append(trade)
-            pool = self._shorts if is_short else self._trades
+            if len(self._history) > self._max_history:
+                self._history = self._history[-self._max_history:]
             self._shorts = [t for t in self._shorts if t.get("id") != trade.get("id")]
             self._trades = [t for t in self._trades if t.get("id") != trade.get("id")]
 
     def merge_longs(self) -> None:
-        """Merge all long positions into one (DCA logic)."""
         with self._lock:
             if len(self._trades) <= 1:
                 return
@@ -79,13 +85,15 @@ class PositionManager:
         with self._lock:
             wins = sum(1 for t in self._history if t.get("pnl", 0) > 0)
             total = len(self._history)
+            total_pnl = sum(t.get("pnl", 0) for t in self._history)
             return {
                 "open_count": len(self._trades),
                 "short_count": len(self._shorts),
                 "total_closed": total,
                 "winning_trades": wins,
-                "total_pnl": sum(t.get("pnl", 0) for t in self._history),
-                "win_rate": wins / total if total > 0 else 0.0,
+                "losing_trades": total - wins,
+                "total_pnl": round(total_pnl, 4),
+                "win_rate": round(wins / total, 4) if total > 0 else 0.0,
             }
 
     def clear(self) -> None:

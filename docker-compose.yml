@@ -1,18 +1,26 @@
 services:
   bot:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: grinch-bot
     restart: unless-stopped
     env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./data:/app/data
       - ./backups:/app/backups
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/status"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    networks:
+      - grinch-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
     logging:
       driver: "json-file"
       options:
@@ -28,11 +36,21 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./static:/usr/share/nginx/html/static:ro
+    networks:
+      - grinch-net
     depends_on:
-      bot:
-        condition: service_healthy
+      - bot
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  grinch-net:
+    driver: bridge
