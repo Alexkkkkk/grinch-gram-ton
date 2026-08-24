@@ -1,7 +1,6 @@
 """Position engine — open/close/monitor positions."""
 
 import logging
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +10,7 @@ class PositionEngine:
 
     def __init__(self, config=None):
         self.config = config
-        self.positions: Dict[str, dict] = {}
+        self.positions: dict[str, dict] = {}
 
     def open(self, symbol: str, side: str, amount: float, price: float) -> dict:
         """Open a new position."""
@@ -26,7 +25,7 @@ class PositionEngine:
         logger.info("Position opened: %s %s @ %.4f", side, symbol, price)
         return pos
 
-    def close(self, symbol: str, price: float) -> Optional[dict]:
+    def close(self, symbol: str, price: float) -> dict | None:
         """Close an existing position."""
         pos = self.positions.pop(symbol, None)
         if pos:
@@ -36,8 +35,8 @@ class PositionEngine:
             logger.info("Position closed: %s PnL=%.4f", symbol, profit)
         return pos
 
-    def get(self, symbol: str) -> Optional[dict]:
+    def get(self, symbol: str) -> dict | None:
         return self.positions.get(symbol)
 
-    def list_open(self) -> List[dict]:
+    def list_open(self) -> list[dict]:
         return [p for p in self.positions.values() if p["status"] == "open"]

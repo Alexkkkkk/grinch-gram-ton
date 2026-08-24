@@ -23,7 +23,6 @@ import queue
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List
 
 import db_store as _db
 
@@ -259,7 +258,7 @@ class AnalyticsBuffer:
             chg = _pct_change(prices[0], prices[-1])
             # Мини-свечи: делим ценовой ряд на 8 блоков для визуального тренда
             block = max(1, len(prices) // 8)
-            mini: List[dict] = []
+            mini: list[dict] = []
             for i in range(0, len(prices), block):
                 ch = prices[i : i + block]
                 if ch:
@@ -317,7 +316,7 @@ class AnalyticsBuffer:
         }
 
         # ── Режимы рынка ──────────────────────────────────────────────────────
-        reg_counts: Dict[str, int] = {}
+        reg_counts: dict[str, int] = {}
         for t in ticks:
             r = t["regime"]
             reg_counts[r] = reg_counts.get(r, 0) + 1
@@ -334,10 +333,10 @@ class AnalyticsBuffer:
         }
 
         # ── AI сигналы ────────────────────────────────────────────────────────
-        sig_counts: Dict[str, int] = {"BUY": 0, "SELL": 0, "HOLD": 0}
+        sig_counts: dict[str, int] = {"BUY": 0, "SELL": 0, "HOLD": 0}
         blocked_n = 0
-        block_reasons: Dict[str, int] = {}
-        eq_dist: Dict[str, int] = {"A": 0, "B": 0, "C": 0}
+        block_reasons: dict[str, int] = {}
+        eq_dist: dict[str, int] = {"A": 0, "B": 0, "C": 0}
         pump_events = []
 
         for t in ticks:
@@ -384,8 +383,8 @@ class AnalyticsBuffer:
         }
 
         # ── Momentum & Breakout ───────────────────────────────────────────────
-        mom_counts: Dict[str, int] = {}
-        bo_counts: Dict[str, int] = {}
+        mom_counts: dict[str, int] = {}
+        bo_counts: dict[str, int] = {}
         for t in ticks:
             mom_counts[t["mom"]] = mom_counts.get(t["mom"], 0) + 1
             bo_counts[t["bo"]] = bo_counts.get(t["bo"], 0) + 1
@@ -591,7 +590,7 @@ def _mode(items: list) -> str:
     """Наиболее частый элемент списка."""
     if not items:
         return "?"
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for it in items:
         counts[it] = counts.get(it, 0) + 1
     return max(counts, key=counts.get)

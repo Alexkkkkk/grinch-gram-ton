@@ -9,7 +9,6 @@ import logging
 import threading
 import time
 from datetime import datetime
-from typing import Optional
 
 from core.config import Config
 from price_feed import price_feed
@@ -244,7 +243,7 @@ class GrinchLiquidator:
 
         return 0.0
 
-    def _fetch_ton_balance_http(self) -> Optional[float]:
+    def _fetch_ton_balance_http(self) -> float | None:
         """Баланс TON кошелька. Приоритет: TonCenter v2 → TonAPI v2."""
         import json as _json
         import urllib.request

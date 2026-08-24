@@ -1,7 +1,7 @@
 """Repository pattern for database access."""
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ class TradeRepository:
     def __init__(self, session=None):
         self._session = session
 
-    def save(self, trade: Dict[str, Any]) -> None:
+    def save(self, trade: dict[str, Any]) -> None:
         try:
             import db_store
 
@@ -21,7 +21,7 @@ class TradeRepository:
         except Exception as exc:
             logger.warning("[TradeRepo] save failed: %s", exc)
 
-    def get_recent(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_recent(self, limit: int = 100) -> list[dict[str, Any]]:
         try:
             import db_store
 
@@ -31,7 +31,7 @@ class TradeRepository:
             logger.warning("[TradeRepo] get_recent failed: %s", exc)
         return []
 
-    def get_open(self) -> List[Dict[str, Any]]:
+    def get_open(self) -> list[dict[str, Any]]:
         try:
             import db_store
 

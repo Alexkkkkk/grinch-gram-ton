@@ -1,14 +1,12 @@
 """Refactored Trader — orchestrates PositionManager + AI + Exchange."""
 
 import logging
-import os
-import threading
 import time
 from datetime import datetime
 
 from core.base_components import BaseWorker
 from core.config import Config
-from core.events import emit, EVENT_TRADE_CLOSED, EVENT_TRADE_OPENED
+from core.events import EVENT_TRADE_CLOSED, EVENT_TRADE_OPENED, emit
 
 logger = logging.getLogger(__name__)
 

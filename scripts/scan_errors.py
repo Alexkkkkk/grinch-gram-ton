@@ -3,11 +3,9 @@
 Scan logs for errors and report to GitHub.
 """
 
-import os
+import glob
 import re
 import sys
-import glob
-from datetime import datetime, timedelta
 
 sys.path.insert(0, "/opt/bot")
 from error_reporter_v2 import report_error
@@ -26,7 +24,7 @@ def scan_logs():
     """Scan log files for new errors."""
     for pattern in LOG_PATTERNS:
         for log_file in glob.glob(pattern):
-            with open(log_file, "r") as f:
+            with open(log_file) as f:
                 lines = f.readlines()
 
             # Check last 100 lines
