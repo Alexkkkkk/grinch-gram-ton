@@ -1,0 +1,65 @@
+name: Auto-Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            echo "=== GRINCH-GRAM Auto-Deploy ==="
+            cd /opt/bot
+            
+            # Backup current state
+            BACKUP_DIR="/opt/backups/bot-$(date +%Y%m%d-%H%M%S)"
+            mkdir -p "$BACKUP_DIR"
+            cp -r . "$BACKUP_DIR/"
+            
+            # Pull latest
+            git fetch origin
+            git reset --hard origin/main
+            
+            # Build and deploy
+            docker-compose down
+            docker-compose build --no-cache
+            docker-compose up -d
+            
+            # Health check
+            sleep 10
+            curl -f http://localhost:3000/api/health || {
+              echo "Health check failed! Rolling back..."
+              cd "$BACKUP_DIR"
+              docker-compose down
+              docker-compose up -d
+              exit 1
+            }
+            
+            # Cleanup old backups (keep last 10)
+            ls -t /opt/backups/bot-* | tail -n +11 | xargs rm -rf
+            
+            echo "=== Deploy successful ==="
+
+      - name: Notify Telegram
+        if: always()
+        uses: appleboy/telegram-action@v1.0.0
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            🎄 GRINCH-GRAM Deploy
+            Status: ${{ job.status }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref }}
