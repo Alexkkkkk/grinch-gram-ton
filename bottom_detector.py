@@ -18,7 +18,7 @@ All-in срабатывает если:
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger("bottom_detector")
 
@@ -31,7 +31,7 @@ class BottomDetector:
 
     def __init__(self):
         self.last_score: float = 0.0
-        self.last_signals: Dict[str, str] = {}
+        self.last_signals: dict[str, str] = {}
         self.last_all_in: bool = False
         self._last_trigger_ts: float = 0.0
 
@@ -48,7 +48,7 @@ class BottomDetector:
         ai_signal: str,  # "BUY" / "HOLD" / "SELL"
         ai_conf: float,  # 0..100
         pump_score: float,  # 0..100 (от GRINCHPumpDetector)
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Возвращает:
           score   — суммарный балл 0-100
@@ -62,7 +62,7 @@ class BottomDetector:
             Config = None  # type: ignore
 
         score = 0.0
-        signals: Dict[str, str] = {}
+        signals: dict[str, str] = {}
 
         # 1. RSI — перепроданность (вес 25) ───────────────────────────────────
         if rsi <= 20:
@@ -198,12 +198,12 @@ class BottomDetector:
             ),
         }
 
-    def _build_reason(self, signals: Dict[str, str], score: float, all_in: bool) -> str:
+    def _build_reason(self, signals: dict[str, str], score: float, all_in: bool) -> str:
         parts = [f"{k}({v})" for k, v in list(signals.items())[:6]]
         prefix = "🔥 ALL-IN: " if all_in else f"score={score:.0f}/100: "
         return prefix + " | ".join(parts) if parts else prefix.rstrip(": ")
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """Быстрый снапшот для дашборда."""
         try:
             from config import Config

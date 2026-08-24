@@ -438,20 +438,19 @@ def settings_update_section(section: str, updates: dict):
         from psycopg2.extras import execute_values
 
         rows = [(section, k, _encode(v)) for k, v in updates.items()]
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                # Один round-trip вместо N отдельных INSERT — в разы быстрее
-                execute_values(
-                    cur,
-                    """
+        with _conn() as conn, conn.cursor() as cur:
+            # Один round-trip вместо N отдельных INSERT — в разы быстрее
+            execute_values(
+                cur,
+                """
                     INSERT INTO bot_settings (section, key, value, updated_at)
                     VALUES %s
                     ON CONFLICT (section, key) DO UPDATE
                       SET value = EXCLUDED.value, updated_at = NOW()
                 """,
-                    rows,
-                    template="(%s, %s, %s, NOW())",
-                )
+                rows,
+                template="(%s, %s, %s, NOW())",
+            )
     except Exception as e:
         logger.warning(f"[DB] settings_update_section error: {e}")
 
@@ -461,14 +460,13 @@ def settings_get(section: str, key: str):
     if not _check_available():
         return None
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT value FROM bot_settings WHERE section=%s AND key=%s",
-                    (section, key),
-                )
-                row = cur.fetchone()
-                return row[0] if row else None
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT value FROM bot_settings WHERE section=%s AND key=%s",
+                (section, key),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
     except Exception as e:
         logger.warning(f"[DB] settings_get error: {e}")
         return None
@@ -479,12 +477,11 @@ def settings_delete_key(section: str, key: str):
     if not _check_available():
         return
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM bot_settings WHERE section=%s AND key=%s",
-                    (section, key),
-                )
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM bot_settings WHERE section=%s AND key=%s",
+                (section, key),
+            )
     except Exception as e:
         logger.warning(f"[DB] settings_delete_key error: {e}")
 
@@ -595,30 +592,29 @@ def trades_upsert(trade: dict):
         500  # храним не более 500 закрытых сделок (защита от бесконечного роста)
     )
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO bot_trades (id, data, closed_at)
                     VALUES (%s, %s, %s)
                     ON CONFLICT (id) DO UPDATE
                       SET data = EXCLUDED.data, closed_at = EXCLUDED.closed_at
                 """,
-                    (trade_id, _jdumps(trade, ensure_ascii=False), closed_at),
-                )
-                # Авто-очистка: оставляем только последние TRADES_KEEP сделок.
-                # Вторичная сортировка по id — стабильный тай-брейкер при одинаковом
-                # closed_at (batch-закрытие нескольких позиций за один тик).
-                cur.execute(
-                    """
+                (trade_id, _jdumps(trade, ensure_ascii=False), closed_at),
+            )
+            # Авто-очистка: оставляем только последние TRADES_KEEP сделок.
+            # Вторичная сортировка по id — стабильный тай-брейкер при одинаковом
+            # closed_at (batch-закрытие нескольких позиций за один тик).
+            cur.execute(
+                """
                     DELETE FROM bot_trades WHERE id NOT IN (
                         SELECT id FROM bot_trades
                         ORDER BY closed_at DESC NULLS LAST, id DESC
                         LIMIT %s
                     )
                 """,
-                    (TRADES_KEEP,),
-                )
+                (TRADES_KEEP,),
+            )
     except Exception as e:
         logger.warning(f"[DB] trades_upsert error: {e}")
 
@@ -643,11 +639,10 @@ def trades_count() -> int:
     if not _check_available():
         return -1
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM bot_trades")
-                row = cur.fetchone()
-                return row[0] if row else 0
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM bot_trades")
+            row = cur.fetchone()
+            return row[0] if row else 0
     except Exception:
         return -1
 
@@ -675,27 +670,26 @@ def trades_bulk_insert(trades: list):
     if not _check_available() or not trades:
         return
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                for t in trades:
-                    tid = str(t.get("id") or "")
-                    if not tid:
-                        continue
-                    closed_at_str = t.get("closed_at") or t.get("exit_time")
-                    closed_at = None
-                    if closed_at_str:
-                        try:
-                            closed_at = datetime.fromisoformat(str(closed_at_str))
-                        except Exception:
-                            pass
-                    cur.execute(
-                        """
+        with _conn() as conn, conn.cursor() as cur:
+            for t in trades:
+                tid = str(t.get("id") or "")
+                if not tid:
+                    continue
+                closed_at_str = t.get("closed_at") or t.get("exit_time")
+                closed_at = None
+                if closed_at_str:
+                    try:
+                        closed_at = datetime.fromisoformat(str(closed_at_str))
+                    except Exception:
+                        pass
+                cur.execute(
+                    """
                         INSERT INTO bot_trades (id, data, closed_at)
                         VALUES (%s, %s, %s)
                         ON CONFLICT (id) DO NOTHING
                     """,
-                        (tid, _jdumps(t, ensure_ascii=False), closed_at),
-                    )
+                    (tid, _jdumps(t, ensure_ascii=False), closed_at),
+                )
     except Exception as e:
         logger.warning(f"[DB] trades_bulk_insert error: {e}")
 
@@ -711,21 +705,20 @@ def equity_insert(point: dict):
     try:
         ts_str = point.get("t")
         ts = datetime.fromisoformat(ts_str) if ts_str else datetime.utcnow()
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO bot_equity (ts, ton, grinch, grinch_usd, equity_ton)
                     VALUES (%s, %s, %s, %s, %s)
                 """,
-                    (
-                        ts,
-                        point.get("ton"),
-                        point.get("grinch"),
-                        point.get("grinch_usd"),
-                        point.get("equity_ton"),
-                    ),
-                )
+                (
+                    ts,
+                    point.get("ton"),
+                    point.get("grinch"),
+                    point.get("grinch_usd"),
+                    point.get("equity_ton"),
+                ),
+            )
     except Exception as e:
         logger.warning(f"[DB] equity_insert error: {e}")
 
@@ -763,11 +756,10 @@ def equity_count() -> int:
     if not _check_available():
         return -1
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM bot_equity")
-                row = cur.fetchone()
-                return row[0] if row else 0
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM bot_equity")
+            row = cur.fetchone()
+            return row[0] if row else 0
     except Exception:
         return -1
 
@@ -792,16 +784,15 @@ def equity_bulk_insert(points: list):
                     p.get("equity_ton"),
                 )
             )
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                psycopg2.extras.execute_values(
-                    cur,
-                    """
+        with _conn() as conn, conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                """
                     INSERT INTO bot_equity (ts, ton, grinch, grinch_usd, equity_ton)
                     VALUES %s
                 """,
-                    rows,
-                )
+                rows,
+            )
     except Exception as e:
         logger.warning(f"[DB] equity_bulk_insert error: {e}")
 
@@ -823,21 +814,20 @@ def open_trades_save(trades: list):
             for t in trades
             if t.get("id")
         ]
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM bot_open_trades")
-                if rows:
-                    psycopg2.extras.execute_values(
-                        cur,
-                        """
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM bot_open_trades")
+            if rows:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
                         INSERT INTO bot_open_trades (trade_id, data, updated_at)
                         VALUES %s
                         ON CONFLICT (trade_id) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
                     """,
-                        rows,
-                        template="(%s, %s, NOW())",
-                    )
+                    rows,
+                    template="(%s, %s, NOW())",
+                )
     except Exception as e:
         logger.warning(f"[DB] open_trades_save error: {e}")
 
@@ -864,17 +854,16 @@ def ai_state_set(key: str, value):
     if not _check_available():
         return
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO bot_ai_state (key, value, updated_at)
                     VALUES (%s, %s, NOW())
                     ON CONFLICT (key) DO UPDATE
                       SET value = EXCLUDED.value, updated_at = NOW()
                 """,
-                    (key, _encode(value)),
-                )
+                (key, _encode(value)),
+            )
     except Exception as e:
         logger.warning(f"[DB] ai_state_set({key}) error: {e}")
 
@@ -883,11 +872,10 @@ def ai_state_get(key: str, default=None):
     if not _check_available():
         return default
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT value FROM bot_ai_state WHERE key = %s", (key,))
-                row = cur.fetchone()
-                return _decode(row[0]) if row else default
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT value FROM bot_ai_state WHERE key = %s", (key,))
+            row = cur.fetchone()
+            return _decode(row[0]) if row else default
     except Exception as e:
         logger.warning(f"[DB] ai_state_get({key}) error: {e}")
         return default
@@ -918,15 +906,14 @@ def ai_example_insert(features: list, label: int, weight: float):
     if not _check_available():
         return
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO bot_ai_examples (features, label, weight)
                     VALUES (%s, %s, %s)
                 """,
-                    (_jdumps(list(map(float, features))), int(label), float(weight)),
-                )
+                (_jdumps(list(map(float, features))), int(label), float(weight)),
+            )
     except Exception as e:
         logger.warning(f"[DB] ai_example_insert error: {e}")
 
@@ -964,10 +951,9 @@ def ai_examples_count() -> int:
     if not _check_available():
         return 0
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM bot_ai_examples")
-                return int(cur.fetchone()[0])
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM bot_ai_examples")
+            return int(cur.fetchone()[0])
     except Exception as e:
         logger.warning(f"[DB] ai_examples_count error: {e}")
         return 0
@@ -980,23 +966,22 @@ def ai_examples_export_all():
     if not _check_available():
         return
     try:
-        with _conn() as conn:
-            with conn.cursor(
-                name="export_cur", cursor_factory=psycopg2.extras.RealDictCursor
-            ) as cur:
-                cur.itersize = 1000
-                cur.execute("""
+        with _conn() as conn, conn.cursor(
+            name="export_cur", cursor_factory=psycopg2.extras.RealDictCursor
+        ) as cur:
+            cur.itersize = 1000
+            cur.execute("""
                     SELECT id, created_at, label, weight, features
                     FROM bot_ai_examples ORDER BY id
                 """)
-                for row in cur:
-                    yield {
-                        "id": row["id"],
-                        "created_at": row["created_at"],
-                        "label": row["label"],
-                        "weight": row["weight"],
-                        "features": row["features"],  # уже list[float] из JSONB
-                    }
+            for row in cur:
+                yield {
+                    "id": row["id"],
+                    "created_at": row["created_at"],
+                    "label": row["label"],
+                    "weight": row["weight"],
+                    "features": row["features"],  # уже list[float] из JSONB
+                }
     except Exception as e:
         logger.warning(f"[DB] ai_examples_export_all error: {e}")
 
@@ -1014,23 +999,22 @@ def grid_experience_insert(entry: dict):
         return
     try:
         ts = float(entry.get("ts", 0))
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO bot_grid_experience (ts, data) VALUES (%s, %s)",
-                    (ts, _jdumps(entry)),
-                )
-                # Самоочистка: удаляем записи старше GRID_EXP_KEEP
-                cur.execute(
-                    """
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO bot_grid_experience (ts, data) VALUES (%s, %s)",
+                (ts, _jdumps(entry)),
+            )
+            # Самоочистка: удаляем записи старше GRID_EXP_KEEP
+            cur.execute(
+                """
                     DELETE FROM bot_grid_experience
                     WHERE id NOT IN (
                         SELECT id FROM bot_grid_experience
                         ORDER BY id DESC LIMIT %s
                     )
                 """,
-                    (GRID_EXP_KEEP,),
-                )
+                (GRID_EXP_KEEP,),
+            )
     except Exception as e:
         logger.warning(f"[DB] grid_experience_insert error: {e}")
 
@@ -1062,10 +1046,9 @@ def grid_experience_count() -> int:
     if not _check_available():
         return 0
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM bot_grid_experience")
-                return int(cur.fetchone()[0])
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM bot_grid_experience")
+            return int(cur.fetchone()[0])
     except Exception as e:
         logger.warning(f"[DB] grid_experience_count error: {e}")
         return 0
@@ -1085,21 +1068,20 @@ def ticks_insert(data: dict):
     try:
         import random
 
-        with _conn() as conn:
-            with conn.cursor() as cur:
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO bot_ticks (data) VALUES (%s)",
+                (_jdumps(data, ensure_ascii=False),),
+            )
+            if random.random() < 0.02:
                 cur.execute(
-                    "INSERT INTO bot_ticks (data) VALUES (%s)",
-                    (_jdumps(data, ensure_ascii=False),),
-                )
-                if random.random() < 0.02:
-                    cur.execute(
-                        """
+                    """
                         DELETE FROM bot_ticks WHERE id NOT IN (
                             SELECT id FROM bot_ticks ORDER BY id DESC LIMIT %s
                         )
                     """,
-                        (TICKS_KEEP,),
-                    )
+                    (TICKS_KEEP,),
+                )
     except Exception as e:
         logger.warning(f"[DB] ticks_insert error: {e}")
 
@@ -1116,24 +1098,23 @@ def ticks_insert_batch(entries: list):
         import random
 
         rows = [(_jdumps(entry, ensure_ascii=False),) for entry in entries]
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                psycopg2.extras.execute_values(
-                    cur,
-                    "INSERT INTO bot_ticks (data) VALUES %s",
-                    rows,
-                    template="(%s)",
-                    page_size=100,
-                )
-                if random.random() < 0.02:
-                    cur.execute(
-                        """
+        with _conn() as conn, conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                "INSERT INTO bot_ticks (data) VALUES %s",
+                rows,
+                template="(%s)",
+                page_size=100,
+            )
+            if random.random() < 0.02:
+                cur.execute(
+                    """
                         DELETE FROM bot_ticks WHERE id NOT IN (
                             SELECT id FROM bot_ticks ORDER BY id DESC LIMIT %s
                         )
                     """,
-                        (TICKS_KEEP,),
-                    )
+                    (TICKS_KEEP,),
+                )
     except Exception as e:
         logger.warning(f"[DB] ticks_insert_batch error: {e}")
 
@@ -1160,11 +1141,10 @@ def ticks_count() -> int:
     if not _check_available():
         return -1
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM bot_ticks")
-                row = cur.fetchone()
-                return row[0] if row else 0
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM bot_ticks")
+            row = cur.fetchone()
+            return row[0] if row else 0
     except Exception:
         return -1
 
@@ -1182,10 +1162,9 @@ def wallet_snapshot_insert(snap: dict):
     try:
         import random
 
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO bot_wallet_snapshots
                         (ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                          ton_price_usd, grinch_value_ton, grinch_value_usd,
@@ -1194,35 +1173,35 @@ def wallet_snapshot_insert(snap: dict):
                          tracked_amount, tracked_entries, tracked_stake)
                     VALUES (NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
-                    (
-                        snap.get("ton_balance"),
-                        snap.get("grinch_balance"),
-                        snap.get("grinch_price_ton"),
-                        snap.get("grinch_price_usd"),
-                        snap.get("ton_price_usd"),
-                        snap.get("grinch_value_ton"),
-                        snap.get("grinch_value_usd"),
-                        snap.get("total_equity_ton"),
-                        snap.get("total_equity_usd"),
-                        snap.get("entry_price_ton"),
-                        snap.get("entry_price_usd"),
-                        snap.get("pnl_ton"),
-                        snap.get("pnl_pct"),
-                        snap.get("pnl_usd"),
-                        snap.get("tracked_amount"),
-                        snap.get("tracked_entries"),
-                        snap.get("tracked_stake"),
-                    ),
-                )
-                if random.random() < 0.05:
-                    cur.execute(
-                        """
+                (
+                    snap.get("ton_balance"),
+                    snap.get("grinch_balance"),
+                    snap.get("grinch_price_ton"),
+                    snap.get("grinch_price_usd"),
+                    snap.get("ton_price_usd"),
+                    snap.get("grinch_value_ton"),
+                    snap.get("grinch_value_usd"),
+                    snap.get("total_equity_ton"),
+                    snap.get("total_equity_usd"),
+                    snap.get("entry_price_ton"),
+                    snap.get("entry_price_usd"),
+                    snap.get("pnl_ton"),
+                    snap.get("pnl_pct"),
+                    snap.get("pnl_usd"),
+                    snap.get("tracked_amount"),
+                    snap.get("tracked_entries"),
+                    snap.get("tracked_stake"),
+                ),
+            )
+            if random.random() < 0.05:
+                cur.execute(
+                    """
                         DELETE FROM bot_wallet_snapshots WHERE id NOT IN (
                             SELECT id FROM bot_wallet_snapshots ORDER BY id DESC LIMIT %s
                         )
                     """,
-                        (WALLET_SNAP_KEEP,),
-                    )
+                    (WALLET_SNAP_KEEP,),
+                )
     except Exception as e:
         logger.debug(f"[DB] wallet_snapshot_insert error: {e}")
 
@@ -1332,12 +1311,11 @@ def user_trade_insert(token: str, trade: dict) -> bool:
     if not _check_available():
         return False
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO bot_user_trades (token, ts, data) VALUES (%s, NOW(), %s)",
-                    (token, psycopg2.extras.Json(trade)),
-                )
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO bot_user_trades (token, ts, data) VALUES (%s, NOW(), %s)",
+                (token, psycopg2.extras.Json(trade)),
+            )
         return True
     except Exception as e:
         logger.warning(f"[DB] user_trade_insert error: {e}")
@@ -1451,46 +1429,45 @@ def wallets_save(wallets: dict, events: list, seen: list, last_poll: float):
     if not _check_available():
         return
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                # Снимаем глобальный statement_timeout=7s для этой функции —
-                # 390 кошельков + большой JSON meta могут занять больше 7 сек на pghost.ru
-                cur.execute("SET LOCAL statement_timeout = 30000")
+        with _conn() as conn, conn.cursor() as cur:
+            # Снимаем глобальный statement_timeout=7s для этой функции —
+            # 390 кошельков + большой JSON meta могут занять больше 7 сек на pghost.ru
+            cur.execute("SET LOCAL statement_timeout = 30000")
 
-                # Batch upsert всех кошельков одним execute_values.
-                # Сортируем по адресу — два потока всегда блокируют строки
-                # в одном порядке, это исключает deadlock.
-                if wallets:
-                    sorted_items = sorted(wallets.items(), key=lambda x: x[0])
-                    psycopg2.extras.execute_values(
-                        cur,
-                        """
+            # Batch upsert всех кошельков одним execute_values.
+            # Сортируем по адресу — два потока всегда блокируют строки
+            # в одном порядке, это исключает deadlock.
+            if wallets:
+                sorted_items = sorted(wallets.items(), key=lambda x: x[0])
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
                         INSERT INTO bot_wallets (address, data, updated_at)
                         VALUES %s
                         ON CONFLICT (address) DO UPDATE
                           SET data = EXCLUDED.data, updated_at = NOW()
                         """,
-                        [
-                            (addr, _jdumps(data, ensure_ascii=False))
-                            for addr, data in sorted_items
-                        ],
-                        template="(%s, %s, NOW())",
-                        page_size=100,
-                    )
-                for key, val in [
-                    ("events", _jdumps(events[-5000:], ensure_ascii=False)),
-                    ("seen", _jdumps(list(seen)[-10000:], ensure_ascii=False)),
-                    ("last_poll", str(last_poll)),
-                ]:
-                    cur.execute(
-                        """
+                    [
+                        (addr, _jdumps(data, ensure_ascii=False))
+                        for addr, data in sorted_items
+                    ],
+                    template="(%s, %s, NOW())",
+                    page_size=100,
+                )
+            for key, val in [
+                ("events", _jdumps(events[-5000:], ensure_ascii=False)),
+                ("seen", _jdumps(list(seen)[-10000:], ensure_ascii=False)),
+                ("last_poll", str(last_poll)),
+            ]:
+                cur.execute(
+                    """
                         INSERT INTO bot_wallet_meta (key, value, updated_at)
                         VALUES (%s, %s, NOW())
                         ON CONFLICT (key) DO UPDATE
                           SET value = EXCLUDED.value, updated_at = NOW()
                     """,
-                        (key, val),
-                    )
+                    (key, val),
+                )
     except Exception as e:
         logger.warning(f"[DB] wallets_save error: {e}")
 
@@ -1509,7 +1486,7 @@ def wallets_load() -> tuple[dict, list, dict, float]:
 
         events = json.loads(meta.get("events", "[]"))
         # Возвращаем dict вместо set — сохраняет порядок вставки для LRU-дедупликации
-        seen = {k: 1 for k in json.loads(meta.get("seen", "[]"))}
+        seen = dict.fromkeys(json.loads(meta.get("seen", "[]")), 1)
         last_poll = float(meta.get("last_poll", "0") or 0)
         return wallets, events, seen, last_poll
     except Exception as e:
@@ -1521,11 +1498,10 @@ def wallets_count() -> int:
     if not _check_available():
         return -1
     try:
-        with _conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM bot_wallets")
-                row = cur.fetchone()
-                return row[0] if row else 0
+        with _conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM bot_wallets")
+            row = cur.fetchone()
+            return row[0] if row else 0
     except Exception:
         return -1
 

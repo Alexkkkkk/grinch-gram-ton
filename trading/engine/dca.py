@@ -1,7 +1,6 @@
 """DCA engine — dollar-cost averaging logic."""
 
 import logging
-from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +10,7 @@ class DcaEngine:
 
     def __init__(self, config=None):
         self.config = config
-        self.entries: List[dict] = []
+        self.entries: list[dict] = []
 
     def should_enter(self, drop_pct: float, pullback_pct: float) -> bool:
         """Check if DCA entry conditions are met."""

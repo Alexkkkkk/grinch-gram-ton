@@ -4,8 +4,6 @@ import logging
 import os
 import signal
 import sys
-import threading
-from typing import Optional
 
 from flask_socketio import SocketIO
 
@@ -20,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger("grinch")
 
 app = create_app()
-socketio: Optional[SocketIO] = None
+socketio: SocketIO | None = None
 
 
 def _graceful_shutdown(signum, frame):

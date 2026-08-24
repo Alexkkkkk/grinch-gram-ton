@@ -1,7 +1,6 @@
 """Feature extraction for AI engine — technical indicators as numpy arrays."""
 
 import logging
-from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -9,7 +8,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def extract_features(ohlcv: List[dict], n_features: int = 32) -> Optional[np.ndarray]:
+def extract_features(ohlcv: list[dict], n_features: int = 32) -> np.ndarray | None:
     """Convert OHLCV list into a feature vector for ML models."""
     if not ohlcv or len(ohlcv) < 20:
         return None
@@ -44,7 +43,7 @@ def extract_features(ohlcv: List[dict], n_features: int = 32) -> Optional[np.nda
     return np.array(features[:n_features], dtype=np.float32).reshape(1, -1)
 
 
-def build_training_data(ohlcv: List[dict], profit_bias_pct: float = 2.0) -> tuple:
+def build_training_data(ohlcv: list[dict], profit_bias_pct: float = 2.0) -> tuple:
     """Build X, y arrays from OHLCV for supervised learning."""
     if len(ohlcv) < 30:
         return None, None

@@ -5,7 +5,7 @@ import logging
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,10 @@ class GridLevel:
         self.side: str = side
         self.amount: float = amount
         self.filled: bool = False
-        self.order_id: Optional[str] = None
+        self.order_id: str | None = None
         self.created_at: float = time.time()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "price": self.price,
             "side": self.side,
@@ -53,7 +53,7 @@ class GridLevel:
         }
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "GridLevel":
+    def from_dict(cls, d: dict[str, Any]) -> "GridLevel":
         obj = cls(d["price"], d["side"], d["amount"])
         obj.filled = d.get("filled", False)
         obj.order_id = d.get("order_id")
@@ -79,7 +79,7 @@ class BaseWorker(ABC):
     def __init__(self, name: str, interval_sec: float = 15.0) -> None:
         self._name: str = name
         self._interval_sec: float = interval_sec
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stop_event: threading.Event = threading.Event()
         self._running: bool = False
         self._logger = logging.getLogger(f"worker.{name}")
@@ -129,7 +129,7 @@ class BaseWorker(ABC):
     def _tick(self) -> None:
         raise NotImplementedError
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
             "name": self._name,
             "running": self._running,
