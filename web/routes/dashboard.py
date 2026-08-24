@@ -13,7 +13,7 @@ def index():
 
 @dash_bp.route("/dashboard")
 def dashboard():
-    return render_template("index.html")
+    return render_template("grid_dashboard.html")
 
 
 @dash_bp.route("/api/dashboard/data")
