@@ -1,0 +1,48 @@
+name: Auto-Rollback
+
+on:
+  workflow_run:
+    workflows: ["Auto-Deploy to VPS"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    steps:
+      - name: Rollback on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        continue-on-error: true
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_SSH_PASSWORD }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            echo "=== Auto-Rollback Triggered ==="
+            cd /opt/bot
+            
+            # Find latest backup
+            LATEST_BACKUP=$(ls -td /opt/backups/bot-* 2>/dev/null | head -1)
+            if [ -n "$LATEST_BACKUP" ]; then
+              echo "Rolling back to: $LATEST_BACKUP"
+              cd "$LATEST_BACKUP"
+              docker-compose down 2>/dev/null || true
+              docker-compose up -d
+              echo "Rollback complete"
+            else
+              echo "No backup found! Manual intervention required."
+            fi
+
+      - name: Notify failure
+        if: always()
+        uses: appleboy/telegram-action@v1.0.0
+        continue-on-error: true
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            🚨 GRINCH-GRAM Auto-Rollback
+            Deploy failed! Rollback executed.
+            Check: https://github.com/${{ github.repository }}/actions

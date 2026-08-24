@@ -1,53 +1,40 @@
-name: \ud83d\udd12 Security Scan
+name: Security Scan
 
 on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
   schedule:
-    - cron: "0 4 * * *"
-
-permissions:
-  contents: read
-  security-events: write
+    - cron: '0 6 * * *'  # Daily at 6 AM
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  bandit:
-    name: \ud83d\udc0d Bandit Python Scan
+  security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-      - run: pip install bandit[sarif]
-      - name: Run Bandit Scan
-        run: bandit -r . -ll -iii -f sarif -o bandit.sarif || true
-        continue-on-error: true
-      - name: Validate SARIF
-        run: |
-          if [ -s bandit.sarif ]; then
-            echo "SARIF file is valid"
-          else
-            echo '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[]}' > bandit.sarif
-          fi
-      - uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: bandit.sarif
+      - uses: actions/checkout@v4
 
-  trivy:
-    name: \ud83d\udc33 Trivy FS Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: aquasecurity/trivy-action@master
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
         with:
-          scan-type: "fs"
-          format: "sarif"
-          output: "trivy.sarif"
-      - uses: github/codeql-action/upload-sarif@v4
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: trivy.sarif
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Bandit security scan
+        run: |
+          pip install bandit
+          bandit -r . -f json -o bandit-report.json || true
+
+      - name: Upload Bandit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report
+          path: bandit-report.json

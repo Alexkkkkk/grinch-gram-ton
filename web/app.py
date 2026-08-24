@@ -57,17 +57,15 @@ def create_app() -> Flask:
         return jsonify({"error": "Rate limit exceeded"}), 429
 
     # Health check (before blueprints)
-    @app.route("/api/health")
-    def health():
-        return jsonify({"status": "ok", "version": "2.1.0"})
-
     # Register blueprints
     from web.routes.api import api_bp
     from web.routes.auth import auth_bp
     from web.routes.dashboard import dash_bp
+    from web.routes.health import health_bp
 
     app.register_blueprint(api_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(dash_bp)
+    app.register_blueprint(health_bp)
 
     return app

@@ -1,49 +1,39 @@
-name: 🚀 Release
+name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Create Release
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 📝 Generate changelog
+      - name: Generate changelog
         id: changelog
         run: |
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREVIOUS_TAG" ]; then
-            echo "changes<<EOF" >> $GITHUB_OUTPUT
-            git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..HEAD >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+          LATEST_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [ -n "$LATEST_TAG" ]; then
+            echo "Changes since $LATEST_TAG:"
+            git log "$LATEST_TAG"..HEAD --oneline --no-decorate | head -50
           else
-            echo "changes<<EOF" >> $GITHUB_OUTPUT
-            git log --pretty=format:"- %s (%h)" >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          fi
+            echo "First release"
+            git log --oneline --no-decorate | head -50
+          fi > /tmp/changelog.txt
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/changelog.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
-      - name: 🚀 Create GitHub Release
-        uses: softprops/action-gh-release@v3
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          body: |
-            ## Changes
-            ${{ steps.changelog.outputs.changes }}
-
-            ## Docker Image
-            ```bash
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ```
+          body: ${{ steps.changelog.outputs.body }}
           draft: false
-          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          prerelease: false
+          generate_release_notes: true
