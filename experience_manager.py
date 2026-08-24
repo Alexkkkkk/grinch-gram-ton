@@ -53,7 +53,7 @@ except ImportError:
         return json.dump(obj, f, **kw)
 
 
-from config import Config
+from core.config import Config
 
 logger = logging.getLogger(__name__)
 

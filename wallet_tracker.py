@@ -26,7 +26,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from config import Config
+from core.config import Config
 from http_client import SESSION as _HTTP
 
 logger = logging.getLogger(__name__)

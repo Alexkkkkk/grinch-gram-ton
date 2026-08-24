@@ -9,7 +9,7 @@ try:
     from binance.exceptions import BinanceAPIException
 except ImportError:
     raise ImportError("pip install python-binance")
-from config import Config
+from core.config import Config
 
 log = logging.getLogger("exchange")
 

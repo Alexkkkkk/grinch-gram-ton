@@ -7,7 +7,7 @@ from datetime import datetime
 
 import requests
 
-from config import Config
+from core.config import Config
 
 log = logging.getLogger("error_reporter")
 

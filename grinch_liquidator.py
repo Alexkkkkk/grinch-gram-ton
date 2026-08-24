@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from config import Config
+from core.config import Config
 from price_feed import price_feed
 
 log = logging.getLogger(__name__)

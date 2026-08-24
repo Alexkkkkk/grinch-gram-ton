@@ -2,7 +2,7 @@ import os
 import threading
 import time
 
-from config import Config
+from core.config import Config
 from http_client import SESSION as _HTTP
 
 
