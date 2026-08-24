@@ -1,8 +1,17 @@
-# Environment
+# ═══════════════════════════════════════════════════════════════════════════════
+# GRINCH-GRAM v3.0 — Git Ignore
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Environment & Secrets ────────────────────────────────────────────────────
 .env
 .env.local
+.env.*.local
+.env.production
+.env.staging
+!.env.example
+!.env.template
 
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -23,34 +32,105 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Virtual environments
+# ── Virtual Environments ─────────────────────────────────────────────────────
 venv/
 ENV/
 env/
 .venv
+pythonenv*
 
-# IDE
+# ── IDE / Editors ────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
 
-# Database
+# ── Database ─────────────────────────────────────────────────────────────────
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
 
-# Logs
+# ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 logs/
+log/
+*.log.*
 
-# OS
+# ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# Backups
+# ── Backups & Temp ───────────────────────────────────────────────────────────
 *.backup
 *.bak
+*.tmp
+*.temp
+*.old
+*.orig
 .deploy.lock
+*.pid
+
+# ── Data & Models ────────────────────────────────────────────────────────────
+data/
+!data/.gitkeep
+backups/
+!backups/.gitkeep
+models/*.pkl
+models/*.joblib
+models/*.bin
+!models/.gitkeep
+
+# ── Certificates ─────────────────────────────────────────────────────────────
+certbot/
+*.pem
+*.key
+*.crt
+
+# ── Coverage & Testing ───────────────────────────────────────────────────────
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.hypothesis/
+
+# ── Type Checking ────────────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# ── Jupyter ──────────────────────────────────────────────────────────────────
+.ipynb_checkpoints
+*.ipynb
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+.dockerignore
+Dockerfile.*
+!Dockerfile
+docker-compose.*.yml
+!docker-compose.yml
+
+# ── Misc ─────────────────────────────────────────────────────────────────────
+node_modules/
+*.min.js.map
+*.min.css.map
