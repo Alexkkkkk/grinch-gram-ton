@@ -13,7 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    app = Flask(
+        __name__,
+        template_folder=os.path.join(project_root, "templates"),
+        static_folder=os.path.join(project_root, "static"),
+    )
     app.json_encoder = NpEncoder
     app.config["SECRET_KEY"] = Config.SECRET_KEY or os.urandom(32).hex()
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600

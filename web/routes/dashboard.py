@@ -8,7 +8,7 @@ dash_bp = Blueprint("dash", __name__)
 
 @dash_bp.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("grid_dashboard.html")
 
 
 @dash_bp.route("/dashboard")
