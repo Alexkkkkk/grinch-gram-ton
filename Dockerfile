@@ -3,7 +3,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Stage 1: Builder ──────────────────────────────────────────────────────────
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /build
 
@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir --user \
     gunicorn==23.0.0
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM python:3.11-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 WORKDIR /app
 
