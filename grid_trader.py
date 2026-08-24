@@ -10,7 +10,6 @@ import os
 import threading
 import time
 from dataclasses import asdict, dataclass, field
-from typing import List, Optional
 
 from core.config import Config
 
@@ -77,7 +76,7 @@ class GridLevel:
     amount_grinch: float = 0.0
     amount_ton: float = 0.0
     status: str = "waiting"
-    filled_at: Optional[float] = None
+    filled_at: float | None = None
     fill_price_ton: float = 0.0
     profit_ton: float = 0.0
     tx_hash: str = ""
@@ -91,9 +90,9 @@ class GridState:
     step_pct: float = 0.0
     upper_price: float = 0.0
     lower_price: float = 0.0
-    sell_levels: List[GridLevel] = field(default_factory=list)
-    buy_levels: List[GridLevel] = field(default_factory=list)
-    completed_fills: List[GridLevel] = field(default_factory=list)
+    sell_levels: list[GridLevel] = field(default_factory=list)
+    buy_levels: list[GridLevel] = field(default_factory=list)
+    completed_fills: list[GridLevel] = field(default_factory=list)
     total_profit_ton: float = 0.0
     total_sell_cycles: int = 0
     grid_reserved_grinch: float = 0.0
@@ -131,9 +130,9 @@ class GridTrader:
         self._thread = None
         self._stop = threading.Event()
         self._load_state()
-        self._trade_history: List[dict] = []
+        self._trade_history: list[dict] = []
         self._load_trade_history()
-        self._price_history: List[float] = []
+        self._price_history: list[float] = []
 
     def inject(self, dedust_client=None, ai_engine=None, trader_ref=None):
         self._dc = dedust_client
@@ -465,7 +464,7 @@ class GridTrader:
     def _load_state(self):
         try:
             if os.path.exists(STATE_FILE):
-                with open(STATE_FILE, "r") as f:
+                with open(STATE_FILE) as f:
                     self._state = GridState.from_dict(json.load(f))
         except Exception as e:
             log.warning("[Grid] load state error: %s", e)
@@ -480,7 +479,7 @@ class GridTrader:
     def _load_trade_history(self):
         try:
             if os.path.exists(TRADE_HISTORY_FILE):
-                with open(TRADE_HISTORY_FILE, "r") as f:
+                with open(TRADE_HISTORY_FILE) as f:
                     self._trade_history = json.load(f)
         except Exception as e:
             log.warning("[Grid] load history error: %s", e)

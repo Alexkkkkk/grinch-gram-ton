@@ -1,7 +1,6 @@
 """Grid engine — spot grid trading logic."""
 
 import logging
-from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +10,9 @@ class GridEngine:
 
     def __init__(self, config=None):
         self.config = config
-        self.levels: List[dict] = []
+        self.levels: list[dict] = []
 
-    def build_levels(self, center: float, count: int, step_pct: float) -> List[dict]:
+    def build_levels(self, center: float, count: int, step_pct: float) -> list[dict]:
         """Build grid levels around center price."""
         self.levels = []
         for i in range(-count // 2, count // 2 + 1):
@@ -29,7 +28,7 @@ class GridEngine:
         logger.info("Grid built: %d levels around %.4f", len(self.levels), center)
         return self.levels
 
-    def recenter(self, new_center: float) -> List[dict]:
+    def recenter(self, new_center: float) -> list[dict]:
         """Recalculate grid levels around new center."""
         if not self.levels:
             return []

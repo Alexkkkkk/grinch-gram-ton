@@ -2,10 +2,11 @@
 
 import threading
 import weakref
-from typing import Any, Callable, Dict, List, Set
+from collections.abc import Callable
+from typing import Any
 
 # Use weakref for auto-cleanup of dead subscribers
-_subscribers: Dict[str, List[weakref.ref]] = {}
+_subscribers: dict[str, list[weakref.ref]] = {}
 _lock = threading.RLock()
 
 # Event constants

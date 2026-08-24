@@ -7,12 +7,12 @@ import os
 import threading
 import time
 from dataclasses import asdict, dataclass
-from typing import Dict, List, Optional
+
+from grid_db import GridDatabase
 
 from binance_client import BinanceExchangeClient
 from core.config import Config
 from error_reporter import get_reporter
-from grid_db import GridDatabase
 
 log = logging.getLogger("grid_engine")
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")
@@ -25,11 +25,11 @@ class GridLevel:
     side: str
     price: float
     quantity: float = 0.0
-    order_id: Optional[int] = None
+    order_id: int | None = None
     status: str = "waiting"
-    filled_at: Optional[float] = None
+    filled_at: float | None = None
     profit_usdt: float = 0.0
-    paired_level_id: Optional[int] = None
+    paired_level_id: int | None = None
 
 
 @dataclass
@@ -44,7 +44,7 @@ class GridStats:
     loss_trades: int = 0
     avg_profit_per_grid: float = 0.0
     running_time_sec: float = 0.0
-    start_time: Optional[float] = None
+    start_time: float | None = None
     current_price: float = 0.0
     upper_price: float = 0.0
     lower_price: float = 0.0
@@ -61,10 +61,10 @@ class GridTradingEngine:
         self.symbol = Config.GRID_SYMBOL
         self._lock = threading.Lock()
         self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self.levels: List[GridLevel] = []
+        self._thread: threading.Thread | None = None
+        self.levels: list[GridLevel] = []
         self.stats = GridStats()
-        self.price_history: List[float] = []
+        self.price_history: list[float] = []
         self.last_rebuild: float = 0
         self.step_ratio: float = 1.0
         self._load_state()
@@ -88,7 +88,7 @@ class GridTradingEngine:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def get_status(self) -> Dict:
+    def get_status(self) -> dict:
         with self._lock:
             if self.stats.start_time:
                 self.stats.running_time_sec = time.time() - self.stats.start_time
@@ -102,7 +102,7 @@ class GridTradingEngine:
 
     def build_grid(
         self, upper=None, lower=None, grid_count=None, investment=None
-    ) -> Dict:
+    ) -> dict:
         with self._lock:
             self.client.cancel_all_orders()
             self.db.clear_levels(self.symbol)
@@ -264,7 +264,7 @@ class GridTradingEngine:
             elif order["status"] in ("CANCELED", "REJECTED", "EXPIRED"):
                 lvl.status = "cancelled"
 
-    def _handle_fill(self, lvl: GridLevel, order: Dict):
+    def _handle_fill(self, lvl: GridLevel, order: dict):
         executed_qty = float(order.get("executedQty", 0))
         executed_price = float(order.get("price", lvl.price))
         lvl.status = "filled"
@@ -343,7 +343,7 @@ class GridTradingEngine:
             str(lvl.order_id),
         )
 
-    def _find_level_by_price(self, price: float) -> Optional[GridLevel]:
+    def _find_level_by_price(self, price: float) -> GridLevel | None:
         for lvl in self.levels:
             if abs(lvl.price - price) / price < 0.001:
                 return lvl
@@ -390,7 +390,7 @@ class GridTradingEngine:
         if not os.path.exists(STATE_FILE):
             return
         try:
-            with open(STATE_FILE, "r") as f:
+            with open(STATE_FILE) as f:
                 state = json.load(f)
             self.last_rebuild = state.get("last_rebuild", 0)
             self.step_ratio = state.get("step_ratio", 1.0)

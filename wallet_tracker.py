@@ -24,7 +24,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from core.config import Config
 from http_client import SESSION as _HTTP
@@ -533,7 +533,7 @@ class WalletTracker:
                     self.events = events
                     # seen из DB может быть set или dict — нормализуем в dict-LRU
                     self._seen = (
-                        seen if isinstance(seen, dict) else {k: 1 for k in seen}
+                        seen if isinstance(seen, dict) else dict.fromkeys(seen, 1)
                     )
                     self.last_poll = last_poll
                     loaded_from_db = True
@@ -548,11 +548,11 @@ class WalletTracker:
             if not os.path.exists(STORE_PATH):
                 return
             try:
-                with open(STORE_PATH, "r", encoding="utf-8") as fh:
+                with open(STORE_PATH, encoding="utf-8") as fh:
                     data = json.load(fh)
                 self.wallets = data.get("wallets", {}) or {}
                 self.events = data.get("events", []) or []
-                self._seen = {k: 1 for k in (data.get("seen", []) or [])}
+                self._seen = dict.fromkeys(data.get("seen", []) or [], 1)
                 self.last_poll = data.get("last_poll", 0.0) or 0.0
                 logger.info(
                     f"[WalletTracker] Загружено из JSON: {len(self.wallets)} кошельков"
@@ -597,7 +597,7 @@ class WalletTracker:
                 "events": events,
                 "seen": seen,
                 "last_poll": last_poll,
-                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "saved_at": datetime.now(UTC).isoformat(),
             }
             tmp = STORE_PATH + ".tmp"
             try:

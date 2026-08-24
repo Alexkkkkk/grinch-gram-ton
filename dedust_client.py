@@ -9,7 +9,6 @@ import os
 import secrets
 import threading
 import time
-from typing import Optional
 
 from dedust import Asset, Factory, JettonRoot, Pool, PoolType
 from pytoniq import Address, LiteBalancer, WalletV5R1
@@ -89,7 +88,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
     wallet = Config.TON_WALLET
     token = Config.TOKEN_ADDRESS
 
-    ton_val: Optional[float] = None
+    ton_val: float | None = None
     grn_val: float = 0.0
     hit_429 = False
 
@@ -221,8 +220,8 @@ class DedustClient:
         self._lock = threading.Lock()
         self._mnemonic: list[str] = []
         self._ready = False
-        self._error: Optional[str] = None
-        self._last_price: Optional[float] = None
+        self._error: str | None = None
+        self._last_price: float | None = None
 
         mnemonic_raw = mnemonic_override or os.getenv("TON_MNEMONIC", "")
         if not mnemonic_raw:
@@ -255,7 +254,7 @@ class DedustClient:
         return self._ready
 
     @property
-    def error(self) -> Optional[str]:
+    def error(self) -> str | None:
         return self._error
 
     # ─────────────────────────────── helpers ───────────────────────────────
@@ -332,7 +331,7 @@ class DedustClient:
 
     # ─────────────────────────── balance ───────────────────────────────────
 
-    def _get_ton_balance_http(self) -> Optional[float]:
+    def _get_ton_balance_http(self) -> float | None:
         """TON баланс через HTTP. Приоритет: TonCenter v2 → TonAPI v2.
         НЕ использует liteserver — он даёт 'not provable' garbage значения.
         """
@@ -465,7 +464,7 @@ class DedustClient:
             return s[8:-1]
         return s
 
-    def _grinch_jetton_wallet_addr_via_api(self, owner_addr_str: str) -> Optional[str]:
+    def _grinch_jetton_wallet_addr_via_api(self, owner_addr_str: str) -> str | None:
         """Получает реальный адрес GRINCH jetton-кошелька (надёжно, несколько источников).
 
         Порядок: TonCenter v3 (стабильный, без rate-limit) → TonAPI → None.
@@ -698,7 +697,7 @@ class DedustClient:
         finally:
             await provider.close_all()
 
-    def get_price_ton_per_grinch(self) -> Optional[float]:
+    def get_price_ton_per_grinch(self) -> float | None:
         """
         Цена 1 GRINCH в TON, рассчитанная из резервов пула.
         Кэшируется на 30 сек.
@@ -726,7 +725,7 @@ class DedustClient:
             log.debug(f"[DeDust] get_price ошибка: {e}")
         return self._last_price
 
-    def estimate_buy(self, ton_amount: float) -> Optional[float]:
+    def estimate_buy(self, ton_amount: float) -> float | None:
         """Сколько GRINCH получим за ton_amount TON (без исполнения)."""
         if not self._ready:
             return None
@@ -738,7 +737,7 @@ class DedustClient:
             log.debug(f"[DeDust] estimate_buy ошибка: {e}")
             return None
 
-    def estimate_sell(self, grinch_amount: float) -> Optional[float]:
+    def estimate_sell(self, grinch_amount: float) -> float | None:
         """Сколько TON получим за grinch_amount GRINCH (без исполнения)."""
         if not self._ready:
             return None
@@ -1367,7 +1366,7 @@ class DedustClient:
                 return {
                     "ok": False,
                     "side": "sell",
-                    "error": f"GRINCH-баланс на кошельке равен 0 (нечего продавать).",
+                    "error": "GRINCH-баланс на кошельке равен 0 (нечего продавать).",
                 }
             log.info(
                 f"[DeDust] SELL {amount_nano/1e9:.6f} GRINCH (requested={grinch_amount:.6f}, on-chain={baseline_nano/1e9:.6f})"
@@ -1485,7 +1484,7 @@ class DedustClient:
                 log.error(f"[DeDust] send_ton ошибка: {e}")
                 return {"ok": False, "error": str(e)}
 
-    def get_wallet_address(self) -> Optional[str]:
+    def get_wallet_address(self) -> str | None:
         """Возвращает адрес кошелька (EQ-формат) без подключения к сети."""
         if not self._ready:
             return None

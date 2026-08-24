@@ -430,11 +430,11 @@ def _check_ichimoku_bull(df):
     above = price > kijun
     cloud_ok = bool(last.get("above_cloud", False))
     if tk_cross and above and cloud_ok:
-        return 3, f"☁️ Ichimoku: цена над облаком, tenkan>kijun (мощный тренд)"
+        return 3, "☁️ Ichimoku: цена над облаком, tenkan>kijun (мощный тренд)"
     if tk_cross and above:
-        return 2, f"☁️ Ichimoku: tenkan>kijun + цена выше kijun"
+        return 2, "☁️ Ichimoku: tenkan>kijun + цена выше kijun"
     if tk_cross:
-        return 1, f"☁️ Ichimoku: tenkan пересёк kijun вверх"
+        return 1, "☁️ Ichimoku: tenkan пересёк kijun вверх"
     return 0, None
 
 

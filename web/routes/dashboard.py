@@ -1,6 +1,6 @@
 """Dashboard blueprint — HTML views."""
 
-from flask import Blueprint, render_template, jsonify
+from flask import Blueprint, jsonify, render_template
 
 from core.config import Config
 

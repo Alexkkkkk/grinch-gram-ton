@@ -1,7 +1,7 @@
 """Base model wrapper — eliminates fit/predict/record/accuracy duplication."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -13,7 +13,7 @@ class BaseModelWrapper(ABC):
 
     def __init__(self, name: str) -> None:
         self._name: str = name
-        self._model: Optional[Any] = None
+        self._model: Any | None = None
         self._trained: bool = False
         self._samples: int = 0
         self._correct: int = 0
