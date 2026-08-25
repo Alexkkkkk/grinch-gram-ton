@@ -124,7 +124,6 @@ dmypy.json
 *.ipynb
 
 # ── Docker ───────────────────────────────────────────────────────────────────
-.dockerignore
 Dockerfile.*
 !Dockerfile
 docker-compose.*.yml
