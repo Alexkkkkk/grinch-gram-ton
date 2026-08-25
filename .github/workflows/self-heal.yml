@@ -40,7 +40,7 @@ jobs:
             # Auto-heal if needed
             if [ "$HEALTH" != "200" ]; then
               echo "Bot unhealthy! Attempting heal..."
-              cd /opt/bot && docker-compose restart bot
+              cd /opt/bot && docker compose restart bot
               sleep 10
               NEW_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health || echo "000")
               echo "After heal: $NEW_HEALTH"
