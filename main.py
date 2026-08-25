@@ -89,6 +89,5 @@ if __name__ == "__main__":
         )
 
 # SECURITY: explicit initialization instead of import-time side effects
-from price_feed import PriceFeed
-price_feed = PriceFeed()
-price_feed.start()
+from price_feed import _start_price_prefetch
+_start_price_prefetch()
