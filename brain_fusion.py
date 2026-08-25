@@ -22,9 +22,6 @@ BrainFusion v2 — единый интеллект торгового бота G
     bf.update_ai(ai_result)
     fusion = bf.get_fusion_signal()
 
-    # В ai_advisor.py после LLM-ответа:
-    bf.update_advisor(verdict="ПОКУПАТЬ", confidence=0.72, regime="UPTREND")
-
     # Проверка на скальп:
     if bf.is_scalp_window():
         use scalp params (TP=6%, trail=3%)

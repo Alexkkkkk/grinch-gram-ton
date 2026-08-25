@@ -8,7 +8,7 @@ analytics_buffer.py — Аналитика торгового бота на ос
 истины по закрытым сделкам (пишется из experience_manager.record_trade()).
 
 Публичный API сохранён без изменений (push_tick, get_advisor_summary,
-tick_count, ...), поэтому вызывающий код в trader.py/app.py/ai_advisor.py
+tick_count, ...), поэтому вызывающий код в trader.py/app.py
 не пришлось менять — изменилась только реализация хранения.
 
 DeDust GRINCH: https://dedust.io/coins/EQA6G0uVERDZTkLNa0drWBna1F5TSbogy7UXEWU5ERHz4uJL
