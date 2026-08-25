@@ -80,7 +80,7 @@ def metrics():
     mem = psutil.virtual_memory()
     cpu = psutil.cpu_percent(interval=0.5)
 
-    metrics_text = f"""# GRINCH-GRAM Metrics
+    metrics_text = f"""# AI-Trading Metrics
 grinch_uptime_seconds {int(time.time() - _start_time)}
 grinch_cpu_percent {cpu}
 grinch_memory_used_bytes {mem.used}

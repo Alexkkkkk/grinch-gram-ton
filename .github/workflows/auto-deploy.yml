@@ -25,7 +25,7 @@ jobs:
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -e
-            echo "=== GRINCH-GRAM Auto-Deploy ==="
+            echo "=== AI-Trading Auto-Deploy ==="
             cd /opt/bot || { echo "Bot directory not found"; exit 1; }
             
             # Backup current state
@@ -64,7 +64,7 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            🎄 GRINCH-GRAM Deploy
+            🎄 AI-Trading Deploy
             Status: ${{ job.status }}
             Commit: ${{ github.sha }}
             Branch: ${{ github.ref }}

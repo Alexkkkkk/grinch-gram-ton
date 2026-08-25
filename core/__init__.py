@@ -1,4 +1,4 @@
-"""Core package — shared infrastructure for GRINCH-GRAM v3.0."""
+"""Core package — shared infrastructure for AI-Trading v3.0."""
 
 from .base_components import BaseWorker, GridLevel, NpEncoder
 from .config import (

@@ -1,4 +1,4 @@
-# Contributing to GRINCH-GRAM
+# Contributing to AI-Trading
 
 ## Development Setup
 

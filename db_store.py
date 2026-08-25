@@ -1,5 +1,5 @@
 """
-db_store.py — PostgreSQL persistence layer для GRINCH-GRAM.
+db_store.py — PostgreSQL persistence layer для AI-Trading.
 
 Единый модуль работы с БД. Остальные модули (settings_store, experience_manager,
 wallet_tracker) вызывают функции отсюда и не знают о деталях подключения.

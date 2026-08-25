@@ -1,4 +1,4 @@
-"""Entry point — GRINCH-GRAM v2.1 (production-ready)."""
+"""Entry point — AI-Trading v2.1 (production-ready)."""
 
 import logging
 import os
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     use_gunicorn = os.environ.get("GUNICORN", "false").lower() == "true"
 
     logger.info(
-        "GRINCH-GRAM v2.1 starting | port=%d workers=%d gunicorn=%s",
+        "AI-Trading v2.1 starting | port=%d workers=%d gunicorn=%s",
         port,
         workers,
         use_gunicorn,

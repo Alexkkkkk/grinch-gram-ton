@@ -46,6 +46,6 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            🚨 GRINCH-GRAM Auto-Rollback
+            🚨 AI-Trading Auto-Rollback
             Deploy failed! Rollback executed.
             Check: https://github.com/${{ github.repository }}/actions

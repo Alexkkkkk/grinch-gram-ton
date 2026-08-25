@@ -97,7 +97,7 @@
 }
 
 /* ═══ Lightweight Charts Overrides ═══ */
-/* These target the canvas-based chart library used in GRINCH-GRAM */
+/* These target the canvas-based chart library used in AI-Trading */
 
 /* If the chart is wrapped in .dex-chart-wrap, style the container */
 .dex-chart-wrap canvas,

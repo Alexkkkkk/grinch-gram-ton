@@ -1,4 +1,4 @@
-"""AI package — lazy-loaded ML engine for GRINCH-GRAM."""
+"""AI package — lazy-loaded ML engine for AI-Trading."""
 
 import logging
 

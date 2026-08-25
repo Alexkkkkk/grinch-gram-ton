@@ -1,4 +1,4 @@
-# GRINCH-GRAM v3.0
+# AI-Trading v3.0
 
 GRINCH/TON DeDust Spot Grid Trading Bot with AI advisor.
 

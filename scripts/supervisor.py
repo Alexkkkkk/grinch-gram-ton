@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GRINCH-GRAM Supervisor — orchestrates all autonomy modules.
+AI-Trading Supervisor — orchestrates all autonomy modules.
 Single entry point for self-healing, monitoring, updating.
 """
 
@@ -16,6 +16,7 @@ sys.path.insert(0, "/opt/bot")
 
 from autonomy.auto_updater import AutoUpdater
 from autonomy.performance_monitor import PerformanceMonitor
+
 from autonomy.self_healing import SelfHealingEngine
 
 logging.basicConfig(
@@ -46,7 +47,7 @@ class Supervisor:
 
     def start(self):
         """Start all autonomy modules."""
-        logger.info("=== GRINCH-GRAM Supervisor v3.1 Starting ===")
+        logger.info("=== AI-Trading Supervisor v3.1 Starting ===")
         self.running = True
 
         # Create log directory

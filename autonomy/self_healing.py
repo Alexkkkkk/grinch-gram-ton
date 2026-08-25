@@ -19,7 +19,7 @@ logger = logging.getLogger("autonomy.self_healing")
 
 
 class SelfHealingEngine:
-    """Autonomous healing for GRINCH-GRAM bot."""
+    """Autonomous healing for AI-Trading bot."""
 
     HEALING_ACTIONS = {
         "restart_bot": {
