@@ -1,4 +1,4 @@
-# AI-Trading v3.0
+# AI-Trading v3.1
 
 GRINCH/TON DeDust Spot Grid Trading Bot with AI advisor.
 
@@ -12,7 +12,7 @@ cp .env.example .env
 make deploy
 ```
 
-## Architecture v3.0
+## Architecture v3.1
 
 ```
 core/          — Shared infrastructure (events, config, base components)
@@ -55,7 +55,7 @@ echo "*/10 * * * * /opt/bot/scripts/auto-update.sh" | crontab -
 
 Copy `.env.example` to `.env` and fill in your values.
 
-## Key Features v3.0
+## Key Features v3.1
 
 - **Zero circular imports** via `core/events.py`
 - **Lazy ML loading** — sklearn loads only on first AI call
@@ -71,9 +71,9 @@ Copy `.env.example` to `.env` and fill in your values.
 - **Risk management** — Multi-stage trailing, circuit breaker, position sizing
 - **CI/CD** — GitHub Actions with lint, test, security scan
 
-## Migration from v2.1
+## Migration from v2.1 → v3.1 → v3.1
 
-v3.0 removes duplicate root modules. If you imported `config`, `app`, or `trader` directly from root, update to:
+v3.1 removes duplicate root modules. If you imported `config`, `app`, or `trader` directly from root, update to:
 
 ```python
 from core.config import Config      # was: import config

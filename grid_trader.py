@@ -35,8 +35,8 @@ class GridConfig:
     GAS_RESERVE_TON = 5.0
     # Берём комиссию из Config (DeDust: 0.25% volatile, 0.05% stableswap)
     FEE_PCT = (
-        Config.FEE_PCT / 100.0
-    )  # Config.FEE_PCT в процентах (0.25), тут в долях (0.0025)
+        Config.FEES.pct / 100.0
+    )  # Config.FEES.pct в процентах (0.25), тут в долях (0.0025)
     GAS_PER_TRADE_TON = 0.30
     TICK_INTERVAL_SEC = 15
     RECENTER_STEPS = 1.8

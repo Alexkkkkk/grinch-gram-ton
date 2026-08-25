@@ -43,7 +43,7 @@ def full_health():
             timeout=5,
         )
         docker_status = "running" if "Up" in result.stdout else "down"
-    except:
+    except Exception:
         pass
 
     return jsonify(

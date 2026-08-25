@@ -1,4 +1,4 @@
-"""Entry point — AI-Trading v2.1 (production-ready)."""
+"""Entry point — AI-Trading v3.1 (production-ready)."""
 
 import logging
 import os
@@ -34,13 +34,20 @@ signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
 
 
+def _init_prefetch():
+    """Start price prefetcher — call AFTER app is ready."""
+    from price_feed import _start_price_prefetch
+
+    _start_price_prefetch()
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
     workers = int(os.environ.get("WEB_CONCURRENCY", 1))
     use_gunicorn = os.environ.get("GUNICORN", "false").lower() == "true"
 
     logger.info(
-        "AI-Trading v2.1 starting | port=%d workers=%d gunicorn=%s",
+        "AI-Trading v3.1 starting | port=%d workers=%d gunicorn=%s",
         port,
         workers,
         use_gunicorn,
@@ -60,16 +67,14 @@ if __name__ == "__main__":
         ).split(","),
         async_mode="threading",
     )
+
+    # Start background services AFTER SocketIO is ready
+    _init_prefetch()
+
     socketio.run(
         app,
         host="0.0.0.0",
         port=port,
         debug=False,
         use_reloader=False,
-        # allow_unsafe_werkzeug removed — use gunicorn in production
     )
-
-# SECURITY: explicit initialization instead of import-time side effects
-from price_feed import _start_price_prefetch  # noqa: E402
-
-_start_price_prefetch()

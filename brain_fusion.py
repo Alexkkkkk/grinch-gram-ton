@@ -440,14 +440,14 @@ class BrainFusion:
 
         # ── Читаем параметры из Config (единственный источник истины) ───────
         try:
-            from config import Config as _Cfg
+            from core.config import Config as _Cfg
 
-            _scalp_min_conf = float(_Cfg.SCALP_MIN_AI_CONF)
-            _scalp_max_atr = float(_Cfg.SCALP_MAX_ATR_PCT)
-            _scalp_tp = float(_Cfg.SCALP_TP_PCT)
-            _scalp_trail = float(_Cfg.SCALP_TRAIL_PCT)
-            _pump_boost_max = float(_Cfg.FUSION_PUMP_BOOST_MAX)
-            _skip_thresh = float(_Cfg.FUSION_SKIP_CONFIRM_CONF)
+            _scalp_min_conf = float(_Cfg.SCALP.min_ai_conf)
+            _scalp_max_atr = float(_Cfg.SCALP.max_atr_pct)
+            _scalp_tp = float(_Cfg.SCALP.tp_pct)
+            _scalp_trail = float(_Cfg.SCALP.trail_pct)
+            _pump_boost_max = float(_Cfg.FUSION.pump_boost_max)
+            _skip_thresh = float(_Cfg.FUSION.skip_confirm_conf)
         except Exception:
             _scalp_min_conf = 55.0
             _scalp_max_atr = 5.5

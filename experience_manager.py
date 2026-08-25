@@ -119,9 +119,9 @@ class ExperienceManager:
     # ── По умолчанию ─────────────────────────────────────────────────────────
     def _default_control(self) -> dict:
         return {
-            "base_min_conf": float(Config.MIN_AI_CONFIDENCE),
+            "base_min_conf": float(Config.AI.min_confidence),
             "base_trade_amount": float(Config.TRADE_AMOUNT),
-            "min_conf": float(Config.MIN_AI_CONFIDENCE),
+            "min_conf": float(Config.AI.min_confidence),
             "trade_amount": float(Config.TRADE_AMOUNT),
             "paused": False,
             "peak_equity": 0.0,
@@ -405,7 +405,7 @@ class ExperienceManager:
             # В режиме ONLY_PROFIT_EXIT поле take_profit не влияет на логику выхода,
             # но неверное значение путает лог и dashboard.
             try:
-                from config import Config as _Cfg
+                from core.config import Config as _Cfg
 
                 _healed = 0
                 for _t in open_trades + open_short_trades:
@@ -413,7 +413,7 @@ class ExperienceManager:
                     _tp = float(_t.get("take_profit") or 0)
                     _st = float(_t.get("stake_ton") or 0)
                     if _ep > 0 and _tp / _ep > 10:
-                        _mg = _Cfg.required_gross_pct_with_gas(_st if _st > 0 else None)
+                        _mg = _Cfg.required_gross_pct(_st if _st > 0 else 0)
                         _tp_pct = max(_Cfg.TAKE_PROFIT_PCT, _mg)
                         _t["take_profit"] = round(_ep * (1 + _tp_pct / 100), 8)
                         _healed += 1
@@ -468,11 +468,11 @@ class ExperienceManager:
             # Показываем ставку, актуальную для текущего режима:
             # в DCA — стейк на вход из конфига, в AI-режиме — адаптивная ставка.
             try:
-                from config import Config as _Cfg
+                from core.config import Config as _Cfg
 
-                _dca = _Cfg.DCA_MODE
+                _dca = _Cfg.DCA.enabled
                 _stake_label = (
-                    f"ставка DCA={_Cfg.DCA_STAKE_TON:.0f} TON/вход"
+                    f"ставка DCA={_Cfg.DCA.stake_ton:.0f} TON/вход"
                     if _dca
                     else f"ставка AI={ctrl['trade_amount']:.3f} TON"
                 )
@@ -572,7 +572,7 @@ class ExperienceManager:
     def _apply_control_to_config(self):
         ctrl = self.data["control"]
         try:
-            Config.MIN_AI_CONFIDENCE = float(ctrl["min_conf"])
+            Config.AI.min_confidence = float(ctrl["min_conf"])
             Config.TRADE_AMOUNT = float(ctrl["trade_amount"])
             # Применяем авто-TP только если ИИ уже адаптировал его по реальной истории
             if ctrl.get("ai_tp_adapted") and ctrl.get("take_profit_pct"):
@@ -580,7 +580,7 @@ class ExperienceManager:
                 if new_tp > 0:
                     Config.TAKE_PROFIT_PCT = new_tp
                     # TARGET_NET_PCT = TP - комиссия (оба пула по 1%)
-                    Config.TARGET_NET_PCT = max(1.0, new_tp - Config.FEE_ROUND_TRIP)
+                    Config.TARGET_NET_PCT = max(1.0, new_tp - Config.FEES.round_trip)
         except Exception:  # noqa: BLE001
             pass
 
@@ -853,7 +853,7 @@ class ExperienceManager:
             # 100 TON × 5% = 5 TON минимум; 200 TON × 5% = 10 TON минимум и т.д.
             min_profit_floor_pct = float(Config.MIN_PROFIT_TON)  # трактуем как %
             # Добавляем комиссию: чтобы НЕТТО был ≥ порогу, gross = нетто + fee_round_trip
-            min_tp_gross = min_profit_floor_pct + Config.FEE_ROUND_TRIP
+            min_tp_gross = min_profit_floor_pct + Config.FEES.round_trip
 
             new_tp = float(ctrl.get("take_profit_pct") or Config.TAKE_PROFIT_PCT)
             prev_tp = new_tp  # запоминаем ДО адаптации — TP может только расти
@@ -924,7 +924,7 @@ class ExperienceManager:
 
                 # ── DCA цель: поднимаем если средняя победа > текущей цели  ──
                 try:
-                    cur_dca_target = float(Config.DCA_TARGET_PROFIT_PCT)
+                    cur_dca_target = float(Config.DCA.target_profit_pct)
                     # avg_win_pct = средняя победа в % от ставки (уже вычислена выше)
                     if avg_win_pct > cur_dca_target * 1.1 and avg_win_pct > 0:
                         # Победы стабильно выше цели → поднимаем цель на 20% от разницы
@@ -933,20 +933,20 @@ class ExperienceManager:
                         )
                         new_dca_target = min(new_dca_target, Config.DCA_AI_TARGET_CAP)
                         if new_dca_target > cur_dca_target:
-                            Config.DCA_TARGET_PROFIT_PCT = new_dca_target
+                            Config.DCA.target_profit_pct = new_dca_target
                             ctrl["ai_dca_target_adapted"] = True
                 except Exception:
                     pass
 
                 # ── Защита прибыли: снижаем порог если средняя победа небольшая  ──
                 try:
-                    cur_protect = float(Config.PROFIT_PROTECT_TON)
+                    cur_protect = float(Config.PROTECTION.profit_protect_ton)
                     # Если средняя победа > 0, опускаем порог до 50% от средней победы
                     if avg_win_ton > 0:
                         optimal_protect = round(max(0.5, avg_win_ton * 0.5), 2)
                         if optimal_protect < cur_protect:
                             # Только вниз — ловим прибыль раньше
-                            Config.PROFIT_PROTECT_TON = optimal_protect
+                            Config.PROTECTION.profit_protect_ton = optimal_protect
                             ctrl["ai_protect_adapted"] = True
                 except Exception:
                     pass
