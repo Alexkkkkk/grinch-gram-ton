@@ -1,6 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# AI-Trading v3.1 — Production Dependencies
-# Все версии проверены на совместимость. НЕ обновлять через Dependabot без тестов.
+# AI-Trading v3.1 — Ultra-light Dependencies (Spot Grid only)
+# Removed: xgboost, lightgbm, catboost, ccxt, python-binance, ta, aiohttp,
+#          python-telegram-bot (unused heavy libs)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Core Web ───────────────────────────────────────────────────────────────────
@@ -19,14 +20,7 @@ sqlalchemy==2.0.52
 numpy==1.26.4
 pandas==2.3.3
 scikit-learn==1.5.2
-xgboost==2.1.4
-lightgbm==4.7.0
-catboost==1.2.10
 joblib==1.5.3
-
-# ── Technical Analysis ─────────────────────────────────────────────────────────
-ta==0.11.0
-ccxt==4.5.75
 
 # ── TON Blockchain ────────────────────────────────────────────────────────────
 pytoniq==0.1.43
@@ -34,18 +28,15 @@ pytoniq-core==0.2.0
 dedust==1.1.4
 cryptography==50.0.0
 
-# ── HTTP / Async ──────────────────────────────────────────────────────────────
+# ── HTTP ──────────────────────────────────────────────────────────────────────
 requests==2.34.2
-aiohttp==3.14.3
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 python-dotenv==1.2.3
-python-telegram-bot==21.11.1
 openai==1.109.1
 email-validator==2.3.0
 apscheduler==3.11.3
 psutil==7.2.2
-python-binance==1.0.37
 Flask-Limiter>=4.1.1
 pydantic>=2.13.4
 redis>=4.5.0

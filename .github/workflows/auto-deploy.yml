@@ -25,30 +25,49 @@ jobs:
           script: |
             set -e
             echo "=== AI-Trading Auto-Deploy ==="
+            
+            # ── Disk check ─────────────────────────────────────────────
+            FREE_GB=$(df -BG / | tail -1 | awk '{print $4}' | tr -d 'G')
+            echo "Free disk space: ${FREE_GB}GB"
+            if [ "$FREE_GB" -lt 3 ]; then
+              echo "WARNING: Less than 3GB free. Running emergency cleanup..."
+              docker system prune -af --volumes
+              docker builder prune -af
+              docker image prune -af
+              rm -rf /opt/backups/bot-*
+              FREE_GB=$(df -BG / | tail -1 | awk '{print $4}' | tr -d 'G')
+              echo "After cleanup: ${FREE_GB}GB"
+              if [ "$FREE_GB" -lt 3 ]; then
+                echo "FATAL: Still less than 3GB free. Aborting."
+                exit 1
+              fi
+            fi
+            
             cd /opt/bot || { echo "Bot directory not found"; exit 1; }
             
-            # Backup current state
+            # ── Backup ─────────────────────────────────────────────────
             BACKUP_DIR="/opt/backups/bot-$(date +%Y%m%d-%H%M%S)"
             mkdir -p "$BACKUP_DIR"
             cp -r . "$BACKUP_DIR/" 2>/dev/null || true
             
-            # Pull latest
+            # ── Pull latest ──────────────────────────────────────────
             git fetch origin
             git reset --hard origin/main
             
-            # Cleanup disk space and build cache before build
-            docker system prune -f --volumes 2>/dev/null || true
-            docker builder prune -f 2>/dev/null || true
-            docker image prune -f 2>/dev/null || true
-            rm -rf /opt/backups/bot-* 2>/dev/null || true
-            
-            # Build and deploy (no --no-cache to reuse layers)
+            # ── Aggressive cleanup before build ──────────────────────
+            echo "Cleaning Docker..."
             docker compose down 2>/dev/null || true
             docker rm -f grinch-bot 2>/dev/null || true
+            docker system prune -af --volumes 2>/dev/null || true
+            docker builder prune -af 2>/dev/null || true
+            docker image prune -af 2>/dev/null || true
+            
+            # ── Build and deploy ─────────────────────────────────────
+            echo "Building..."
             docker compose build
             docker compose up -d
             
-            # Health check
+            # ── Health check ─────────────────────────────────────────
             sleep 10
             curl -f http://localhost:3000/api/health || {
               echo "Health check failed! Rolling back..."
@@ -57,9 +76,11 @@ jobs:
               exit 1
             }
             
-            # Cleanup old backups (keep last 10)
-            ls -t /opt/backups/bot-* 2>/dev/null | tail -n +11 | xargs rm -rf 2>/dev/null || true
+            # ── Cleanup old backups (keep last 5) ────────────────────
+            ls -t /opt/backups/bot-* 2>/dev/null | tail -n +6 | xargs rm -rf 2>/dev/null || true
             
+            # ── Final disk report ────────────────────────────────────
+            df -h /
             echo "=== Deploy successful ==="
 
       - name: Notify Telegram
@@ -70,7 +91,7 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            🎄 AI-Trading Deploy
+            🤖 AI-Trading Deploy
             Status: ${{ job.status }}
             Commit: ${{ github.sha }}
             Branch: ${{ github.ref }}
