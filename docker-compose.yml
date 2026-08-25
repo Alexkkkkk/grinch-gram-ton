@@ -1,8 +1,56 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# GRINCH-GRAM v3.1 — Production Docker Compose with Auto-Recovery
+# GRINCH-GRAM v3.3 — Production Docker Compose with Auto-Recovery
 # ═══════════════════════════════════════════════════════════════════════════════
 
 services:
+  # ── Database ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: grinch-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-grinch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-grinch_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:rw
+    networks:
+      - grinch-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ── Cache ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: grinch-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data:rw
+    networks:
+      - grinch-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ── Bot ───────────────────────────────────────────────────────────────────────
   bot:
     build:
       context: .
@@ -14,6 +62,9 @@ services:
       - PYTHONUNBUFFERED=1
       - GUNICORN=true
       - WEB_CONCURRENCY=2
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-grinch}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-grinch_db}
     volumes:
       - ./data:/app/data:rw
       - ./backups:/app/backups:rw
@@ -21,6 +72,11 @@ services:
       - ./models:/app/models:ro
     networks:
       - grinch-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -42,6 +98,7 @@ services:
       retries: 3
       start_period: 15s
 
+  # ── Nginx ─────────────────────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
     container_name: grinch-nginx
@@ -83,3 +140,7 @@ services:
 networks:
   grinch-net:
     driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
