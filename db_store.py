@@ -1,4 +1,3 @@
-import random
 """
 db_store.py — PostgreSQL persistence layer для GRINCH-GRAM.
 

@@ -78,7 +78,13 @@ if __name__ == "__main__":
         ).run()
     else:
         # Development / single-worker
-        socketio = SocketIO(app, cors_allowed_origins=os.getenv("CORS_ALLOWED_ORIGINS", "https://localhost").split(","), async_mode="threading")
+        socketio = SocketIO(
+            app,
+            cors_allowed_origins=os.getenv(
+                "CORS_ALLOWED_ORIGINS", "https://localhost"
+            ).split(","),
+            async_mode="threading",
+        )
         socketio.run(
             app,
             host="0.0.0.0",
@@ -89,5 +95,6 @@ if __name__ == "__main__":
         )
 
 # SECURITY: explicit initialization instead of import-time side effects
-from price_feed import _start_price_prefetch
+from price_feed import _start_price_prefetch  # noqa: E402
+
 _start_price_prefetch()

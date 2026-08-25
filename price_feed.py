@@ -3,6 +3,7 @@ import threading
 import time
 
 from cachetools import TTLCache
+
 from core.config import Config
 from http_client import SESSION as _HTTP
 
@@ -133,8 +134,10 @@ class PriceFeed:
                         if pn:
                             return float(pn)
             ton_pairs = [
-                p for p in pairs
-                if ((p.get("quoteToken", {}) or {}).get("symbol", "") or "").upper() == "TON"
+                p
+                for p in pairs
+                if ((p.get("quoteToken", {}) or {}).get("symbol", "") or "").upper()
+                == "TON"
                 and p.get("priceNative")
             ]
             if not ton_pairs:
@@ -179,7 +182,10 @@ price_feed = PriceFeed()
 
 def _start_price_prefetch():
     import concurrent.futures
-    _executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="price-pf")
+
+    _executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=2, thread_name_prefix="price-pf"
+    )
 
     def _warm():
         try:

@@ -1,8 +1,8 @@
 """Refactored Trader — orchestrates PositionManager + AI + Exchange."""
 
 import logging
-import time
 import secrets
+import time
 from datetime import datetime
 
 from core.base_components import BaseWorker

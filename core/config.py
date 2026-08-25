@@ -34,6 +34,7 @@ def _require_env(key: str, message: str) -> str:
     val = os.getenv(key)
     if not val:
         import sys
+
         print(f"FATAL: {message}", file=sys.stderr)
         sys.exit(1)
     return val
@@ -90,9 +91,7 @@ class GridConfig:
     min_order_ton: float = 15.0
     gas_reserve_ton: float = 5.0
     db_path: str = field(
-        default_factory=lambda: _str_env(
-            "DATABASE_URL", "sqlite:///data/bot.db"
-        )
+        default_factory=lambda: _str_env("DATABASE_URL", "sqlite:///data/bot.db")
     )
 
 

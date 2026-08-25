@@ -399,7 +399,6 @@ class GrinchLiquidator:
             finally:
                 with self._lock:
                     self._sell_in_flight = False
-        self._sell_lock = threading.Lock()
         else:
             pct_to_go = ((target - current) / current) * 100
             self._log(

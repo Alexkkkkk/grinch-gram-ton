@@ -46,19 +46,21 @@ BACKUP_DIR = Path(_DATA_DIR) / "backups" if _DATA_DIR else Path("backups")
 KEEP_DAYS = 7  # сколько бэкапов хранить
 INTERVAL_S = 24 * 3600  # раз в сутки
 
-TABLES = frozenset([
-    "bot_settings",
-    "bot_trades",
-    "bot_equity",
-    "bot_open_trades",
-    "bot_ai_state",
-    "bot_wallets",
-    "bot_wallet_meta",
-    "bot_ai_examples",  # обучающие примеры AI (features/label/weight)
-    "bot_ticks",  # тики для AI-советника/аналитики
-    "bot_wallet_snapshots",  # история снимков кошелька (TON/GRINCH/P&L)
-    "bot_user_trades",  # история виртуальных сделок мультипользовательской платформы
-]
+TABLES = frozenset(
+    [
+        "bot_settings",
+        "bot_trades",
+        "bot_equity",
+        "bot_open_trades",
+        "bot_ai_state",
+        "bot_wallets",
+        "bot_wallet_meta",
+        "bot_ai_examples",  # обучающие примеры AI (features/label/weight)
+        "bot_ticks",  # тики для AI-советника/аналитики
+        "bot_wallet_snapshots",  # история снимков кошелька (TON/GRINCH/P&L)
+        "bot_user_trades",  # история виртуальных сделок мультипользовательской платформы
+    ]
+)
 
 # bot_ai_deep_models хранит бинарные веса моделей (bytea) — дампим отдельно,
 # без самого blob'а (иначе JSON-файл раздувается и плохо читается), только
@@ -93,7 +95,8 @@ def _dump_table(cur, table: str) -> list:
     Таблица валидируется по whitelist — только известные таблицы бота.
     """
     import re
-    if not re.fullmatch(r'[a-z_][a-z0-9_]*', table):
+
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", table):
         raise ValueError(f"Invalid table name: {table}")
     if table not in TABLES and table != DEEP_MODELS_TABLE:
         raise ValueError(f"Неизвестная таблица: {table}")

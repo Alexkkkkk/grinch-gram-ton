@@ -7,8 +7,8 @@
 """
 
 import base64
-import hashlib
 import logging
+import os
 import threading
 from datetime import datetime
 from typing import Optional
@@ -26,10 +26,11 @@ def encrypt_mnemonic(mnemonic: str) -> str:
     try:
         from config import Config
         from cryptography.fernet import Fernet
+        from cryptography.hazmat.primitives import hashes
 
         # SECURITY: use PBKDF2-HMAC for key derivation
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        from cryptography.hazmat.primitives import hashes
+
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
@@ -47,10 +48,11 @@ def decrypt_mnemonic(encrypted: str) -> str:
     try:
         from config import Config
         from cryptography.fernet import Fernet
+        from cryptography.hazmat.primitives import hashes
 
         # SECURITY: use PBKDF2-HMAC for key derivation
         from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-        from cryptography.hazmat.primitives import hashes
+
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,

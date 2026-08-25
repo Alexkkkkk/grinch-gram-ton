@@ -1,4 +1,3 @@
-from decimal import Decimal, ROUND_HALF_UP
 """
 grid_trader.py — чистая классическая Spot Grid (Binance-style)
 Без DCA. Только: BUY ниже → SELL выше. Прибыль с каждой сетки.
@@ -11,6 +10,7 @@ import os
 import threading
 import time
 from dataclasses import asdict, dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 
 from core.config import Config
@@ -286,7 +286,12 @@ class GridTrader:
             s.last_rebuild = time.time()
 
             # Upper / Lower price
-            s.upper_price = float((Decimal(str(center_price)) * (Decimal("1") + Decimal(str(step)) / Decimal("100")) ** n_sell).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
+            s.upper_price = float(
+                (
+                    Decimal(str(center_price))
+                    * (Decimal("1") + Decimal(str(step)) / Decimal("100")) ** n_sell
+                ).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+            )
             s.lower_price = round(center_price / (1 + step / 100) ** n_buy, 6)
 
             # Распределяем GRINCH на SELL-уровни

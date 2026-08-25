@@ -121,10 +121,10 @@ def _load_blacklist():
 def _save_blacklist_data(data: dict):
     """Save blacklist data (called outside lock)."""
     try:
-        with open(BLACKLIST_FILE, "w") as f:
+        with open(_BLACKLIST_FILE, "w") as f:
             json.dump(data, f)
     except Exception as e:
-        logger.error("Failed to save blacklist: %s", e)
+        log.error("Failed to save blacklist: %s", e)
 
 
 def _save_blacklist():
@@ -355,8 +355,13 @@ def add_security_headers(response):
     h.setdefault("X-XSS-Protection", "1; mode=block")
     h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     h.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-    h.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;")
-    h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+    h.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;",
+    )
+    h.setdefault(
+        "Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload"
+    )
     # Убираем «рекламу» технологии
     h["Server"] = "nginx"
     return response
