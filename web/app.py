@@ -41,6 +41,7 @@ def create_app() -> Flask:
     try:
         from flask_limiter import Limiter
         from flask_limiter.util import get_remote_address
+
         Limiter(
             app=app,
             key_func=get_remote_address,
@@ -59,12 +60,22 @@ def create_app() -> Flask:
     @app.after_request
     def after_request(response):
         duration = (time.time() - getattr(request, "_start_time", time.time())) * 1000
-        logger.info("%s %s %s %.2fms", request.method, request.path, response.status_code, duration)
+        logger.info(
+            "%s %s %s %.2fms",
+            request.method,
+            request.path,
+            response.status_code,
+            duration,
+        )
         response.headers["X-Response-Time"] = f"{duration:.2f}ms"
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
-        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        response.headers.setdefault(
+            "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
+        )
         response.headers["Server"] = "nginx"
         return response
 
