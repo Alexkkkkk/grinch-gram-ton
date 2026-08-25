@@ -1,18 +1,17 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # GRINCH-GRAM — Standalone (single container, SQLite, no external deps)
 # ═══════════════════════════════════════════════════════════════════════════════
-#
-# Quick start for development or simple VPS:
-#   docker-compose up -d
-#
-# For production with PostgreSQL + Redis + Nginx, use:
-#   docker-compose -f docker-compose.prod.yml up -d
+# Quick start:  docker-compose up -d
+# Build:        docker-compose build --parallel
+# ═══════════════════════════════════════════════════════════════════════════════
 
 services:
   bot:
     build:
       context: .
       dockerfile: Dockerfile
+      additional_contexts:
+        pip-cache: /tmp/pip-cache
     container_name: grinch-bot
     restart: unless-stopped
     env_file: .env

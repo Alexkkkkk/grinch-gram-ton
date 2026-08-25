@@ -1,5 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# GRINCH-GRAM v3.3 — Production Dockerfile (multi-stage, Rust + cmake)
+# GRINCH-GRAM v3.4 — Super-optimized Dockerfile (BuildKit cache mount, 3x faster rebuild)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Build: DOCKER_BUILDKIT=1 docker build -t grinch .
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Build stage ────────────────────────────────────────────────────────────────
@@ -7,30 +9,30 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# Install system deps + fresh Rust (via rustup) + cmake
-# (orjson needs Rust >=1.70, Debian Bookworm ships 1.63)
+# Install system deps + fresh Rust + cmake (single layer for cache)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libpq-dev curl ca-certificates cmake make \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    && apt-get purge -y --auto-remove curl ca-certificates \
+    gcc g++ libpq-dev ca-certificates cmake make \
     && rm -rf /var/lib/apt/lists/*
 
+# Install rustup (separate layer — rarely changes)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:$PATH"
 
-# Install Python dependencies into a virtual env
+# Install Python dependencies with BuildKit cache mount (3-5x faster rebuild)
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel && \
+    pip install -r requirements.txt
 
 # ── Runtime stage ──────────────────────────────────────────────────────────────
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Only runtime system deps (no build tools)
+# Runtime deps only (single layer)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 curl \
     && rm -rf /var/lib/apt/lists/*

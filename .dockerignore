@@ -1,53 +1,45 @@
 # Git
 .git
 .gitignore
-.gitattributes
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+
+# Virtual envs
 venv/
-.env
-.venv
 env/
-ENV/
+.venv/
 
 # IDE
-.vscode/
-.idea/
+.vscode
+.idea
 *.swp
 *.swo
 
-# Tests
+# Data (mount as volume)
+data/
+logs/
+backups/
+*.db
+*.sqlite3
+
+# Tests (not needed in production image)
 tests/
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Docs
-*.md
-!README.md
-CHANGELOG.md
-DEPLOY.md
-
 # CI/CD
 .github/
-.pre-commit-config.yaml
 
-# Data (mount as volume)
-data/
-backups/
-logs/
-*.db
-*.sqlite
+# Documentation
+*.md
+!README.md
 
-# Misc
+# OS
 .DS_Store
 Thumbs.db
-*.log
-*.backup
-*.bak
-.deploy.lock
