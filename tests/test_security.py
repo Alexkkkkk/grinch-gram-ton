@@ -1,11 +1,12 @@
 """Security tests — HMAC, circuit breaker, input validation."""
 
-import pytest
 from unittest.mock import patch
 
-from ai.engine import AIEngine, _sign_data, _verify_data
+import pytest
+
+from ai.engine import _sign_data, _verify_data
 from circuit_breaker import CircuitBreaker, CircuitBreakerOpen, State
-from validators import SettingsUpdate, LoginRequest, WithdrawRequest
+from validators import LoginRequest, SettingsUpdate, WithdrawRequest
 
 
 class TestHMAC:

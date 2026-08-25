@@ -4,7 +4,6 @@ import logging
 import signal
 import sys
 import threading
-import time
 from typing import Callable, List
 
 logger = logging.getLogger("shutdown")
@@ -26,7 +25,9 @@ def _on_signal(signum, frame):
         sys.exit(1)
     _shutting_down = True
     sig_name = signal.Signals(signum).name
-    logger.info("Received %s — graceful shutdown (%d handlers)...", sig_name, len(_handlers))
+    logger.info(
+        "Received %s — graceful shutdown (%d handlers)...", sig_name, len(_handlers)
+    )
     for handler in _handlers:
         try:
             handler()
