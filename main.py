@@ -47,52 +47,27 @@ if __name__ == "__main__":
     )
 
     if use_gunicorn and workers > 1:
-        # Production: gunicorn + eventlet
-        from gunicorn.app.base import BaseApplication
-
-        class GrinchApp(BaseApplication):
-            def __init__(self, app, options=None):
-                self.options = options or {}
-                self.application = app
-                super().__init__()
-
-            def load_config(self):
-                for key, value in self.options.items():
-                    if key in self.cfg.settings and value is not None:
-                        self.cfg.set(key.lower(), value)
-
-            def load(self):
-                return self.application
-
-        GrinchApp(
-            app,
-            {
-                "bind": f"0.0.0.0:{port}",
-                "workers": workers,
-                "worker_class": "eventlet",
-                "accesslog": "-",
-                "errorlog": "-",
-                "capture_output": True,
-                "enable_stdio_inheritance": True,
-            },
-        ).run()
-    else:
-        # Development / single-worker
-        socketio = SocketIO(
-            app,
-            cors_allowed_origins=os.getenv(
-                "CORS_ALLOWED_ORIGINS", "https://localhost"
-            ).split(","),
-            async_mode="threading",
+        logger.warning(
+            "Gunicorn with multiple workers requested but this path is deprecated. "
+            "Use 'gunicorn -c gunicorn.conf.py main:app' instead."
         )
-        socketio.run(
-            app,
-            host="0.0.0.0",
-            port=port,
-            debug=False,
-            use_reloader=False,
-            # allow_unsafe_werkzeug removed — use gunicorn in production
-        )
+
+    # Development / single-worker (also used when gunicorn.conf.py handles workers)
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins=os.getenv(
+            "CORS_ALLOWED_ORIGINS", "https://localhost"
+        ).split(","),
+        async_mode="threading",
+    )
+    socketio.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        use_reloader=False,
+        # allow_unsafe_werkzeug removed — use gunicorn in production
+    )
 
 # SECURITY: explicit initialization instead of import-time side effects
 from price_feed import _start_price_prefetch  # noqa: E402

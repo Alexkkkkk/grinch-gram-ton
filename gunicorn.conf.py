@@ -1,11 +1,24 @@
-"""Gunicorn configuration — production-optimized."""
+"""Gunicorn configuration — optimized for 2 GB RAM VPS."""
 
-import multiprocessing
 import os
 
 bind = f"0.0.0.0:{os.getenv('PORT', '3000')}"
-workers = int(os.getenv("WEB_CONCURRENCY", multiprocessing.cpu_count() * 2 + 1))
-worker_class = "sync"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAM-OPTIMIZED: 2 GB VPS → 1 worker + 4 threads (thread-based concurrency)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Why 1 worker?
+#   - Each worker = separate Python process with its own copy of loaded modules.
+#   - With sklearn + numpy + pandas imported, each worker eats ~300-500 MB.
+#   - 5 workers (default formula) = 1.5-2.5 GB just for gunicorn → OOM kills.
+# Why threads?
+#   - "gthread" handles concurrent requests inside ONE process via threads.
+#   - Threads share memory → no duplication of AI models / numpy arrays.
+#   - 4 threads is enough for a trading bot dashboard (mostly long-polling).
+# ═══════════════════════════════════════════════════════════════════════════════
+workers = int(os.getenv("WEB_CONCURRENCY", 1))
+threads = int(os.getenv("GUNICORN_THREADS", 4))
+worker_class = "gthread"
 worker_connections = 1000
 
 # Timeouts
@@ -22,7 +35,7 @@ enable_stdio_inheritance = True
 
 # Performance
 preload_app = True
-max_requests = 1000
+max_requests = 500
 max_requests_jitter = 50
 
 # Security

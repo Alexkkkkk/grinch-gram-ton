@@ -18,7 +18,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - GUNICORN=true
-      - WEB_CONCURRENCY=2
+      - WEB_CONCURRENCY=1
     ports:
       - "3000:3000"
     volumes:

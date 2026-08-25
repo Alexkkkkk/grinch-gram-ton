@@ -49,6 +49,17 @@ import psycopg2.pool
 
 logger = logging.getLogger(__name__)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAM-optimized limits for 2GB VPS (LOW_MEMORY_MODE)
+# ═══════════════════════════════════════════════════════════════════════════════
+_LOW_MEMORY = os.environ.get("LOW_MEMORY_MODE") == "1"
+TRADES_LIMIT = 200 if _LOW_MEMORY else 1000
+EQUITY_LIMIT = 500 if _LOW_MEMORY else 3000
+AI_EXAMPLES_LIMIT = 500 if _LOW_MEMORY else 2000
+GRID_EXP_KEEP = 500 if _LOW_MEMORY else 5000
+TICKS_KEEP = 500 if _LOW_MEMORY else 3000
+WALLET_SNAP_KEEP = 1000 if _LOW_MEMORY else 5000
+
 # ── БД: приоритет у внешней (EXTERNAL_DATABASE_URL), иначе Replit PostgreSQL (DATABASE_URL) ─────
 # ⚠️ ВАЖНО: секрет EXTERNAL_DATABASE_URL указывает на внешнюю БД пользователя
 # (pghost.ru, база "bothost_db_..."). Именно там хранятся ВСЕ настройки бота,
@@ -217,9 +228,6 @@ CREATE TABLE IF NOT EXISTS bot_grid_experience (
 );
 CREATE INDEX IF NOT EXISTS bot_grid_exp_ts ON bot_grid_experience (ts DESC);
 """
-
-TICKS_KEEP = 3000
-WALLET_SNAP_KEEP = 5000
 
 
 # ── Инициализация пула ────────────────────────────────────────────────────────
@@ -623,7 +631,7 @@ def trades_upsert(trade: dict):
         logger.warning(f"[DB] trades_upsert error: {e}")
 
 
-def trades_get_all(limit: int = 1000) -> list:
+def trades_get_all(limit: int = TRADES_LIMIT) -> list:
     if not _check_available():
         return []
     try:
@@ -730,7 +738,7 @@ def equity_insert(point: dict):
         logger.warning(f"[DB] equity_insert error: {e}")
 
 
-def equity_get_all(limit: int = 3000) -> list:
+def equity_get_all(limit: int = EQUITY_LIMIT) -> list:
     if not _check_available():
         return []
     try:
@@ -931,7 +939,7 @@ def ai_example_insert(features: list, label: int, weight: float):
         logger.warning(f"[DB] ai_example_insert error: {e}")
 
 
-def ai_examples_get_recent(limit: int = 2000) -> list:
+def ai_examples_get_recent(limit: int = AI_EXAMPLES_LIMIT) -> list:
     """Последние N примеров (по времени), для глубокого переобучения на
     полной истории. Возвращает [] если БД недоступна."""
     if not _check_available():
@@ -1004,8 +1012,6 @@ def ai_examples_export_all():
 # ═══════════════════════════════════════════════════════════════════════════════
 #  GRID AI EXPERIENCE (v5 — персистентный опыт сеточного трейдера)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-GRID_EXP_KEEP = 5000  # максимум записей в таблице
 
 
 def grid_experience_insert(entry: dict):

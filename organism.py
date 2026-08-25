@@ -44,7 +44,7 @@ class Organism:
 
     # ── Dreams ─────────────────────────────────────────────────────────────
     DREAM_ENERGY_THRESHOLD = 0.35  # ниже этой энергии → бот «видит сны»
-    DREAM_SIM_COUNT = 20  # симуляций за один цикл сна
+    DREAM_SIM_COUNT = 10  # симуляций за один цикл сна
 
     def __init__(self):
         self._lock = threading.RLock()

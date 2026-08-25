@@ -130,13 +130,13 @@ class AIEngine:
             Xs_test = self._scaler.transform(X_test)
             self._models = {
                 "rf": RandomForestClassifier(
-                    n_estimators=100, max_depth=8, random_state=42, n_jobs=-1
+                    n_estimators=50, max_depth=6, random_state=42, n_jobs=1
                 ),
                 "et": ExtraTreesClassifier(
-                    n_estimators=100, max_depth=8, random_state=42, n_jobs=-1
+                    n_estimators=50, max_depth=6, random_state=42, n_jobs=1
                 ),
                 "gb": GradientBoostingClassifier(
-                    n_estimators=80, max_depth=4, random_state=42
+                    n_estimators=40, max_depth=3, random_state=42
                 ),
             }
             for name, model in self._models.items():
