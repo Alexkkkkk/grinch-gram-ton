@@ -36,15 +36,16 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             
-            # Cleanup disk space before build
+            # Cleanup disk space and build cache before build
             docker system prune -f --volumes 2>/dev/null || true
+            docker builder prune -f 2>/dev/null || true
             docker image prune -f 2>/dev/null || true
             rm -rf /opt/backups/bot-* 2>/dev/null || true
             
-            # Build and deploy
+            # Build and deploy (no --no-cache to reuse layers)
             docker compose down 2>/dev/null || true
             docker rm -f grinch-bot 2>/dev/null || true
-            docker compose build --no-cache
+            docker compose build
             docker compose up -d
             
             # Health check
