@@ -3,10 +3,10 @@
 from unittest.mock import patch
 
 import pytest
+from validators import LoginRequest, SettingsUpdate, WithdrawRequest
 
 from ai.engine import _sign_data, _verify_data
 from circuit_breaker import CircuitBreaker, CircuitBreakerOpen, State
-from validators import LoginRequest, SettingsUpdate, WithdrawRequest
 
 
 class TestHMAC:
