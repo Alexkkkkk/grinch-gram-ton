@@ -81,7 +81,7 @@ class GridConfig:
     gas_reserve_ton: float = 5.0
     db_path: str = field(
         default_factory=lambda: _str_env(
-            "GRID_DB_PATH", "/app/data/grid_grinch_gram.db"
+            "DATABASE_URL", "postgresql://grinch:grinch@localhost:5432/grinch_db"
         )
     )
 

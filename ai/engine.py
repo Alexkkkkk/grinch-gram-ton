@@ -1,8 +1,10 @@
-"""AIEngine v2.1 — refactored, modular, lazy-loaded, memory-optimized."""
+"""AIEngine v2.2 — secure, validated, with train/test split."""
 
 import gc
+import hmac
+import hashlib
+import json
 import logging
-import pickle
 import threading
 import time
 import warnings
@@ -15,11 +17,13 @@ try:
         RandomForestClassifier,
     )
     from sklearn.preprocessing import StandardScaler
+    from sklearn.model_selection import train_test_split
 except ImportError:
     StandardScaler = None
     RandomForestClassifier = None
     ExtraTreesClassifier = None
     GradientBoostingClassifier = None
+    train_test_split = None
 
 import numpy as np
 
@@ -47,7 +51,41 @@ def _ensure_sklearn():
     globals()["StandardScaler"] = __import__(
         "sklearn.preprocessing", fromlist=["StandardScaler"]
     ).StandardScaler
+    globals()["train_test_split"] = __import__(
+        "sklearn.model_selection", fromlist=["train_test_split"]
+    ).train_test_split
     _sklearn_loaded = True
+
+
+def _get_signing_key() -> bytes:
+    """Get HMAC key from SECRET_KEY env var."""
+    key = Config.SECRET_KEY.encode() if Config.SECRET_KEY else b""
+    if len(key) < 32:
+        logger.warning("SECRET_KEY is too short for secure HMAC signing")
+    return key
+
+
+def _sign_data(data: bytes) -> bytes:
+    """Sign serialized data with HMAC-SHA256."""
+    key = _get_signing_key()
+    if not key:
+        raise RuntimeError("Cannot sign data: SECRET_KEY not configured")
+    sig = hmac.new(key, data, hashlib.sha256).digest()
+    return sig + data
+
+
+def _verify_data(data: bytes) -> bytes:
+    """Verify HMAC signature and return payload."""
+    if len(data) < 32:
+        raise ValueError("Data too short to contain signature")
+    key = _get_signing_key()
+    if not key:
+        raise RuntimeError("Cannot verify data: SECRET_KEY not configured")
+    sig, payload = data[:32], data[32:]
+    expected = hmac.new(key, payload, hashlib.sha256).digest()
+    if not hmac.compare_digest(sig, expected):
+        raise ValueError("HMAC signature verification failed — possible tampering")
+    return payload
 
 
 class AIEngine:
@@ -81,9 +119,16 @@ class AIEngine:
                 len(X) if X is not None else 0,
             )
             return False
+
+        # Train/test split to prevent overfitting
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+
         with self._lock:
             self._scaler = StandardScaler()
-            Xs = self._scaler.fit_transform(X)
+            Xs_train = self._scaler.fit_transform(X_train)
+            Xs_test = self._scaler.transform(X_test)
             self._models = {
                 "rf": RandomForestClassifier(
                     n_estimators=100, max_depth=8, random_state=42, n_jobs=-1
@@ -97,8 +142,19 @@ class AIEngine:
             }
             for name, model in self._models.items():
                 try:
-                    model.fit(Xs, y)
-                    logger.info("%s pre-trained (acc=%.3f)", name, model.score(Xs, y))
+                    model.fit(Xs_train, y_train)
+                    train_acc = model.score(Xs_train, y_train)
+                    test_acc = model.score(Xs_test, y_test)
+                    logger.info(
+                        "%s pre-trained (train_acc=%.3f, test_acc=%.3f, gap=%.3f)",
+                        name, train_acc, test_acc, train_acc - test_acc,
+                    )
+                    # Warn if overfitting detected (>10% gap)
+                    if train_acc - test_acc > 0.1:
+                        logger.warning(
+                            "%s shows signs of overfitting (gap=%.3f)",
+                            name, train_acc - test_acc,
+                        )
                 except Exception as exc:
                     logger.warning("%s pretrain failed: %s", name, exc)
             self._trained = True
@@ -184,27 +240,45 @@ class AIEngine:
         return feat[0].tolist() if feat is not None else None
 
     def export_experience(self) -> bytes:
+        """Export models with HMAC-SHA256 integrity signature."""
+        try:
+            import joblib
+        except ImportError:
+            logger.error("joblib not installed — cannot export experience")
+            return b""
         with self._lock:
-            return pickle.dumps(
-                {
-                    "examples": self._examples,
-                    "models": {k: pickle.dumps(v) for k, v in self._models.items()},
-                    "scaler": pickle.dumps(self._scaler) if self._scaler else None,
-                    "trained": self._trained,
-                }
-            )
+            state = {
+                "examples": self._examples,
+                "models": {k: joblib.dumps(v) for k, v in self._models.items()},
+                "scaler": joblib.dumps(self._scaler) if self._scaler else None,
+                "trained": self._trained,
+                "version": 2,
+            }
+            payload = joblib.dumps(state)
+            return _sign_data(payload)
 
     def import_experience(self, data: bytes) -> bool:
+        """Import only if HMAC signature is valid."""
         try:
-            state = pickle.loads(data)
+            import joblib
+        except ImportError:
+            logger.error("joblib not installed — cannot import experience")
+            return False
+        try:
+            payload = _verify_data(data)
+            state = joblib.loads(payload)
             with self._lock:
                 self._examples = state.get("examples", [])
                 self._trained = state.get("trained", False)
                 if state.get("scaler"):
-                    self._scaler = pickle.loads(state["scaler"])
+                    self._scaler = joblib.loads(state["scaler"])
                 for k, v in state.get("models", {}).items():
-                    self._models[k] = pickle.loads(v)
+                    self._models[k] = joblib.loads(v)
+            logger.info("Experience imported (v%d)", state.get("version", 1))
             return True
+        except ValueError as exc:
+            logger.error("Import BLOCKED: %s", exc)
+            return False
         except Exception as exc:
             logger.warning("import_experience failed: %s", exc)
             return False
