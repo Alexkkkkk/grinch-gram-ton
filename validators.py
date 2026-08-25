@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class SettingsUpdate(BaseModel):
@@ -13,7 +13,7 @@ class SettingsUpdate(BaseModel):
     ai_enabled: Optional[bool] = None
     ai_min_conf: Optional[float] = Field(None, ge=0, le=100)
 
-    @validator("trade_amount", "step_pct", "slippage_pct")
+    @field_validator("trade_amount", "step_pct", "slippage_pct")
     def must_be_positive(cls, v):
         if v is not None and v <= 0:
             raise ValueError("must be positive")
