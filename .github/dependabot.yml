@@ -20,7 +20,6 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "gunicorn"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "python-telegram-bot"
         update-types: ["version-update:semver-major"]
       - dependency-name: "scikit-learn"
         update-types: ["version-update:semver-major"]
