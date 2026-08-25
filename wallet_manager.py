@@ -84,8 +84,9 @@ class WalletManager:
         import threading
 
         _tid = threading.current_thread().name
-        _call = getattr(self, "_poll_call_count", 0) + 1
-        self._poll_call_count = _call
+        with getattr(self, "_counter_lock", threading.Lock()):
+            _call = getattr(self, "_poll_call_count", 0) + 1
+            self._poll_call_count = _call
         log.info("[WalletManager] _poll_body #%d thread=%s", _call, _tid)
 
         import db_store

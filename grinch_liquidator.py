@@ -78,6 +78,7 @@ class GrinchLiquidator:
         # Предотвращает дублирование продажи если два тика пройдут
         # проверку порога до того, как первая продажа завершится.
         self._sell_in_flight = False
+        self._sell_lock = threading.Lock()
         # Порог роста для продажи — можно менять через API.
         # Загружаем сохранённое значение из settings.json (если есть), иначе
         # дефолт = нетто-цель + комиссия цикла (≈22% gross → ≥20% нетто).
@@ -398,6 +399,7 @@ class GrinchLiquidator:
             finally:
                 with self._lock:
                     self._sell_in_flight = False
+        self._sell_lock = threading.Lock()
         else:
             pct_to_go = ((target - current) / current) * 100
             self._log(
@@ -556,6 +558,7 @@ class GrinchLiquidator:
         finally:
             with self._lock:
                 self._sell_in_flight = False
+        self._sell_lock = threading.Lock()
 
 
 # ── Синглтон — запускается при импорте модуля ────────────────────────────────

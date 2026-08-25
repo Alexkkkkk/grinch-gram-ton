@@ -29,6 +29,16 @@ def _int_env(key: str, default: int) -> int:
         return default
 
 
+def _require_env(key: str, message: str) -> str:
+    """Require environment variable — exit if missing."""
+    val = os.getenv(key)
+    if not val:
+        import sys
+        print(f"FATAL: {message}", file=sys.stderr)
+        sys.exit(1)
+    return val
+
+
 def _str_env(key: str, default: str) -> str:
     return os.getenv(key, default) or default
 

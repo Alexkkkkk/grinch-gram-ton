@@ -2,6 +2,7 @@
 
 import logging
 import time
+import secrets
 from datetime import datetime
 
 from core.base_components import BaseWorker
@@ -117,7 +118,7 @@ class Trader(BaseWorker):
         stake = min(Config.TRADE_AMOUNT, free_ton - Config.FEES.gas_reserve_ton)
         amount = stake / price if price > 0 else 0
         trade = {
-            "id": f"t{int(time.time()*1000)}",
+            "id": f"t{secrets.token_hex(8)}",
             "entry_price": price,
             "amount": amount,
             "stake_ton": stake,

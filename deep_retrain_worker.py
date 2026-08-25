@@ -19,7 +19,9 @@ Stdout-маркер для родительского процесса:
 
 import io
 import logging
-import pickle
+import joblib
+import hmac
+import hashlib
 import sys
 
 import numpy as np

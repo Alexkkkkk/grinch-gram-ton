@@ -273,4 +273,4 @@ def _start_price_prefetch():
     t.start()
 
 
-_start_price_prefetch()
+# _start_price_prefetch() moved to explicit init

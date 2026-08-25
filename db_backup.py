@@ -46,7 +46,7 @@ BACKUP_DIR = Path(_DATA_DIR) / "backups" if _DATA_DIR else Path("backups")
 KEEP_DAYS = 7  # сколько бэкапов хранить
 INTERVAL_S = 24 * 3600  # раз в сутки
 
-TABLES = [
+TABLES = frozenset([
     "bot_settings",
     "bot_trades",
     "bot_equity",
@@ -92,6 +92,9 @@ def _dump_table(cur, table: str) -> list:
 
     Таблица валидируется по whitelist — только известные таблицы бота.
     """
+    import re
+    if not re.fullmatch(r'[a-z_][a-z0-9_]*', table):
+        raise ValueError(f"Invalid table name: {table}")
     if table not in TABLES and table != DEEP_MODELS_TABLE:
         raise ValueError(f"Неизвестная таблица: {table}")
     cur.execute(f"SELECT * FROM {table}")

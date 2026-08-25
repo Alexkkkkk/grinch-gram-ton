@@ -78,12 +78,17 @@ if __name__ == "__main__":
         ).run()
     else:
         # Development / single-worker
-        socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+        socketio = SocketIO(app, cors_allowed_origins=os.getenv("CORS_ALLOWED_ORIGINS", "https://localhost").split(","), async_mode="threading")
         socketio.run(
             app,
             host="0.0.0.0",
             port=port,
             debug=False,
             use_reloader=False,
-            allow_unsafe_werkzeug=True,
+            # allow_unsafe_werkzeug removed — use gunicorn in production
         )
+
+# SECURITY: explicit initialization instead of import-time side effects
+from price_feed import PriceFeed
+price_feed = PriceFeed()
+price_feed.start()

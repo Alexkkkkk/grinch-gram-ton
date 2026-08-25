@@ -27,8 +27,17 @@ def encrypt_mnemonic(mnemonic: str) -> str:
         from config import Config
         from cryptography.fernet import Fernet
 
-        raw = hashlib.sha256(Config.SECRET_KEY.encode()).digest()
-        f = Fernet(base64.urlsafe_b64encode(raw))
+        # SECURITY: use PBKDF2-HMAC for key derivation
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        from cryptography.hazmat.primitives import hashes
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=os.urandom(16),
+            iterations=480000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(Config.SECRET_KEY.encode()))
+        f = Fernet(key)
         return f.encrypt(mnemonic.encode()).decode()
     except Exception:
         return base64.urlsafe_b64encode(mnemonic.encode()).decode()
@@ -39,8 +48,17 @@ def decrypt_mnemonic(encrypted: str) -> str:
         from config import Config
         from cryptography.fernet import Fernet
 
-        raw = hashlib.sha256(Config.SECRET_KEY.encode()).digest()
-        f = Fernet(base64.urlsafe_b64encode(raw))
+        # SECURITY: use PBKDF2-HMAC for key derivation
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        from cryptography.hazmat.primitives import hashes
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=os.urandom(16),
+            iterations=480000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(Config.SECRET_KEY.encode()))
+        f = Fernet(key)
         return f.decrypt(encrypted.encode()).decode()
     except Exception:
         return base64.urlsafe_b64decode(encrypted.encode()).decode()

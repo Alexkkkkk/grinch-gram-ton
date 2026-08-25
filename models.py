@@ -12,7 +12,7 @@ class UserWallet(db.Model):
         db.String(64), unique=True, nullable=False, default=lambda: str(uuid.uuid4())
     )
     name = db.Column(db.String(100), default="")
-    ton_address = db.Column(db.String(120), nullable=False)  # connected via TonConnect
+    ton_address = db.Column(db.String(255), nullable=False)  # encrypted, longer for ciphertext  # connected via TonConnect
     encrypted_mnemonic = db.Column(db.Text, nullable=True)  # legacy, optional
     trade_amount = db.Column(db.Float, default=1.0)
     active = db.Column(db.Boolean, default=True)
