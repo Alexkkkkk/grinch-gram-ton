@@ -1,56 +1,14 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# GRINCH-GRAM v3.3 — Production Docker Compose with Auto-Recovery
+# GRINCH-GRAM — Standalone (single container, SQLite, no external deps)
 # ═══════════════════════════════════════════════════════════════════════════════
+#
+# Quick start for development or simple VPS:
+#   docker-compose up -d
+#
+# For production with PostgreSQL + Redis + Nginx, use:
+#   docker-compose -f docker-compose.prod.yml up -d
 
 services:
-  # ── Database ─────────────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: grinch-postgres
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-grinch}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      POSTGRES_DB: ${POSTGRES_DB:-grinch_db}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data:rw
-    networks:
-      - grinch-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-
-  # ── Cache ─────────────────────────────────────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    container_name: grinch-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data:rw
-    networks:
-      - grinch-net
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-
-  # ── Bot ───────────────────────────────────────────────────────────────────────
   bot:
     build:
       context: .
@@ -62,9 +20,8 @@ services:
       - PYTHONUNBUFFERED=1
       - GUNICORN=true
       - WEB_CONCURRENCY=2
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-grinch}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-grinch_db}
+    ports:
+      - "3000:3000"
     volumes:
       - ./data:/app/data:rw
       - ./backups:/app/backups:rw
@@ -72,11 +29,6 @@ services:
       - ./models:/app/models:ro
     networks:
       - grinch-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -90,7 +42,6 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
-        labels: "service_name,environment"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 30s
@@ -98,49 +49,6 @@ services:
       retries: 3
       start_period: 15s
 
-  # ── Nginx ─────────────────────────────────────────────────────────────────────
-  nginx:
-    image: nginx:alpine
-    container_name: grinch-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./static:/usr/share/nginx/html/static:ro
-    networks:
-      - grinch-net
-    depends_on:
-      bot:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 128M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # ── Optional: Prometheus monitoring ─────────────────────────────────────────
-  # prometheus:
-  #   image: prom/prometheus:latest
-  #   container_name: grinch-prometheus
-  #   restart: unless-stopped
-  #   volumes:
-  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-  #   ports:
-  #     - "9090:9090"
-  #   networks:
-  #     - grinch-net
-
 networks:
   grinch-net:
     driver: bridge
-
-volumes:
-  postgres_data:
-  redis_data:
