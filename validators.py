@@ -1,6 +1,7 @@
 """Input validation schemas using Pydantic."""
 
 from typing import Optional
+
 from pydantic import BaseModel, Field, validator
 
 

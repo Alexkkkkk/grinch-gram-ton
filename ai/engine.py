@@ -1,9 +1,8 @@
 """AIEngine v2.2 — secure, validated, with train/test split."""
 
 import gc
-import hmac
 import hashlib
-import json
+import hmac
 import logging
 import threading
 import time
@@ -16,8 +15,8 @@ try:
         GradientBoostingClassifier,
         RandomForestClassifier,
     )
-    from sklearn.preprocessing import StandardScaler
     from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import StandardScaler
 except ImportError:
     StandardScaler = None
     RandomForestClassifier = None
@@ -147,13 +146,17 @@ class AIEngine:
                     test_acc = model.score(Xs_test, y_test)
                     logger.info(
                         "%s pre-trained (train_acc=%.3f, test_acc=%.3f, gap=%.3f)",
-                        name, train_acc, test_acc, train_acc - test_acc,
+                        name,
+                        train_acc,
+                        test_acc,
+                        train_acc - test_acc,
                     )
                     # Warn if overfitting detected (>10% gap)
                     if train_acc - test_acc > 0.1:
                         logger.warning(
                             "%s shows signs of overfitting (gap=%.3f)",
-                            name, train_acc - test_acc,
+                            name,
+                            train_acc - test_acc,
                         )
                 except Exception as exc:
                     logger.warning("%s pretrain failed: %s", name, exc)

@@ -38,7 +38,10 @@ class CircuitBreaker:
     def state(self) -> State:
         with self._lock:
             if self._state == State.OPEN:
-                if time.time() - (self._last_failure_time or 0) >= self.recovery_timeout:
+                if (
+                    time.time() - (self._last_failure_time or 0)
+                    >= self.recovery_timeout
+                ):
                     self._state = State.HALF_OPEN
                     self._success_count = 0
                     logger.info("[%s] Transition to HALF_OPEN", self.name)
@@ -62,7 +65,11 @@ class CircuitBreaker:
                 logger.warning("[%s] HALF_OPEN failed — back to OPEN", self.name)
             elif self._failure_count >= self.failure_threshold:
                 self._state = State.OPEN
-                logger.error("[%s] Transition to OPEN after %d failures", self.name, self._failure_count)
+                logger.error(
+                    "[%s] Transition to OPEN after %d failures",
+                    self.name,
+                    self._failure_count,
+                )
 
     def call(self, fn: Callable, *args, **kwargs):
         state = self.state
@@ -80,6 +87,7 @@ class CircuitBreaker:
         @wraps(fn)
         def wrapper(*args, **kwargs):
             return self.call(fn, *args, **kwargs)
+
         return wrapper
 
 
@@ -88,4 +96,6 @@ class CircuitBreakerOpen(Exception):
 
 
 dedust_breaker = CircuitBreaker("dedust", failure_threshold=3, recovery_timeout=30)
-toncenter_breaker = CircuitBreaker("toncenter", failure_threshold=5, recovery_timeout=60)
+toncenter_breaker = CircuitBreaker(
+    "toncenter", failure_threshold=5, recovery_timeout=60
+)
