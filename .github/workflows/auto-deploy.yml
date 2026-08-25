@@ -36,6 +36,11 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             
+            # Cleanup disk space before build
+            docker system prune -f --volumes 2>/dev/null || true
+            docker image prune -f 2>/dev/null || true
+            rm -rf /opt/backups/bot-* 2>/dev/null || true
+            
             # Build and deploy
             docker compose down 2>/dev/null || true
             docker rm -f grinch-bot 2>/dev/null || true
