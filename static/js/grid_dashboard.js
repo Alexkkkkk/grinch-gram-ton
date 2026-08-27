@@ -157,7 +157,7 @@ socket.on('status', (data) => {
         }));
         candleSeries.setData(chartData);
         volumeSeries.setData(volData);
-        centerLastCandle();
+        setTimeout(centerLastCandle, 150);
     }
 });
 
@@ -541,7 +541,8 @@ async function fetchCandles() {
 
         candleSeries.setData(chartData);
         volumeSeries.setData(volData);
-        centerLastCandle();
+        // Give chart time to render before centering
+        setTimeout(centerLastCandle, 150);
     } catch (e) {
         console.error('[Candles]', e);
     }
@@ -550,14 +551,21 @@ async function fetchCandles() {
 function centerLastCandle() {
     if (!candleChart || !candleSeries) return;
     const data = candleSeries.data();
-    if (!data || data.length === 0) return;
+    if (!data || data.length === 0) {
+        candleChart.timeScale().fitContent();
+        return;
+    }
     const lastIndex = data.length - 1;
     const visibleRange = candleChart.timeScale().getVisibleLogicalRange();
-    if (!visibleRange) {
+    if (!visibleRange || visibleRange.from === null || visibleRange.to === null) {
         candleChart.timeScale().fitContent();
         return;
     }
     const visibleBars = visibleRange.to - visibleRange.from;
+    if (visibleBars <= 0 || isNaN(visibleBars)) {
+        candleChart.timeScale().fitContent();
+        return;
+    }
     candleChart.timeScale().setVisibleLogicalRange({
         from: lastIndex - visibleBars / 2,
         to: lastIndex + visibleBars / 2,
