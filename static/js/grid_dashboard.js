@@ -54,7 +54,7 @@ function initCharts() {
             labels: [],
             datasets: [
                 {
-                    label: 'Цена USDT/USDT',
+                    label: 'Цена TON/USDT',
                     data: [],
                     borderColor: '#f0b90b',
                     backgroundColor: 'rgba(240, 185, 11, 0.05)',
