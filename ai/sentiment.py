@@ -1,5 +1,5 @@
 """
-sentiment.py v1 — QuantumSentiment: Анализ настроений рынка USDT/USDT.
+sentiment.py v1 — QuantumSentiment: Анализ настроений рынка TON/USDT.
 
 Источники:
   1. On-Chain Order Flow   — дельта покупок/продаж через DeDust volume

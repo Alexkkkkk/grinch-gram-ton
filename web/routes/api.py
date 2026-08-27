@@ -24,11 +24,11 @@ _bot_running: bool = False
 
 
 def _generate_mock_history():
-    """Generate demo price history for USDT/USDT so charts work immediately."""
+    """Generate demo price history for TON/USDT so charts work immediately."""
     import random
 
     now = time.time()
-    base_price = 1.0  # USDT/USDT ~ $1.00
+    base_price = 1.0  # TON/USDT ~ $1.00
     price = base_price
     pnl = 0.0
     for i in range(120):

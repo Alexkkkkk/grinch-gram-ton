@@ -186,7 +186,7 @@ async function fetchAllData() {
 }
 
 function updateStatus(data) {
-    document.getElementById('symbol').textContent = data.symbol || 'USDT/USDT';
+    document.getElementById('symbol').textContent = data.symbol || 'TON/USDT';
 
     const sec = data.uptime_sec || 0;
     const d = Math.floor(sec / 86400);

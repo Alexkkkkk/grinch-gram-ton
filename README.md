@@ -1,4 +1,4 @@
-# 🤖 QuantumGrinch v7 — AI Trading Bot for USDT/USDT
+# 🤖 QuantumGrinch v7 — AI Trading Bot for TON/USDT
 
 ## 🧠 Quantum Intelligence Suite
 - **Neural Prophet** — attention-based price prediction (3/7/14 candle horizons)
@@ -8,7 +8,7 @@
 - **XAI Explainer** — trust scores, counterfactuals, SHAP-like attribution
 
 ## ⚡ Trading Pair
-**USDT/USDT** on DeDust DEX (TON blockchain)
+**TON/USDT** on DeDust DEX (TON blockchain)
 
 ## 🚀 Quick Start
 ```bash

@@ -65,7 +65,7 @@ class FeeConfig:
 class GridConfig:
     enabled: bool = field(default_factory=lambda: _bool_env("GRID_MODE", True))
     symbol: str = field(
-        default_factory=lambda: _str_env("GRID_SYMBOL_DEDUST", "USDT/USDT")
+        default_factory=lambda: _str_env("GRID_SYMBOL_DEDUST", "TON/USDT")
     )
     count: int = field(default_factory=lambda: _int_env("GRID_COUNT", 40))
     step_pct: float = field(default_factory=lambda: _float_env("GRID_STEP_PCT", 3.5))
@@ -432,7 +432,7 @@ class Config(metaclass=_ConfigMeta):
         self.BINANCE_API_KEY = _str_env("BINANCE_API_KEY", "")
         self.BINANCE_API_SECRET = _str_env("BINANCE_API_SECRET", "")
         self.USE_BINANCE_TESTNET = _bool_env("USE_BINANCE_TESTNET", True)
-        self.GRID_SYMBOL_BINANCE = _str_env("GRID_SYMBOL_BINANCE", "USDTUSDT")
+        self.GRID_SYMBOL_BINANCE = _str_env("GRID_SYMBOL_BINANCE", "TONUSDT")
         self.GRID_INVESTMENT = _float_env("GRID_INVESTMENT", 1000)
         self.GRID_UPPER_PRICE = _float_env("GRID_UPPER_PRICE", 0)
         self.GRID_LOWER_PRICE = _float_env("GRID_LOWER_PRICE", 0)
