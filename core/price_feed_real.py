@@ -138,9 +138,7 @@ def update_price() -> float:
                 (price - old_ticks[0]["price"]) / old_ticks[0]["price"] * 100
             )
     _build_candles_from_ticks()
-    logger.info(
-        "[PriceFeed] TON/USDT = $%.4f (24h: %+.2f%%)", price, _price_change_24h
-    )
+    logger.info("[PriceFeed] TON/USDT = $%.4f (24h: %+.2f%%)", price, _price_change_24h)
     # Notify real-time subscribers
     for cb in _price_callbacks:
         try:
@@ -171,12 +169,29 @@ def fetch_external_candles(timeframe: str = "15m", limit: int = 200) -> List[dic
     try:
         # Map timeframe to CoinGecko days parameter
         days_map = {
-            "1c": 1, "1s": 1, "1m": 1, "1\u043c\u0438\u043d": 1,
-            "3m": 1, "3\u043c": 1, "5m": 1, "5\u043c": 1,
-            "15m": 1, "15\u043c": 1, "30m": 1, "30\u043c": 1,
-            "1h": 1, "1\u0447": 1, "2h": 1, "2\u0447": 1,
-            "4h": 1, "4\u0447": 1, "6h": 7, "6\u0447": 7,
-            "1d": 30, "1w": 90, "1M": 365,
+            "1c": 1,
+            "1s": 1,
+            "1m": 1,
+            "1\u043c\u0438\u043d": 1,
+            "3m": 1,
+            "3\u043c": 1,
+            "5m": 1,
+            "5\u043c": 1,
+            "15m": 1,
+            "15\u043c": 1,
+            "30m": 1,
+            "30\u043c": 1,
+            "1h": 1,
+            "1\u0447": 1,
+            "2h": 1,
+            "2\u0447": 1,
+            "4h": 1,
+            "4\u0447": 1,
+            "6h": 7,
+            "6\u0447": 7,
+            "1d": 30,
+            "1w": 90,
+            "1M": 365,
         }
         days = days_map.get(timeframe, 1)
         r = requests.get(
@@ -196,7 +211,9 @@ def fetch_external_candles(timeframe: str = "15m", limit: int = 200) -> List[dic
                 }
                 for c in data
             ]
-            logger.info("[CoinGecko] Fetched %d candles for %s", len(candles), timeframe)
+            logger.info(
+                "[CoinGecko] Fetched %d candles for %s", len(candles), timeframe
+            )
             return candles[-limit:]
     except Exception as e:
         logger.debug("CoinGecko fetch error: %s", e)
