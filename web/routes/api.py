@@ -7,7 +7,10 @@ from typing import List
 from flask import Blueprint, jsonify, request
 
 from core.config import Config
-from core.price_feed_real import get_history_for_chart, get_candles, get_candles_timeframe
+from core.price_feed_real import (
+    get_candles_timeframe,
+    get_history_for_chart,
+)
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 _start_time = time.time()
@@ -460,6 +463,7 @@ def api_ton_refresh():
 @api_bp.route("/ton/price")
 def api_ton_price():
     from core.price_feed_real import get_current_price
+
     return jsonify({"price": get_current_price(), "currency": "USD"})
 
 

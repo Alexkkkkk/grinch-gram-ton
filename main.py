@@ -10,6 +10,12 @@ from typing import Optional
 
 from flask_socketio import SocketIO
 
+from core.price_feed_real import (
+    get_candles_timeframe,
+    get_current_price,
+    get_price_change_24h,
+    register_price_callback,
+)
 from web.app import create_app
 
 # Structured logging
@@ -51,12 +57,6 @@ def _broadcast_price(price: float):
 
 def _broadcast_status():
     """Broadcast full status to all clients every 2 seconds."""
-    from core.price_feed_real import (
-        get_current_price,
-        get_price_change_24h,
-        get_candles_timeframe,
-    )
-
     while True:
         try:
             if socketio:
@@ -105,8 +105,6 @@ if __name__ == "__main__":
     )
 
     # Register price callback for real-time updates
-    from core.price_feed_real import register_price_callback
-
     register_price_callback(_broadcast_price)
 
     # Start background broadcaster

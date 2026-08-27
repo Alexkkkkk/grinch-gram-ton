@@ -25,6 +25,7 @@ def unregister_price_callback(cb: Callable[[float], None]) -> None:
     if cb in _price_callbacks:
         _price_callbacks.remove(cb)
 
+
 try:
     import requests
 except ImportError:
@@ -175,16 +176,26 @@ def get_candles_timeframe(timeframe: str = "5m", limit: int = 200) -> List[dict]
     Supported: 1s, 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 1d, 1w, 1M
     """
     tf_map = {
-        "1c": 1, "1s": 1,
-        "1m": 60, "1\u043c\u0438\u043d": 60,
-        "3m": 180, "3\u043c": 180,
-        "5m": 300, "5\u043c": 300,
-        "15m": 900, "15\u043c": 900,
-        "30m": 1800, "30\u043c": 1800,
-        "1h": 3600, "1\u0447": 3600,
-        "2h": 7200, "2\u0447": 7200,
-        "4h": 14400, "4\u0447": 14400,
-        "6h": 21600, "6\u0447": 21600,
+        "1c": 1,
+        "1s": 1,
+        "1m": 60,
+        "1\u043c\u0438\u043d": 60,
+        "3m": 180,
+        "3\u043c": 180,
+        "5m": 300,
+        "5\u043c": 300,
+        "15m": 900,
+        "15\u043c": 900,
+        "30m": 1800,
+        "30\u043c": 1800,
+        "1h": 3600,
+        "1\u0447": 3600,
+        "2h": 7200,
+        "2\u0447": 7200,
+        "4h": 14400,
+        "4\u0447": 14400,
+        "6h": 21600,
+        "6\u0447": 21600,
         "1d": 86400,
         "1w": 604800,
         "1M": 2592000,
@@ -206,14 +217,16 @@ def get_candles_timeframe(timeframe: str = "5m", limit: int = 200) -> List[dict]
     for bucket_ts in sorted(buckets.keys()):
         bucket = buckets[bucket_ts]
         prices = [b["price"] for b in bucket]
-        candles.append({
-            "t": bucket_ts,
-            "open": prices[0],
-            "high": max(prices),
-            "low": min(prices),
-            "close": prices[-1],
-            "volume": sum(b.get("volume", 0) for b in bucket),
-        })
+        candles.append(
+            {
+                "t": bucket_ts,
+                "open": prices[0],
+                "high": max(prices),
+                "low": min(prices),
+                "close": prices[-1],
+                "volume": sum(b.get("volume", 0) for b in bucket),
+            }
+        )
 
     return candles[-limit:]
 
