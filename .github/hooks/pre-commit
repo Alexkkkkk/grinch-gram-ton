@@ -1,0 +1,30 @@
+#!/bin/bash
+# Pre-commit hook — runs checks before allowing commit
+
+echo "=== Pre-commit checks ==="
+
+# Check Python syntax
+find . -name "*.py" -not -path "./.git/*" -exec python3 -m py_compile {} \; 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "❌ Python syntax error"
+    exit 1
+fi
+
+# Check YAML syntax
+python3 -c "import yaml, glob; [yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')]" 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "❌ YAML syntax error"
+    exit 1
+fi
+
+# Auto-format with black if available
+if command -v black &> /dev/null; then
+    black --quiet . 2>/dev/null
+fi
+
+# Auto-fix with ruff if available
+if command -v ruff &> /dev/null; then
+    ruff check . --fix --quiet 2>/dev/null
+fi
+
+echo "✅ Pre-commit checks passed"

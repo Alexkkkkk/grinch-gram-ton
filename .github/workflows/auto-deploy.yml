@@ -1,0 +1,100 @@
+name: Auto-Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.repository == 'Alexkkkkk/grinch-gram-ton'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: 2.27.25.126
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_SSH_PASSWORD }}
+          port: 22
+          script: |
+            set -e
+            echo "=== AI-Trading Auto-Deploy ==="
+            
+            # ── Disk check ─────────────────────────────────────────────
+            FREE_GB=$(df -BG / | tail -1 | awk '{print $4}' | tr -d 'G')
+            echo "Free disk space: ${FREE_GB}GB"
+            if [ "$FREE_GB" -lt 3 ]; then
+              echo "WARNING: Less than 3GB free. Running emergency cleanup..."
+              docker system prune -af --volumes
+              docker builder prune -af
+              docker image prune -af
+              rm -rf /opt/backups/bot-*
+              FREE_GB=$(df -BG / | tail -1 | awk '{print $4}' | tr -d 'G')
+              echo "After cleanup: ${FREE_GB}GB"
+              if [ "$FREE_GB" -lt 3 ]; then
+                echo "FATAL: Still less than 3GB free. Aborting."
+                exit 1
+              fi
+            fi
+            
+            cd /opt/bot || { echo "Bot directory not found"; exit 1; }
+            
+            # ── Backup ─────────────────────────────────────────────────
+            BACKUP_DIR="/opt/backups/bot-$(date +%Y%m%d-%H%M%S)"
+            mkdir -p "$BACKUP_DIR"
+            cp -r . "$BACKUP_DIR/" 2>/dev/null || true
+            
+            # ── Pull latest ──────────────────────────────────────────
+            git fetch origin
+            git reset --hard origin/main
+            
+            # ── Aggressive cleanup before build ──────────────────────
+            echo "Cleaning Docker..."
+            docker compose down 2>/dev/null || true
+            docker rm -f grinch-bot 2>/dev/null || true
+            docker system prune -af --volumes 2>/dev/null || true
+            docker builder prune -af 2>/dev/null || true
+            docker image prune -af 2>/dev/null || true
+            
+            # ── Build and deploy ─────────────────────────────────────
+            echo "Building..."
+            docker compose build
+            docker compose up -d
+            
+            # ── Health check ─────────────────────────────────────────
+            sleep 10
+            echo "Checking health..."
+            curl -f http://localhost:3000/api/health || {
+              echo "Health check failed! Dumping container logs..."
+              docker logs quantum-bot --tail 50 || true
+              echo "Rolling back..."
+              cd "$BACKUP_DIR"
+              docker compose up -d 2>/dev/null || true
+              exit 1
+            }
+            
+            # ── Cleanup old backups (keep last 5) ────────────────────
+            ls -t /opt/backups/bot-* 2>/dev/null | tail -n +6 | xargs rm -rf 2>/dev/null || true
+            
+            # ── Final disk report ────────────────────────────────────
+            df -h /
+            echo "=== Deploy successful ==="
+
+      - name: Notify Telegram
+        if: always()
+        uses: appleboy/telegram-action@v1.1.1
+        continue-on-error: true
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            🤖 AI-Trading Deploy
+            Status: ${{ job.status }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref }}

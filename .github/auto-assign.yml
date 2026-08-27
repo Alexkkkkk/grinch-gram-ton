@@ -1,0 +1,9 @@
+addReviewers: true
+addAssignees: author
+reviewers:
+  - Alexkkkkk
+numberOfReviewers: 1
+skipKeywords:
+  - wip
+  - draft
+  - dependabot

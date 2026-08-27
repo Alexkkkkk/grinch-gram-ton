@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#f0b90b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="QuantumGrinch">
+<meta name="description" content="AI-powered crypto trading dashboard with real-time candlestick charts">
+<meta name="format-detection" content="telephone=no">
+<title>QuantumGrinch v7 — AI Trading</title>
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+<link rel="apple-touch-icon" href="/static/img/icon-192.png">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/grid_style.css') }}">
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js" defer></script>
+<script src="{{ url_for('static', filename='js/lightweight-charts.standalone.production.js') }}" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header class="header">
+    <div>
+      <h1>QuantumGrinch v7</h1>
+      <div class="symbol-badge" id="symbol">GRAM/USDT</div>
+      <div style="color:#4fc3f7;font-size:11px;margin-top:4px;">Quantum Intelligence Suite</div>
+    </div>
+    <div class="price-block">
+      <div class="price-live" id="currentPrice">—</div>
+      <div class="price-change" id="priceChange">—</div>
+    </div>
+  </header>
+
+  <!-- Balance -->
+  <div class="balance-grid">
+    <div class="balance-card-ton">
+      <div class="balance-header">
+        <span class="balance-icon">💎</span>
+        <div>
+          <div class="balance-name">TON</div>
+          <div class="balance-sub">The Open Network</div>
+        </div>
+      </div>
+      <div class="balance-amount" id="bal-ton">—</div>
+      <div class="balance-usd">≈ $<span id="bal-ton-usd">—</span></div>
+      <div class="balance-price-row">Цена TON <span class="balance-price-value" id="price-ton">$—</span></div>
+    </div>
+    <div class="balance-card-token">
+      <div class="balance-header">
+        <span class="balance-icon">🧬</span>
+        <div>
+          <div class="balance-name token" id="token-name">GRAM</div>
+          <div class="balance-sub">USDT</div>
+        </div>
+      </div>
+      <div class="balance-amount" id="bal-token">—</div>
+      <div class="balance-usd">≈ $<span id="bal-token-usd">—</span> · ≈ <span id="bal-token-ton">—</span> TON</div>
+      <div class="balance-price-row token">Цена <span id="token-name-2">GRAM</span> <span class="balance-price-value" id="price-token" style="color:#69f0ae;">$—</span></div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <section class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">ROI</div>
+      <div class="stat-value positive" id="roi">+0.00%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">PnL (USD)</div>
+      <div class="stat-value positive" id="pnl">+0.00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Прибыль/сетка</div>
+      <div class="stat-value" id="avgProfit">0.00 USDT</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Сделок Buy/Sell</div>
+      <div class="stat-value" id="trades">0 / 0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Время работы</div>
+      <div class="stat-value" id="uptime">0д. 0ч. 0мин.</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Активных ордеров</div>
+      <div class="stat-value" id="activeOrders">0</div>
+    </div>
+  </section>
+
+  <!-- v7: Quantum Intelligence Panel -->
+  <div class="quantum-panel">
+    <h3>🔮 Quantum Intelligence Suite</h3>
+    <div class="v7-grid">
+      <!-- Neural Prophet -->
+      <div class="v7-card">
+        <div class="v7-title">🔮 Neural Prophet</div>
+        <div class="v7-value v7-signal-hold" id="prophet-signal">HOLD</div>
+        <div class="v7-sub" id="prophet-target">Target: —</div>
+        <div class="v7-confidence-bar"><div class="v7-confidence-fill trust-mid" id="prophet-conf-bar" style="width:0%"></div></div>
+        <div class="v7-sub" id="prophet-horizons">3h: — | 7h: — | 14h: —</div>
+      </div>
+      <!-- Sentiment -->
+      <div class="v7-card">
+        <div class="v7-title">😰😀 Market Sentiment</div>
+        <div class="fear-greed-gauge">
+          <div class="fear-greed-value" id="fg-value">50</div>
+          <div class="fear-greed-bar">
+            <div class="fear-greed-marker" id="fg-marker" style="left:50%"></div>
+          </div>
+        </div>
+        <div class="v7-sub" id="fg-label">Neutral</div>
+        <div class="v7-sub" id="sentiment-signal">Signal: NEUTRAL</div>
+      </div>
+      <!-- Swarm -->
+      <div class="v7-card">
+        <div class="v7-title">🐝 Swarm Intelligence</div>
+        <div class="v7-value v7-signal-hold" id="swarm-consensus">HOLD</div>
+        <div class="v7-sub" id="swarm-agents">16 agents | Avg fitness: —</div>
+        <div class="swarm-agents" id="swarm-visual"></div>
+      </div>
+      <!-- XAI Trust -->
+      <div class="v7-card">
+        <div class="v7-title">🛡️ XAI Trust Score</div>
+        <div class="v7-value" id="trust-score">—</div>
+        <div class="v7-sub" id="trust-label">Waiting for data...</div>
+        <div class="v7-confidence-bar"><div class="v7-confidence-fill trust-low" id="trust-bar" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-row">
+    <div class="chart-card">
+      <h3>📈 Цена + PnL (24ч)</h3>
+      <canvas id="mainChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Grid Preview -->
+  <section class="grid-preview">
+    <div class="grid-header">
+      <h3>Сетка GRAM/USDT</h3>
+      <div class="timeframe-selector">
+        <button class="tf-btn" data-tf="1c">1с</button>
+        <button class="tf-btn" data-tf="1m">1М</button>
+        <button class="tf-btn" data-tf="1m">1мин</button>
+        <button class="tf-btn" data-tf="3m">3м</button>
+        <button class="tf-btn" data-tf="5m">5м</button>
+        <button class="tf-btn active" data-tf="15m">15м</button>
+        <button class="tf-btn" data-tf="30m">30м</button>
+        <button class="tf-btn" data-tf="1h">1ч</button>
+        <button class="tf-btn" data-tf="2h">2ч</button>
+        <button class="tf-btn" data-tf="4h">4ч</button>
+        <button class="tf-btn" data-tf="6h">6ч</button>
+      </div>
+    </div>
+    <div class="grid-info">
+      <div class="grid-legend">
+        <span class="legend-buy">▲ Buy</span>
+        <span class="legend-sell">▼ Sell</span>
+      </div>
+      <div class="grid-visual" id="gridVisual">
+        <div id="candlestick-chart"></div>
+        <div class="price-line" id="priceLine">
+          <span class="price-tag" id="priceTag">—</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- XAI Explanation -->
+  <div class="quantum-panel">
+    <h3>🧠 XAI Explanation</h3>
+    <div class="explanation-box" id="xai-explanation">Waiting for first trade...</div>
+    <div class="counterfactual-list" id="xai-counterfactuals"></div>
+  </div>
+
+  <!-- Controls -->
+  <section class="controls">
+    <button class="btn btn-success" onclick="startBot()">▶ Запустить</button>
+    <button class="btn btn-danger" onclick="stopBot()">⏹ Остановить</button>
+    <button class="btn btn-primary" onclick="buildGrid()">🔧 Построить сетку</button>
+    <div class="input-group"><label>Верхняя:</label><input type="number" id="upperInput" step="0.0001" placeholder="Авто"></div>
+    <div class="input-group"><label>Нижняя:</label><input type="number" id="lowerInput" step="0.0001" placeholder="Авто"></div>
+    <div class="input-group"><label>Сеток:</label><input type="number" id="gridCount" value="40" min="5" max="200"></div>
+    <div class="input-group"><label>USDT:</label><input type="number" id="investment" value="1000" min="10"></div>
+  </section>
+
+  <!-- Log -->
+  <section class="log-panel" id="logPanel">
+    <div class="log-entry info">[System] QuantumGrinch v7 initialized</div>
+  </section>
+
+  <div class="disclaimer">
+    * Quantum Intelligence Suite v7 — экспериментальная система. Торгуйте ответственно.
+  </div>
+</div>
+
+<!-- PWA Service Worker -->
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/static/js/sw.js')
+            .then(reg => console.log('[PWA] SW registered:', reg.scope))
+            .catch(err => console.log('[PWA] SW failed:', err));
+    });
+}
+
+// Wake Lock API — не гасить экран при торговле
+if ('wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').catch(() => {});
+}
+
+// Vibration API — вибрация при сделках
+function tradeVibrate(type) {
+    if ('vibrate' in navigator) {
+        navigator.vibrate(type === 'buy' ? [50, 30, 50] : type === 'sell' ? [100, 50, 100] : 30);
+    }
+}
+</script>
+
+<script src="{{ url_for('static', filename='js/grid_dashboard.js') }}"></script>
+</body>
+</html>
