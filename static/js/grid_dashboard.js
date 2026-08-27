@@ -163,70 +163,115 @@ socket.on('status', (data) => {
 
 // ── Periodic data fetch (non-price data) ─────────────────────────────────────
 async function fetchAllData() {
+    // Fetch each endpoint independently so one failure doesn't break others
+    let status = null, balance = null, history = null, v7 = null;
+
     try {
-        const [statusRes, balanceRes, historyRes, v7Res] = await Promise.all([
-            fetch('/api/status'),
-            fetch('/api/balance'),
-            fetch('/api/history?hours=24'),
-            fetch('/api/v7/all'),
-        ]);
-
-        const status = await statusRes.json();
-        const balance = await balanceRes.json();
-        const history = await historyRes.json();
-        const v7 = await v7Res.json();
-
+        const res = await fetch('/api/status');
+        status = await res.json();
         updateStatus(status);
+    } catch (e) {
+        console.error('[fetch] status error:', e);
+    }
+
+    try {
+        const res = await fetch('/api/balance');
+        balance = await res.json();
         updateBalance(balance);
+    } catch (e) {
+        console.error('[fetch] balance error:', e);
+    }
+
+    try {
+        const res = await fetch('/api/history?hours=24');
+        history = await res.json();
         updateCharts(history);
+    } catch (e) {
+        console.error('[fetch] history error:', e);
+    }
+
+    try {
+        const res = await fetch('/api/v7/all');
+        v7 = await res.json();
         updateV7(v7);
     } catch (e) {
-        console.error('fetch error:', e);
+        console.error('[fetch] v7 error:', e);
     }
 }
 
 function updateStatus(data) {
-    document.getElementById('symbol').textContent = data.symbol || 'TON/USDT';
+    if (!data) return;
+    const symEl = document.getElementById('symbol');
+    if (symEl) symEl.textContent = data.symbol || 'TON/USDT';
 
-    const sec = data.uptime_sec || 0;
+    const sec = Number(data.uptime_sec) || 0;
     const d = Math.floor(sec / 86400);
     const h = Math.floor((sec % 86400) / 3600);
     const m = Math.floor((sec % 3600) / 60);
-    document.getElementById('uptime').textContent = d + 'д. ' + h + 'ч. ' + m + 'мин.';
+    const uptimeEl = document.getElementById('uptime');
+    if (uptimeEl) uptimeEl.textContent = d + 'д. ' + h + 'ч. ' + m + 'мин.';
 }
 
 function updateBalance(data) {
-    if (!data.ok) return;
+    if (!data || !data.ok) return;
+
+    const ton = data.ton || {};
+    const token = data.token || {};
 
     const tonEl = document.getElementById('bal-ton');
-    if (tonEl) tonEl.textContent = data.ton.amount.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 4});
+    if (tonEl) {
+        const amt = Number(ton.amount) || 0;
+        tonEl.textContent = amt.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 4});
+    }
 
     const tonUsd = document.getElementById('bal-ton-usd');
-    if (tonUsd) tonUsd.textContent = data.ton.usd.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (tonUsd) {
+        const usd = Number(ton.usd) || 0;
+        tonUsd.textContent = usd.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
 
     const priceTon = document.getElementById('price-ton');
-    if (priceTon) priceTon.textContent = '$' + data.ton.price.toFixed(2);
+    if (priceTon) {
+        const p = Number(ton.price) || 0;
+        priceTon.textContent = p > 0 ? '$' + p.toFixed(2) : '$—';
+    }
 
     const tokenEl = document.getElementById('bal-token');
-    if (tokenEl) tokenEl.textContent = Math.floor(data.token.amount).toLocaleString('ru-RU');
+    if (tokenEl) {
+        const amt = Number(token.amount) || 0;
+        tokenEl.textContent = Math.floor(amt).toLocaleString('ru-RU');
+    }
 
     const tokenUsd = document.getElementById('bal-token-usd');
-    if (tokenUsd) tokenUsd.textContent = data.token.usd.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (tokenUsd) {
+        const usd = Number(token.usd) || 0;
+        tokenUsd.textContent = usd.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    }
 
     const tokenTon = document.getElementById('bal-token-ton');
-    if (tokenTon) tokenTon.textContent = data.token.price_ton.toFixed(4);
+    if (tokenTon) {
+        const p = Number(token.price_ton) || 0;
+        tokenTon.textContent = p > 0 ? p.toFixed(4) : '—';
+    }
 
     const priceToken = document.getElementById('price-token');
-    if (priceToken) priceToken.textContent = '$' + data.token.price.toFixed(6);
+    if (priceToken) {
+        const p = Number(token.price) || 0;
+        priceToken.textContent = p > 0 ? '$' + p.toFixed(6) : '$—';
+    }
 
     const tName = document.getElementById('token-name');
-    if (tName) tName.textContent = data.token.symbol;
+    if (tName) tName.textContent = token.symbol || 'USDT';
 
     const tName2 = document.getElementById('token-name-2');
-    if (tName2) tName2.textContent = data.token.symbol;
+    if (tName2) tName2.textContent = token.symbol || 'USDT';
 
     // Update current price display
-    document.getElementById('currentPrice').textContent = '$' + data.token.price.toFixed(5);
+    const curPrice = document.getElementById('currentPrice');
+    if (curPrice) {
+        const p = Number(token.price) || Number(ton.price) || 0;
+        curPrice.textContent = p > 0 ? '$' + p.toFixed(5) : '$—';
+    }
 }
 
 function updateCharts(history) {

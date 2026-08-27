@@ -235,10 +235,8 @@ def api_balance():
     # Real prices from STON.fi
     from core.price_feed_real import get_current_price as get_real_price
 
-    real_price = get_real_price()
-    ton_price = real_price  # USDT = prev. Toncoin = TON
-    usdt_price = 1.0  # USD
-    token_price_ton = real_price / ton_price if ton_price > 0 else 0.0015
+    ton_price = get_real_price()  # TON price in USD (~$1.41)
+    usdt_price = 1.0  # USDT is always ~$1.00
 
     return jsonify(
         {
@@ -252,8 +250,8 @@ def api_balance():
                 "symbol": "USDT",
                 "amount": round(usdt_bal, 2),
                 "usd": round(usdt_bal * usdt_price, 2),
-                "price": real_price,
-                "price_ton": token_price_ton,
+                "price": usdt_price,
+                "price_ton": round(1.0 / ton_price, 6) if ton_price > 0 else 0.0,
             },
         }
     )

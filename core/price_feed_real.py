@@ -180,7 +180,7 @@ def fetch_external_candles(timeframe: str = "15m", limit: int = 200) -> List[dic
         }
         days = days_map.get(timeframe, 1)
         r = requests.get(
-            f"https://api.coingecko.com/api/v3/coins/gram/ohlc?vs_currency=usd&days={days}",
+            f"https://api.coingecko.com/api/v3/coins/the-open-network/ohlc?vs_currency=usd&days={days}",
             timeout=15,
         )
         if r.status_code == 200:
