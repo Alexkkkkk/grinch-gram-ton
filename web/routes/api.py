@@ -24,11 +24,11 @@ _bot_running: bool = False
 
 
 def _generate_mock_history():
-    """Generate demo price history for GRAM/USDT so charts work immediately."""
+    """Generate demo price history for USDT/USDT so charts work immediately."""
     import random
 
     now = time.time()
-    base_price = 1.0  # GRAM/USDT ~ $1.00
+    base_price = 1.0  # USDT/USDT ~ $1.00
     price = base_price
     pnl = 0.0
     for i in range(120):
@@ -236,7 +236,7 @@ def api_balance():
     from core.price_feed_real import get_current_price as get_real_price
 
     real_price = get_real_price()
-    ton_price = real_price  # GRAM = prev. Toncoin = TON
+    ton_price = real_price  # USDT = prev. Toncoin = TON
     usdt_price = 1.0  # USD
     token_price_ton = real_price / ton_price if ton_price > 0 else 0.0015
 
@@ -249,7 +249,7 @@ def api_balance():
                 "price": ton_price,
             },
             "token": {
-                "symbol": "GRAM",
+                "symbol": "USDT",
                 "amount": round(usdt_bal, 2),
                 "usd": round(usdt_bal * usdt_price, 2),
                 "price": real_price,

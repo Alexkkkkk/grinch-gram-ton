@@ -1,5 +1,5 @@
 """
-BrainFusion v3 — Quantum Intelligence Engine для GRAM/USDT.
+BrainFusion v3 — Quantum Intelligence Engine для USDT/USDT.
 
 Объединяет 8 источников сигналов в один консенсусный «организм»:
   1. AI-движок (ML ансамбль: RF/ET/GB/HGB/XGB/MLP)

@@ -1,5 +1,5 @@
 """
-price_feed_real.py — Real-time GRAM/USDT price from STON.fi DEX.
+price_feed_real.py — Real-time USDT/USDT price from STON.fi DEX.
 
 Fetches live price from STON.fi API and maintains OHLCV candle history.
 """
@@ -48,7 +48,7 @@ _last_fetch: float = 0.0
 
 
 def _fetch_stonfi_price() -> Optional[float]:
-    """Fetch GRAM (TON) price in USDT from STON.fi."""
+    """Fetch USDT (TON) price in USDT from STON.fi."""
     if requests is None:
         return None
     try:
@@ -139,7 +139,7 @@ def update_price() -> float:
             )
     _build_candles_from_ticks()
     logger.info(
-        "[PriceFeed] GRAM/USDT = $%.4f (24h: %+.2f%%)", price, _price_change_24h
+        "[PriceFeed] USDT/USDT = $%.4f (24h: %+.2f%%)", price, _price_change_24h
     )
     # Notify real-time subscribers
     for cb in _price_callbacks:

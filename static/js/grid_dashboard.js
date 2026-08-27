@@ -54,7 +54,7 @@ function initCharts() {
             labels: [],
             datasets: [
                 {
-                    label: 'Цена GRAM/USDT',
+                    label: 'Цена USDT/USDT',
                     data: [],
                     borderColor: '#f0b90b',
                     backgroundColor: 'rgba(240, 185, 11, 0.05)',
@@ -186,7 +186,7 @@ async function fetchAllData() {
 }
 
 function updateStatus(data) {
-    document.getElementById('symbol').textContent = data.symbol || 'GRAM/USDT';
+    document.getElementById('symbol').textContent = data.symbol || 'USDT/USDT';
 
     const sec = data.uptime_sec || 0;
     const d = Math.floor(sec / 86400);
