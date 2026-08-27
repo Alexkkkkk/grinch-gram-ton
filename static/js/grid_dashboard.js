@@ -157,7 +157,7 @@ socket.on('status', (data) => {
         }));
         candleSeries.setData(chartData);
         volumeSeries.setData(volData);
-        setTimeout(centerLastCandle, 150);
+        candleChart.timeScale().fitContent();
     }
 });
 
@@ -457,7 +457,10 @@ function initCandlestickChart() {
         timeScale: {
             borderColor: "rgba(43,49,57,0.6)",
             timeVisible: true,
-            secondsVisible: false
+            secondsVisible: false,
+            rightOffset: 15,
+            barSpacing: 8,
+            minBarSpacing: 4
         },
         crosshair: {
             mode: LightweightCharts.CrosshairMode.Normal,
@@ -541,8 +544,7 @@ async function fetchCandles() {
 
         candleSeries.setData(chartData);
         volumeSeries.setData(volData);
-        // Give chart time to render before centering
-        setTimeout(centerLastCandle, 150);
+        candleChart.timeScale().fitContent();
     } catch (e) {
         console.error('[Candles]', e);
     }
@@ -550,26 +552,7 @@ async function fetchCandles() {
 
 function centerLastCandle() {
     if (!candleChart || !candleSeries) return;
-    const data = candleSeries.data();
-    if (!data || data.length === 0) {
-        candleChart.timeScale().fitContent();
-        return;
-    }
-    const lastIndex = data.length - 1;
-    const visibleRange = candleChart.timeScale().getVisibleLogicalRange();
-    if (!visibleRange || visibleRange.from === null || visibleRange.to === null) {
-        candleChart.timeScale().fitContent();
-        return;
-    }
-    const visibleBars = visibleRange.to - visibleRange.from;
-    if (visibleBars <= 0 || isNaN(visibleBars)) {
-        candleChart.timeScale().fitContent();
-        return;
-    }
-    candleChart.timeScale().setVisibleLogicalRange({
-        from: lastIndex - visibleBars / 2,
-        to: lastIndex + visibleBars / 2,
-    });
+    candleChart.timeScale().fitContent();
 }
 
 function updateGridPriceLines(levels, currentPrice) {
