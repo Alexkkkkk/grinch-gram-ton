@@ -12,5 +12,5 @@ jobs:
   label-pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/labeler@v5
+      - uses: actions/labeler@v7
         if: false  # Enable when .github/labeler.yml is configured
