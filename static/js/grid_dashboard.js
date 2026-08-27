@@ -157,6 +157,7 @@ socket.on('status', (data) => {
         }));
         candleSeries.setData(chartData);
         volumeSeries.setData(volData);
+        centerLastCandle();
     }
 });
 
@@ -540,10 +541,27 @@ async function fetchCandles() {
 
         candleSeries.setData(chartData);
         volumeSeries.setData(volData);
-        candleChart.timeScale().fitContent();
+        centerLastCandle();
     } catch (e) {
         console.error('[Candles]', e);
     }
+}
+
+function centerLastCandle() {
+    if (!candleChart || !candleSeries) return;
+    const data = candleSeries.data();
+    if (!data || data.length === 0) return;
+    const lastIndex = data.length - 1;
+    const visibleRange = candleChart.timeScale().getVisibleLogicalRange();
+    if (!visibleRange) {
+        candleChart.timeScale().fitContent();
+        return;
+    }
+    const visibleBars = visibleRange.to - visibleRange.from;
+    candleChart.timeScale().setVisibleLogicalRange({
+        from: lastIndex - visibleBars / 2,
+        to: lastIndex + visibleBars / 2,
+    });
 }
 
 function updateGridPriceLines(levels, currentPrice) {
