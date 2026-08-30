@@ -304,7 +304,7 @@ function updateBalance(data) {
     const tokenEl = document.getElementById('bal-token');
     if (tokenEl) {
         const amt = Number(token.amount) || 0;
-        tokenEl.textContent = Math.floor(amt).toLocaleString('ru-RU');
+        tokenEl.textContent = amt.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 4});
     }
 
     const tokenUsd = document.getElementById('bal-token-usd');
