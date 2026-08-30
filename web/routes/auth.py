@@ -8,7 +8,15 @@ import os
 import time
 from urllib.parse import urlparse
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.security import check_password_hash
 
 auth_bp = Blueprint("auth", __name__)
@@ -32,7 +40,9 @@ def _client_ip() -> str:
 
 def _check_rate_limit(ip: str) -> bool:
     now = time.time()
-    attempts = [timestamp for timestamp in _login_attempts.get(ip, []) if now - timestamp < 60]
+    attempts = [
+        timestamp for timestamp in _login_attempts.get(ip, []) if now - timestamp < 60
+    ]
     _login_attempts[ip] = attempts
     return len(attempts) < 5
 
@@ -84,7 +94,9 @@ def _password_matches(password: str) -> bool:
             return False
 
     configured_password = os.getenv("ADMIN_PASSWORD", "")
-    return bool(configured_password) and hmac.compare_digest(password, configured_password)
+    return bool(configured_password) and hmac.compare_digest(
+        password, configured_password
+    )
 
 
 def _request_data() -> tuple[str, str]:
@@ -100,7 +112,12 @@ def _safe_next(value: str | None) -> str:
     if not value:
         return "/"
     parsed = urlparse(value)
-    if parsed.scheme or parsed.netloc or not value.startswith("/") or value.startswith("//"):
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or not value.startswith("/")
+        or value.startswith("//")
+    ):
         return "/"
     return value
 
@@ -108,7 +125,10 @@ def _safe_next(value: str | None) -> str:
 def _login_error(message: str, status: int):
     if _wants_json():
         return jsonify({"ok": False, "error": message}), status
-    return render_template("login.html", error=message, next=request.args.get("next")), status
+    return (
+        render_template("login.html", error=message, next=request.args.get("next")),
+        status,
+    )
 
 
 @auth_bp.before_app_request

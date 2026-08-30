@@ -31,7 +31,9 @@ def create_app() -> Flask:
     # SECURITY: Secure session cookies
     # The VPS currently exposes port 3000 directly over HTTP. Enable this
     # flag explicitly when the app is placed behind an HTTPS reverse proxy.
-    app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() in {
+    app.config["SESSION_COOKIE_SECURE"] = os.getenv(
+        "SESSION_COOKIE_SECURE", "false"
+    ).lower() in {
         "1",
         "true",
         "yes",
@@ -104,7 +106,12 @@ def create_app() -> Flask:
     @app.errorhandler(404)
     def not_found(e):
         # Silently handle common 404s to reduce log noise
-        silent_paths = {"/favicon.ico", "/robots.txt", "/manifest.json", "/apple-touch-icon.png"}
+        silent_paths = {
+            "/favicon.ico",
+            "/robots.txt",
+            "/manifest.json",
+            "/apple-touch-icon.png",
+        }
         if request.path in silent_paths:
             return "", 204
         logger.debug("404: %s %s", request.method, request.path)

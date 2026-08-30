@@ -353,8 +353,13 @@ class GridTrader:
         if ton_bal is None:
             # Rate-limit warning: log only once per minute to avoid spam
             now = time.time()
-            if not hasattr(self, '_last_balance_warn') or now - self._last_balance_warn > 60:
-                log.warning("[Grid] No balances available (TON_MNEMONIC not set?), skipping grid build")
+            if (
+                not hasattr(self, "_last_balance_warn")
+                or now - self._last_balance_warn > 60
+            ):
+                log.warning(
+                    "[Grid] No balances available (TON_MNEMONIC not set?), skipping grid build"
+                )
                 self._last_balance_warn = now
             return
         atr_pct = self._calc_atr_pct()

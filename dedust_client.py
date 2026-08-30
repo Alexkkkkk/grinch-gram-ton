@@ -88,7 +88,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
     """
     global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
     wallet = Config.TON_WALLET
-    token = getattr(Config, 'USDT_TOKEN_ADDRESS', Config.TOKEN_ADDRESS)
+    token = getattr(Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS)
 
     ton_val: Optional[float] = None
     usdt_val: float = 0.0
@@ -144,7 +144,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
                 if wallets:
                     bal = wallets[0].get("balance")
                     if bal is not None:
-                        usdt_val = float(bal) / (10 ** Config.USDT_DECIMALS)
+                        usdt_val = float(bal) / (10**Config.USDT_DECIMALS)
         except Exception:
             pass
 
@@ -160,7 +160,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
             elif r.status_code == 200:
                 bal = r.json().get("balance")
                 if bal is not None:
-                    usdt_val = float(bal) / (10 ** Config.USDT_DECIMALS)
+                    usdt_val = float(bal) / (10**Config.USDT_DECIMALS)
         except Exception:
             pass
 
@@ -369,7 +369,7 @@ class DedustClient:
         Приоритет: TonCenter v3 → TonAPI прямой эндпоинт → TonAPI список (с нормализацией адреса).
         """
         wallet = Config.TON_WALLET
-        token = getattr(Config, 'USDT_TOKEN_ADDRESS', Config.TOKEN_ADDRESS)
+        token = getattr(Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS)
 
         # 1. TonCenter v3 (jetton/wallets)
         try:
@@ -384,7 +384,7 @@ class DedustClient:
                 if wallets:
                     bal = wallets[0].get("balance")
                     if bal is not None:
-                        return float(bal) / (10 ** Config.USDT_DECIMALS)
+                        return float(bal) / (10**Config.USDT_DECIMALS)
             else:
                 log.warning(f"[DeDust] USDT balance TonCenter v3: HTTP {r.status_code}")
         except Exception as e:
@@ -401,7 +401,7 @@ class DedustClient:
                 data = r.json()
                 bal = data.get("balance")
                 if bal is not None:
-                    return float(bal) / (10 ** Config.USDT_DECIMALS)
+                    return float(bal) / (10**Config.USDT_DECIMALS)
             else:
                 log.warning(
                     f"[DeDust] USDT balance TonAPI direct: HTTP {r.status_code}"
@@ -432,7 +432,7 @@ class DedustClient:
                 for b in r.json().get("balances", []):
                     jaddr = (b.get("jetton", {}) or {}).get("address", "")
                     if _norm(jaddr) == token_raw:
-                        return float(b.get("balance", 0)) / (10 ** Config.USDT_DECIMALS)
+                        return float(b.get("balance", 0)) / (10**Config.USDT_DECIMALS)
         except Exception as e:
             log.warning(f"[DeDust] USDT balance TonAPI list: {e}")
 
@@ -547,14 +547,18 @@ class DedustClient:
             )
             for b in r.json().get("balances", []):
                 jaddr = (b.get("jetton", {}) or {}).get("address", "")
-                if self._same_addr(jaddr, getattr(Config, 'USDT_TOKEN_ADDRESS', Config.TOKEN_ADDRESS)):
+                if self._same_addr(
+                    jaddr, getattr(Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS)
+                ):
                     return int(b.get("balance", 0))
         except Exception as e:
             log.debug(f"[DeDust] usdt balance TonAPI: {e}")
 
         # ── SDK liteserver (последний резерв) ───────────────────────────────
         try:
-            usdt_root = JettonRoot.create_from_address(getattr(Config, 'USDT_TOKEN_ADDRESS', Config.TOKEN_ADDRESS))
+            usdt_root = JettonRoot.create_from_address(
+                getattr(Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS)
+            )
             gw = await usdt_root.get_wallet(addr, provider)
             g_state = await provider.get_account_state(gw.address)
             if getattr(g_state, "state", None) and g_state.state.type_ == "active":
@@ -670,7 +674,7 @@ class DedustClient:
 
     def _usdt_address(self) -> Address:
         """Возвращает Address объект для USDT jetton master."""
-        return Address(getattr(Config, 'USDT_TOKEN_ADDRESS', Config.TOKEN_ADDRESS))
+        return Address(getattr(Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS))
 
     async def _get_pool(self, provider):
         ton_asset = Asset.native()
@@ -678,7 +682,10 @@ class DedustClient:
         # Реальный пул USDT/TON задан явным адресом (нестандартная комиссия 1%).
         # Factory.get_pool вернул бы канонический адрес дефолтной комиссии,
         # которого on-chain нет, и свопы отскакивали бы.
-        pool_addr = (getattr(Config, "USDT_POOL_ADDRESS", "") or getattr(Config, "POOL_ADDRESS", "")).strip()
+        pool_addr = (
+            getattr(Config, "USDT_POOL_ADDRESS", "")
+            or getattr(Config, "POOL_ADDRESS", "")
+        ).strip()
         if pool_addr:
             pool = Pool.create_from_address(CoreAddress(pool_addr))
         else:
@@ -719,7 +726,7 @@ class DedustClient:
             reserves = _run(_reserves())
             # reserves[0] = TON резерв (нано), reserves[1] = USDT резерв (base units)
             if reserves and reserves[0] > 0 and reserves[1] > 0:
-                price = (reserves[0] / TON) / (reserves[1] / (10 ** Config.USDT_DECIMALS))
+                price = (reserves[0] / TON) / (reserves[1] / (10**Config.USDT_DECIMALS))
                 self._last_price = price
                 return price
         except Exception as e:
@@ -733,7 +740,7 @@ class DedustClient:
         try:
             nano = int(ton_amount * TON)
             result = _run(self._estimate_async(Asset.native(), nano))
-            return result["amount_out"] / (10 ** Config.USDT_DECIMALS)
+            return result["amount_out"] / (10**Config.USDT_DECIMALS)
         except Exception as e:
             log.debug(f"[DeDust] estimate_buy ошибка: {e}")
             return None
@@ -743,7 +750,7 @@ class DedustClient:
         if not self._ready:
             return None
         try:
-            nano = int(usdt_amount * (10 ** Config.USDT_DECIMALS))
+            nano = int(usdt_amount * (10**Config.USDT_DECIMALS))
             usdt_asset = Asset.jetton(self._usdt_address())
             result = _run(self._estimate_async(usdt_asset, nano))
             return result["amount_out"] / TON
@@ -957,7 +964,7 @@ class DedustClient:
                     return None, None
                 expected_usdt = (ton_amount * ton_usd) / usdt_usd
         min_usdt = expected_usdt * (1 - Config.SLIPPAGE_PCT / 100.0)
-        return int(min_usdt * (10 ** Config.USDT_DECIMALS)), expected_usdt
+        return int(min_usdt * (10**Config.USDT_DECIMALS)), expected_usdt
 
     def _min_out_sell_ton(self, usdt_amount: float):
         """Минимум TON (нано), который должен прийти за usdt_amount USDT.
@@ -1165,7 +1172,7 @@ class DedustClient:
             # wallet.transfer лишь ШИРОКОВЕЩАЕТ транзакцию; своп в пуле может
             # отскочить (bounce) уже после отправки. Поэтому ждём, пока USDT
             # реально поступит. Требуем хотя бы половину ожидаемого объёма.
-            min_delta = int(expected_usdt * 0.5 * (10 ** Config.USDT_DECIMALS))
+            min_delta = int(expected_usdt * 0.5 * (10**Config.USDT_DECIMALS))
             confirmed = await self._wait_for_settlement(
                 provider,
                 wallet.address,
@@ -1191,9 +1198,11 @@ class DedustClient:
                 "side": "buy",
                 "ton_spent": ton_amount,
                 "pool": str(pool.address),
-                "min_usdt_out": round(min_out_nano / (10 ** Config.USDT_DECIMALS), 6),
+                "min_usdt_out": round(min_out_nano / (10**Config.USDT_DECIMALS), 6),
                 "expected_usdt": round(expected_usdt, 6),
-                "usdt_received": round((confirmed - baseline_nano) / (10 ** Config.USDT_DECIMALS), 6),
+                "usdt_received": round(
+                    (confirmed - baseline_nano) / (10**Config.USDT_DECIMALS), 6
+                ),
                 "slippage_pct": Config.SLIPPAGE_PCT,
             }
         finally:
@@ -1360,7 +1369,9 @@ class DedustClient:
 
             # Сумма продажи: либо запрошенная сумма, либо весь баланс — берём MIN
             # чтобы избежать превышения баланса из-за float-округления.
-            amount_nano = min(int(usdt_amount * (10 ** Config.USDT_DECIMALS)), baseline_nano)
+            amount_nano = min(
+                int(usdt_amount * (10**Config.USDT_DECIMALS)), baseline_nano
+            )
             if amount_nano <= 0:
                 return {
                     "ok": False,
@@ -1421,7 +1432,9 @@ class DedustClient:
                 "pool": str(pool.address),
                 "min_ton_out": round(min_out_nano / TON, 6),
                 "expected_ton": round(expected_ton, 6),
-                "usdt_sold": round((baseline_nano - confirmed) / (10 ** Config.USDT_DECIMALS), 6),
+                "usdt_sold": round(
+                    (baseline_nano - confirmed) / (10**Config.USDT_DECIMALS), 6
+                ),
                 "slippage_pct": Config.SLIPPAGE_PCT,
             }
         finally:

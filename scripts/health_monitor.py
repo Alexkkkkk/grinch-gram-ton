@@ -38,7 +38,15 @@ def check_docker() -> dict:
     """Check Docker containers."""
     try:
         result = subprocess.run(
-            ["docker", "compose", "-f", "/opt/bot/docker-compose.yml", "ps", "--format", "json"],
+            [
+                "docker",
+                "compose",
+                "-f",
+                "/opt/bot/docker-compose.yml",
+                "ps",
+                "--format",
+                "json",
+            ],
             capture_output=True,
             text=True,
             cwd="/opt/bot",
@@ -142,7 +150,17 @@ def main():
         # Auto-restart if bot is down
         if status["health"]["status"] != "ok":
             logger.warning("Bot unhealthy, attempting restart...")
-            subprocess.run(["docker", "compose", "-f", "/opt/bot/docker-compose.yml", "restart", "bot"], cwd="/opt/bot")
+            subprocess.run(
+                [
+                    "docker",
+                    "compose",
+                    "-f",
+                    "/opt/bot/docker-compose.yml",
+                    "restart",
+                    "bot",
+                ],
+                cwd="/opt/bot",
+            )
 
         time.sleep(CHECK_INTERVAL)
 

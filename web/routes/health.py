@@ -50,7 +50,9 @@ def full_health():
 
     # If docker is unavailable (running inside container without socket access),
     # still report healthy based on process uptime
-    overall_status = "healthy" if docker_status in ("running", "unavailable") else "degraded"
+    overall_status = (
+        "healthy" if docker_status in ("running", "unavailable") else "degraded"
+    )
 
     return jsonify(
         {

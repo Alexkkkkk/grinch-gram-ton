@@ -19,11 +19,10 @@ jobs:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.2.5
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          host: 2.27.25.126
+          username: root
           password: ${{ secrets.VPS_SSH_PASSWORD }}
-          port: ${{ secrets.VPS_PORT || 22 }}
+          port: 22
           script: |
             set -Eeuo pipefail
             
@@ -47,10 +46,12 @@ jobs:
             fi
             echo "Deploying $LOCAL -> $REMOTE"
             
-            # Backup current state before reset
+            # Backup the exact commit and runtime state before reset.
+            PREVIOUS_SHA=$(git rev-parse HEAD)
             BACKUP_DIR="/opt/backups/bot-$(date +%Y%m%d-%H%M%S)"
             mkdir -p "$BACKUP_DIR"
             cp -r data backups logs "$BACKUP_DIR/" 2>/dev/null || true
+            printf '%s\n' "$PREVIOUS_SHA" > "$BACKUP_DIR/commit.sha"
             
             # Sync working tree with origin/main
             git reset --hard origin/main

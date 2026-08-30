@@ -221,7 +221,7 @@ def api_balance():
                 "price": ton_price,
             },
             "token": {
-                "symbol": getattr(Config, 'TOKEN_SYMBOL', 'USDT'),
+                "symbol": getattr(Config, "TOKEN_SYMBOL", "USDT"),
                 "amount": round(usdt_bal, 2),
                 "usd": round(usdt_bal * usdt_price, 2),
                 "price": usdt_price,
@@ -285,6 +285,128 @@ def api_grid_stop():
         _grid_trader.stop_grid()
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Grid trader not initialized"})
+
+
+def _grid_levels_payload(state):
+    """Return the flat level list expected by the dashboard visualizer."""
+    return state.get("sell_levels", []) + state.get("buy_levels", [])
+
+
+def _ai_snapshot():
+    """Build one defensive, frontend-compatible snapshot of the AI state."""
+    state = _brain.get_state() if _brain else {}
+    grid_ai = state.get("grid_ai", {})
+    unified = state.get("unified", {})
+    return {
+        "quantum_signal": {
+            "signal": unified.get("signal", "HOLD"),
+            "confidence": unified.get("confidence", 0.0),
+            "action": unified.get("action", "WAIT"),
+        },
+        "regime": grid_ai.get("regime", "SIDEWAYS"),
+        "optimal_step": grid_ai.get("optimal_step", Config.GRID.step_pct),
+        "atr_pct": grid_ai.get("atr_pct", 0.0),
+        "risk_level": grid_ai.get("risk_level", 0),
+        "drawdown_pct": 0.0,
+        "trap": {
+            "detected": grid_ai.get("trap_detected", False),
+            "confidence": grid_ai.get("trap_confidence", 0.0),
+        },
+        "pause_buying": grid_ai.get("pause_buying", False),
+    }
+
+
+@api_bp.route("/grid/build", methods=["POST"])
+def api_grid_build():
+    """Build a manual grid from the dashboard controls."""
+    if not _grid_trader:
+        return jsonify({"ok": False, "error": "Grid trader not initialized"}), 503
+
+    data = request.get_json(silent=True) or {}
+    try:
+        grid_count = int(data.get("grid_count") or 40)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "grid_count must be an integer"}), 400
+    if not 2 <= grid_count <= 200:
+        return jsonify({"ok": False, "error": "grid_count must be between 2 and 200"}), 400
+
+    price = get_current_price()
+    if not price or price <= 0:
+        return jsonify({"ok": False, "error": "Current price unavailable"}), 503
+
+    sell_levels = max(1, grid_count // 2)
+    buy_levels = max(1, grid_count - sell_levels)
+    state = _grid_trader.build_grid(
+        center_price=price,
+        sell_levels=sell_levels,
+        buy_levels=buy_levels,
+    )
+    state_dict = state.to_dict()
+    return jsonify(
+        {
+            "ok": True,
+            "center_price": state.center_price,
+            "levels_count": len(_grid_levels_payload(state_dict)),
+            "levels": _grid_levels_payload(state_dict),
+            "step_pct": state.step_pct,
+        }
+    )
+
+
+@api_bp.route("/grid/ai/status")
+def api_grid_ai_status():
+    snapshot = _ai_snapshot()
+    enabled = bool(getattr(_grid_trader, "_ai_enabled", False))
+    return jsonify(
+        {
+            "ok": True,
+            "enabled": enabled,
+            "signal": snapshot["quantum_signal"]["signal"],
+            "confidence": snapshot["quantum_signal"]["confidence"],
+            "trap_detected": snapshot["trap"]["detected"],
+            "pause_buying": snapshot["pause_buying"],
+            "regime": snapshot["regime"],
+            "optimal_step": snapshot["optimal_step"],
+        }
+    )
+
+
+@api_bp.route("/grid/ai/toggle", methods=["POST"])
+def api_grid_ai_toggle():
+    if not _grid_trader:
+        return jsonify({"ok": False, "error": "Grid trader not initialized"}), 503
+    _grid_trader._ai_enabled = not bool(getattr(_grid_trader, "_ai_enabled", False))
+    return jsonify({"ok": True, "ai_enabled": _grid_trader._ai_enabled})
+
+
+@api_bp.route("/grid/ai/recommendation")
+def api_grid_ai_recommendation():
+    return jsonify({"ok": True, "recommendation": _ai_snapshot()})
+
+
+@api_bp.route("/grid/ai/build", methods=["POST"])
+def api_grid_ai_build():
+    if not _grid_trader:
+        return jsonify({"ok": False, "error": "Grid trader not initialized"}), 503
+    if not bool(getattr(_grid_trader, "_ai_enabled", False)):
+        return jsonify({"ok": False, "error": "AI grid control is disabled"}), 409
+
+    price = get_current_price()
+    if not price or price <= 0:
+        return jsonify({"ok": False, "error": "Current price unavailable"}), 503
+
+    _grid_trader.ai_build_grid(price)
+    state = _grid_trader.get_state_dict()
+    snapshot = _ai_snapshot()
+    return jsonify(
+        {
+            "ok": bool(state.get("active")),
+            "error": None if state.get("active") else "Balances unavailable",
+            "step_pct": snapshot["optimal_step"],
+            "regime": snapshot["regime"],
+            "levels": _grid_levels_payload(state),
+        }
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

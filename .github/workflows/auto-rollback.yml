@@ -19,24 +19,35 @@ jobs:
         continue-on-error: true
         with:
           host: 2.27.25.126
-          username: ${{ secrets.VPS_USER }}
+          username: root
           password: ${{ secrets.VPS_SSH_PASSWORD }}
           port: 22
           script: |
             echo "=== Auto-Rollback Triggered ==="
             cd /opt/bot
             
-            # Find latest backup
-            LATEST_BACKUP=$(ls -td /opt/backups/bot-* 2>/dev/null | head -1)
-            if [ -n "$LATEST_BACKUP" ]; then
-              echo "Rolling back to: $LATEST_BACKUP"
-              cd "$LATEST_BACKUP"
-              docker compose down 2>/dev/null || true
-              docker compose up -d
-              echo "Rollback complete"
-            else
-              echo "No backup found! Manual intervention required."
+            # Find latest backup created by the deploy workflow.
+            LATEST_BACKUP=$(ls -td /opt/backups/bot-* 2>/dev/null | head -1 || true)
+            if [ -z "$LATEST_BACKUP" ] || [ ! -f "$LATEST_BACKUP/commit.sha" ]; then
+              echo "No deploy backup found; rollback cannot be completed."
+              exit 1
             fi
+
+            PREVIOUS_SHA=$(cat "$LATEST_BACKUP/commit.sha")
+            cd /opt/bot
+            git reset --hard "$PREVIOUS_SHA"
+
+            for directory in data backups logs; do
+              if [ -d "$LATEST_BACKUP/$directory" ]; then
+                rm -rf "/opt/bot/$directory"
+                cp -a "$LATEST_BACKUP/$directory" "/opt/bot/$directory"
+              fi
+            done
+
+            docker compose build bot
+            docker compose up -d --force-recreate --remove-orphans bot
+            curl -fsS http://127.0.0.1:3000/api/health >/dev/null
+            echo "Rollback complete: $PREVIOUS_SHA"
 
       - name: Notify failure
         if: always()

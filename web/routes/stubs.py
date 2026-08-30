@@ -16,7 +16,9 @@ stubs_bp = Blueprint("stubs", __name__)
 # ── Trading control ───────────────────────────────────────────────────────────
 @stubs_bp.route("/api/start", methods=["POST"])
 def start_bot():
-    return jsonify({"ok": True, "message": "Bot start requested", "mode": Config.TRADE_MODE})
+    return jsonify(
+        {"ok": True, "message": "Bot start requested", "mode": Config.TRADE_MODE}
+    )
 
 
 @stubs_bp.route("/api/stop", methods=["POST"])
@@ -33,7 +35,11 @@ def ton_info():
 @stubs_bp.route("/api/ton/price")
 def ton_price():
     try:
-        price = getattr(Config, "TON", {}).get("price_usd", 0) if hasattr(Config, "TON") else 0
+        price = (
+            getattr(Config, "TON", {}).get("price_usd", 0)
+            if hasattr(Config, "TON")
+            else 0
+        )
     except Exception:
         price = 0
     return jsonify({"ok": True, "price_usd": price, "price_ton": 1.0})
@@ -47,7 +53,12 @@ def ton_refresh():
 # ── Wallets ───────────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/wallets")
 def wallets():
-    return jsonify({"ok": True, "wallets": [{"address": Config.TON_WALLET, "type": "ton", "balance": 0}]})
+    return jsonify(
+        {
+            "ok": True,
+            "wallets": [{"address": Config.TON_WALLET, "type": "ton", "balance": 0}],
+        }
+    )
 
 
 # ── Trade manual ──────────────────────────────────────────────────────────────
@@ -75,7 +86,11 @@ def trade_delete():
 @stubs_bp.route("/api/coin")
 def coin():
     try:
-        price = getattr(Config, "TON", {}).get("price_usd", 0) if hasattr(Config, "TON") else 0
+        price = (
+            getattr(Config, "TON", {}).get("price_usd", 0)
+            if hasattr(Config, "TON")
+            else 0
+        )
     except Exception:
         price = 0
     return jsonify({"ok": True, "symbol": Config.SYMBOL, "price": price})
@@ -146,6 +161,7 @@ def liquidator_threshold():
 def liquidity_guard():
     return jsonify({"ok": True, "guards": []})
 
+
 # ── Frontend status compatibility ────────────────────────────────────────────
 @stubs_bp.route("/api/advisor/status")
 def advisor_status():
@@ -163,17 +179,3 @@ def advisor_status():
 @stubs_bp.route("/api/ai/deep-retrain/status")
 def deep_retrain_status():
     return jsonify({"ok": True, "status": "idle", "running": False, "progress": 0})
-
-
-@stubs_bp.route("/api/grid/ai/status")
-def grid_ai_status():
-    return jsonify(
-        {
-            "ok": True,
-            "enabled": True,
-            "signal": "HOLD",
-            "confidence": 0.0,
-            "trap_detected": False,
-            "pause_buying": False,
-        }
-    )
