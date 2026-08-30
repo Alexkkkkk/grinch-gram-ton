@@ -1,0 +1,34 @@
+name: Welcome Bot
+
+on:
+  pull_request:
+    types: [opened]
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            👋 Welcome! Thanks for opening your first issue.
+            
+            Please make sure you've checked our [Contributing Guide](../blob/main/CONTRIBUTING.md) and filled out the issue template completely.
+            
+            A maintainer will review this soon!
+          pr-message: |
+            🎉 Welcome! Thanks for your first pull request!
+            
+            Please ensure:
+            - [ ] All CI checks pass
+            - [ ] Code follows our style guide (Black + Ruff)
+            - [ ] Tests are included if applicable
+            
+            A maintainer will review this soon. 🚀

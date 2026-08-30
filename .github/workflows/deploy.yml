@@ -1,0 +1,93 @@
+name: Auto-Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.repository == 'Alexkkkkk/grinch-gram-ton'
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_SSH_PASSWORD }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -Eeuo pipefail
+            
+            # ── Single deploy lock (prevents concurrent deployments) ──
+            exec 200>/run/lock/grinch-deploy.lock
+            if ! flock -n 200; then
+              echo "Another deploy is already running. Exiting."
+              exit 0
+            fi
+            
+            echo "=== AI-Trading Deploy ==="
+            cd /opt/bot || { echo "Bot directory not found"; exit 1; }
+            
+            # ── Fetch and sync code ────────────────────────────────────
+            git fetch origin main
+            LOCAL=$(git rev-parse HEAD)
+            REMOTE=$(git rev-parse origin/main)
+            if [ "$LOCAL" = "$REMOTE" ]; then
+              echo "Already up to date: $LOCAL"
+              exit 0
+            fi
+            echo "Deploying $LOCAL -> $REMOTE"
+            
+            # Backup current state before reset
+            BACKUP_DIR="/opt/backups/bot-$(date +%Y%m%d-%H%M%S)"
+            mkdir -p "$BACKUP_DIR"
+            cp -r data backups logs "$BACKUP_DIR/" 2>/dev/null || true
+            
+            # Sync working tree with origin/main
+            git reset --hard origin/main
+            git clean -fd
+            
+            # ── Build and deploy ────────────────────────────────────────
+            docker compose build --pull bot
+            docker compose up -d --force-recreate --remove-orphans bot
+            
+            # ── Health check ───────────────────────────────────────────
+            echo "Waiting for health check..."
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
+                echo "Health check passed!"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "Health check FAILED after 150s"
+                docker compose logs --tail 100 bot || true
+                exit 1
+              fi
+              sleep 5
+            done
+            
+            # ── Cleanup old backups (keep last 5) ─────────────────────
+            ls -td /opt/backups/bot-* 2>/dev/null | tail -n +6 | xargs rm -rf 2>/dev/null || true
+            
+            echo "=== Deploy successful: $REMOTE ==="
+
+      - name: Notify Telegram
+        if: always()
+        uses: appleboy/telegram-action@v1.1.1
+        continue-on-error: true
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            🤖 AI-Trading Deploy
+            Status: ${{ job.status }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref }}

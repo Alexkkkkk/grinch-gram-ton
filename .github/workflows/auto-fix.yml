@@ -1,0 +1,87 @@
+name: Auto-Fix v2
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to fix'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  analyze-and-fix:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'auto-error') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install openai requests
+
+      - name: Analyze error with Intelligence Engine
+        id: fix
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          python3 scripts/generate_fix.py
+          echo "pattern=$(cat /tmp/fix_pattern.txt 2>/dev/null || echo 'unknown')" >> "$GITHUB_OUTPUT"
+          echo "confidence=$(cat /tmp/fix_confidence.txt 2>/dev/null || echo '0')" >> "$GITHUB_OUTPUT"
+          echo "severity=$(cat /tmp/fix_severity.txt 2>/dev/null || echo 'unknown')" >> "$GITHUB_OUTPUT"
+
+      - name: Apply fix and create PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "GRINCH Auto-Fix Bot"
+          git config user.email "auto-fix@grinch-gram.local"
+
+          BRANCH="auto-fix/issue-${{ github.event.issue.number || github.event.inputs.issue_number }}-$(date +%s)"
+          git checkout -b "$BRANCH"
+
+          # Apply fix if file exists
+          if [ -f /tmp/fix_code.py ]; then
+            mkdir -p fixes
+            cp /tmp/fix_code.py "fixes/fix_${{ github.event.issue.number || github.event.inputs.issue_number }}.py"
+            git add -A
+            git commit -m "auto-fix: resolve issue #${{ github.event.issue.number || github.event.inputs.issue_number }}"
+            git push origin "$BRANCH"
+          fi
+
+          # Create PR
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/pulls \
+            -d "{
+              \"title\": \"[AUTO-FIX] Resolve issue #${{ github.event.issue.number || github.event.inputs.issue_number }}\",
+              \"body\": \"Automatically generated fix.\\n\\nPattern: ${{ steps.fix.outputs.pattern }}\\nConfidence: ${{ steps.fix.outputs.confidence }}%\\nSeverity: ${{ steps.fix.outputs.severity }}\",
+              \"head\": \"$BRANCH\",
+              \"base\": \"main\",
+              \"labels\": [\"auto-fix\", \"bot\"]
+            }"
+
+      - name: Comment on issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
+            -d "{
+              \"body\": \"🤖 Auto-fix generated!\\n\\n- Pattern detected: ${{ steps.fix.outputs.pattern }}\\n- Confidence: ${{ steps.fix.outputs.confidence }}%\\n- Severity: ${{ steps.fix.outputs.severity }}\\n\\nA pull request has been created with the proposed fix.\"
+            }"
