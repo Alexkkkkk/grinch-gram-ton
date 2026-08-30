@@ -37,7 +37,7 @@ def full_health():
         import subprocess
 
         result = subprocess.run(
-            ["docker", "ps", "--filter", "name=grinch", "--format", "{{.Status}}"],
+            ["docker", "ps", "--filter", "name=quantum-bot", "--format", "{{.Status}}"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -81,10 +81,10 @@ def metrics():
     cpu = psutil.cpu_percent(interval=0.5)
 
     metrics_text = f"""# AI-Trading Metrics
-grinch_uptime_seconds {int(time.time() - _start_time)}
-grinch_cpu_percent {cpu}
-grinch_memory_used_bytes {mem.used}
-grinch_memory_total_bytes {mem.total}
-grinch_memory_percent {mem.percent}
+bot_uptime_seconds {int(time.time() - _start_time)}
+bot_cpu_percent {cpu}
+bot_memory_used_bytes {mem.used}
+bot_memory_total_bytes {mem.total}
+bot_memory_percent {mem.percent}
 """
     return metrics_text, 200, {"Content-Type": "text/plain"}
