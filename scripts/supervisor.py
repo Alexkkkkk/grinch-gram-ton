@@ -14,10 +14,12 @@ import time
 # Add project root to path
 sys.path.insert(0, "/opt/bot")
 
+# The imports intentionally follow the path setup for direct script execution.
+# isort: off
 from autonomy.auto_updater import AutoUpdater
 from autonomy.performance_monitor import PerformanceMonitor
-
 from autonomy.self_healing import SelfHealingEngine
+# isort: on
 
 logging.basicConfig(
     level=logging.INFO,
