@@ -59,7 +59,7 @@ function initCharts() {
             labels: [],
             datasets: [
                 {
-                    label: 'Цена GRAM/USD',
+                    label: 'Цена TON/USDT',
                     data: [],
                     borderColor: '#f0b90b',
                     backgroundColor: 'rgba(240, 185, 11, 0.05)',
@@ -267,7 +267,7 @@ async function fetchAllData() {
 function updateStatus(data) {
     if (!data) return;
     const symEl = document.getElementById('symbol');
-    if (symEl) symEl.textContent = data.symbol || 'GRAM/USD';
+    if (symEl) symEl.textContent = data.symbol || 'TON/USDT';
 
     const sec = Number(data.uptime_sec) || 0;
     const d = Math.floor(sec / 86400);
@@ -331,7 +331,7 @@ function updateBalance(data) {
     const tName2 = document.getElementById('token-name-2');
     if (tName2) tName2.textContent = token.symbol || 'USDT';
 
-    // Update current price display (GRAM/USD price comes from ton.price)
+    // Update current price display (TON/USDT price comes from ton.price)
     const curPrice = document.getElementById('currentPrice');
     if (curPrice) {
         const p = Number(ton.price) || Number(token.price) || 0;
