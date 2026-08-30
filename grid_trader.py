@@ -154,6 +154,16 @@ class GridTrader:
             self._save_state()
         log.info("[Grid] Grid stopped")
 
+    def start_grid(self) -> dict:
+        """Resume an already-built grid without silently creating a new one."""
+        with self._lock:
+            if not self._state.sell_levels and not self._state.buy_levels:
+                return {"ok": False, "error": "Grid is not built"}
+            self._state.active = True
+            self._save_state()
+        log.info("[Grid] Grid started")
+        return {"ok": True}
+
     def _loop(self):
         while not self._stop.is_set():
             try:
