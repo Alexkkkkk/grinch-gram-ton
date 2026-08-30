@@ -294,7 +294,20 @@ def api_grid_stop():
 
 def _grid_levels_payload(state):
     """Return the flat level list expected by the dashboard visualizer."""
-    return state.get("sell_levels", []) + state.get("buy_levels", [])
+    levels = []
+    for side, key in (("sell", "sell_levels"), ("buy", "buy_levels")):
+        for level in state.get(key, []):
+            if not isinstance(level, dict):
+                continue
+            item = dict(level)
+            # GridTrader stores the TON price as price_ton; the dashboard uses
+            # price. Keep both fields for compatibility with older clients.
+            if "price" not in item:
+                item["price"] = item.get("price_ton", 0)
+            item["price"] = float(item.get("price") or 0)
+            item.setdefault("side", side)
+            levels.append(item)
+    return levels
 
 
 def _ai_snapshot():

@@ -488,7 +488,11 @@ function updateGridVisual(levels, currentPrice, upper, lower) {
 
     // Keep the last known levels when only the live price changes.
     const priceLine = document.getElementById('priceLine');
-    if (Array.isArray(levels)) currentGridLevels = levels;
+    if (Array.isArray(levels)) {
+        currentGridLevels = levels
+            .map(lvl => ({...lvl, price: Number(lvl.price ?? lvl.price_ton)}))
+            .filter(lvl => Number.isFinite(lvl.price) && lvl.price > 0);
+    }
     const visibleLevels = currentGridLevels;
     container.querySelectorAll('.grid-level').forEach(e => e.remove());
 
@@ -497,8 +501,8 @@ function updateGridVisual(levels, currentPrice, upper, lower) {
         return;
     }
 
-    const minP = lower || Math.min(...visibleLevels.map(l => l.price));
-    const maxP = upper || Math.max(...visibleLevels.map(l => l.price));
+    const minP = Number(lower) || Math.min(...visibleLevels.map(l => l.price));
+    const maxP = Number(upper) || Math.max(...visibleLevels.map(l => l.price));
     const range = maxP - minP || 1;
 
     const pct = 1 - ((currentPrice - minP) / range);
@@ -832,7 +836,11 @@ function centerLastCandle() {
 
 function updateGridPriceLines(levels, currentPrice) {
     if (!candleSeries) return;
-    if (Array.isArray(levels)) currentGridLevels = levels;
+    if (Array.isArray(levels)) {
+        currentGridLevels = levels
+            .map(lvl => ({...lvl, price: Number(lvl.price ?? lvl.price_ton)}))
+            .filter(lvl => Number.isFinite(lvl.price) && lvl.price > 0);
+    }
     const visibleLevels = currentGridLevels;
     gridPriceLines.forEach(line => candleSeries.removePriceLine(line));
     gridPriceLines = [];
@@ -870,6 +878,6 @@ setInterval(fetchAllData, 3000);
 // Grid status
 fetch('/api/grid/status').then(r => r.json()).then(d => {
     if (d.levels && d.levels.length > 0) {
-        updateGridVisual(d.levels, 1.0, null, null);
+        updateGridVisual(d.levels, Number(d.center_price) || null, d.upper_price, d.lower_price);
     }
 });
