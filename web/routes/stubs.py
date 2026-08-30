@@ -6,7 +6,8 @@
 # in the trading backend. They prevent 404 errors in browser console.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify
+
 from core.config import Config
 
 stubs_bp = Blueprint("stubs", __name__)
@@ -144,3 +145,35 @@ def liquidator_threshold():
 @stubs_bp.route("/api/liquidity_guard")
 def liquidity_guard():
     return jsonify({"ok": True, "guards": []})
+
+# ── Frontend status compatibility ────────────────────────────────────────────
+@stubs_bp.route("/api/advisor/status")
+def advisor_status():
+    return jsonify(
+        {
+            "ok": True,
+            "enabled": False,
+            "configured": False,
+            "running": False,
+            "provider": None,
+        }
+    )
+
+
+@stubs_bp.route("/api/ai/deep-retrain/status")
+def deep_retrain_status():
+    return jsonify({"ok": True, "status": "idle", "running": False, "progress": 0})
+
+
+@stubs_bp.route("/api/grid/ai/status")
+def grid_ai_status():
+    return jsonify(
+        {
+            "ok": True,
+            "enabled": True,
+            "signal": "HOLD",
+            "confidence": 0.0,
+            "trap_detected": False,
+            "pause_buying": False,
+        }
+    )

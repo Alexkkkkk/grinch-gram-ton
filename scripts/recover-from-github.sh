@@ -107,10 +107,10 @@ else
     exit 1
 fi
 
-if docker-compose config &>/dev/null; then
+if docker compose -f /opt/bot/docker-compose.yml config &>/dev/null; then
     echo "  OK  docker-compose.yml syntax OK"
 else
-    echo "  WARN docker-compose config check failed"
+    echo "  WARN docker compose -f /opt/bot/docker-compose.yml config check failed"
 fi
 
 echo ""
@@ -120,6 +120,6 @@ echo "=========================================="
 echo "  quantum-bot was NOT restarted."
 echo "  To rebuild when ready:"
 echo "    cd /opt/bot"
-echo "    docker-compose build --no-cache bot"
-echo "    docker-compose up -d --force-recreate bot"
+echo "    docker compose -f /opt/bot/docker-compose.yml build --no-cache bot"
+echo "    docker compose -f /opt/bot/docker-compose.yml up -d --force-recreate bot"
 echo "=========================================="

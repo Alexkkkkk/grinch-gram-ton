@@ -131,8 +131,9 @@ class GridTrader:
 
     @property
     def is_active(self) -> bool:
-        with self._lock:
-            return self._state.active
+        # The poller keeps the lock while talking to external services.  A
+        # read-only status request must never wait on that network I/O.
+        return bool(self._state.active)
 
     def start_poller(self):
         if self._thread and self._thread.is_alive():

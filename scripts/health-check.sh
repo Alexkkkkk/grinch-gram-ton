@@ -17,7 +17,7 @@ echo "====================="
 
 # Health endpoint
 HEALTH_OK=false
-if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     echo "✅ Bot health: OK"
     HEALTH_OK=true
 else
@@ -27,7 +27,7 @@ fi
 
 # Container status
 echo "--- Containers ---"
-docker compose -f /opt/bot/docker-compose.prod.yml ps
+docker compose -f /opt/bot/docker-compose.yml ps
 
 # Resource usage
 echo "--- Resources ---"

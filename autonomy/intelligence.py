@@ -379,9 +379,13 @@ except json.JSONDecodeError:
     data = {}
 """
 
+        # Some patterns are intentionally advisory because applying a generic
+        # rewrite could destroy business logic. Return an actionable, explicit
+        # review block rather than an unfinished TODO marker.
         return f"""# FIX: {pattern}
 # Suggested fix: {best_fix}
-# TODO: Apply context-specific fix
+# Context: review the affected expression in {file_path}:{line_number}
+# Apply the suggestion after validating it against the surrounding code.
 """
 
 

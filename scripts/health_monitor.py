@@ -38,11 +38,16 @@ def check_docker() -> dict:
     """Check Docker containers."""
     try:
         result = subprocess.run(
-            ["docker-compose", "ps", "--format", "json"],
+            ["docker", "compose", "-f", "/opt/bot/docker-compose.yml", "ps", "--format", "json"],
             capture_output=True,
             text=True,
             cwd="/opt/bot",
         )
+        if result.returncode != 0:
+            return {
+                "status": "error",
+                "error": result.stderr.strip() or "docker compose failed",
+            }
         return {"status": "ok", "containers": result.stdout}
     except Exception as e:
         return {"status": "error", "error": str(e)}
@@ -137,7 +142,7 @@ def main():
         # Auto-restart if bot is down
         if status["health"]["status"] != "ok":
             logger.warning("Bot unhealthy, attempting restart...")
-            subprocess.run(["docker-compose", "restart", "bot"], cwd="/opt/bot")
+            subprocess.run(["docker", "compose", "-f", "/opt/bot/docker-compose.yml", "restart", "bot"], cwd="/opt/bot")
 
         time.sleep(CHECK_INTERVAL)
 

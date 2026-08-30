@@ -3,22 +3,23 @@
 from unittest.mock import patch
 
 import pytest
-from validators import LoginRequest, SettingsUpdate, WithdrawRequest
 
 from ai.engine import _sign_data, _verify_data
 from circuit_breaker import CircuitBreaker, CircuitBreakerOpen, State
+from core.config import Config
+from validators import LoginRequest, SettingsUpdate, WithdrawRequest
 
 
 class TestHMAC:
     def test_sign_verify_roundtrip(self):
-        with patch("core.config.Config.SECRET_KEY", "test-secret-key-32bytes-long!!"):
+        with patch.object(Config(), "SECRET_KEY", "test-secret-key-32bytes-long!!"):
             data = b"test payload"
             signed = _sign_data(data)
             assert signed != data
             assert _verify_data(signed) == data
 
     def test_tamper_detected(self):
-        with patch("core.config.Config.SECRET_KEY", "test-secret-key-32bytes-long!!"):
+        with patch.object(Config(), "SECRET_KEY", "test-secret-key-32bytes-long!!"):
             data = b"test payload"
             signed = _sign_data(data)
             tampered = signed[:10] + b"X" + signed[11:]
@@ -26,7 +27,7 @@ class TestHMAC:
                 _verify_data(tampered)
 
     def test_missing_secret_key_raises(self):
-        with patch("core.config.Config.SECRET_KEY", ""):
+        with patch.object(Config(), "SECRET_KEY", ""):
             with pytest.raises(RuntimeError):
                 _sign_data(b"data")
 

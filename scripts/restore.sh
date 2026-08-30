@@ -17,7 +17,7 @@ fi
 
 echo "Restoring from: $BACKUP_DIR"
 cd /opt/bot
-docker-compose down
+docker compose -f /opt/bot/docker-compose.yml down
 cp -r "$BACKUP_DIR"/* .
-docker-compose up -d
+docker compose -f /opt/bot/docker-compose.yml up -d
 echo "Restore complete"

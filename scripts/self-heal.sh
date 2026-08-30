@@ -35,16 +35,16 @@ fi
 
 # ── Check containers ───────────────────────────────────────────
 echo "🔍 Checking containers..."
-if ! docker compose -f docker-compose.prod.yml ps | grep -q "grinch-bot"; then
+if ! docker compose -f /opt/bot/docker-compose.yml ps | grep -q "quantum-bot"; then
     echo "⚠️ Bot container not found, starting all..."
     tg_alert "⚠️ *GRINCH-GRAM Alert*\n📦 Bot container missing — starting all services"
-    docker compose -f docker-compose.prod.yml up -d
+    docker compose -f /opt/bot/docker-compose.yml up -d
     sleep 10
 fi
 
 # ── Check health ──────────────────────────────────────────────
 echo "🔍 Health check..."
-if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     echo "✅ Health OK — no action needed"
     exit 0
 fi
@@ -54,9 +54,9 @@ tg_alert "⚠️ *GRINCH-GRAM Alert*\n🏥 Health check failed — starting self
 
 # ── Fix 1: Restart bot ────────────────────────────────────────
 echo "🔄 Fix 1: Restarting bot..."
-docker compose -f docker-compose.prod.yml restart bot
+docker compose -f /opt/bot/docker-compose.yml restart bot
 sleep 10
-if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     echo "✅ Fixed by restart"
     tg_alert "✅ *GRINCH-GRAM Recovered*\n🔄 Bot restart fixed the issue"
     exit 0
@@ -64,9 +64,9 @@ fi
 
 # ── Fix 2: Recreate bot ────────────────────────────────────────
 echo "🔄 Fix 2: Recreating bot..."
-docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps bot
+docker compose -f /opt/bot/docker-compose.yml up -d --force-recreate --no-deps bot
 sleep 10
-if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     echo "✅ Fixed by recreate"
     tg_alert "✅ *GRINCH-GRAM Recovered*\n🔧 Bot recreate fixed the issue"
     exit 0
@@ -74,10 +74,10 @@ fi
 
 # ── Fix 3: Full restart all ───────────────────────────────────
 echo "🔄 Fix 3: Full restart all services..."
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f /opt/bot/docker-compose.yml down
+docker compose -f /opt/bot/docker-compose.yml up -d
 sleep 15
-if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     echo "✅ Fixed by full restart"
     tg_alert "✅ *GRINCH-GRAM Recovered*\n🔄 Full service restart fixed the issue"
     exit 0
@@ -95,12 +95,12 @@ fi
 
 # ── Fix 5: Check logs for errors ──────────────────────────────
 echo "🔄 Fix 5: Checking logs..."
-LOGS=$(docker logs --tail 30 grinch-bot 2>/dev/null || true)
+LOGS=$(docker logs --tail 30 quantum-bot 2>/dev/null || true)
 echo "$LOGS"
 
 # ── Final check ───────────────────────────────────────────────
 sleep 5
-if curl -sf http://localhost:3000/health > /dev/null 2>&1; then
+if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     echo "✅ Fixed"
     tg_alert "✅ *GRINCH-GRAM Recovered*\n🔧 Self-heal succeeded after multiple attempts"
     exit 0

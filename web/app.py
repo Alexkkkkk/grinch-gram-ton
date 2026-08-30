@@ -29,7 +29,13 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = secret_key
 
     # SECURITY: Secure session cookies
-    app.config["SESSION_COOKIE_SECURE"] = True
+    # The VPS currently exposes port 3000 directly over HTTP. Enable this
+    # flag explicitly when the app is placed behind an HTTPS reverse proxy.
+    app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["PERMANENT_SESSION_LIFETIME"] = 3600
