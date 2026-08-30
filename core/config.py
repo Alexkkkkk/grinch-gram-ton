@@ -429,6 +429,12 @@ class Config(metaclass=_ConfigMeta):
         )
         self.GRINCH_TOKEN_ADDRESS = self.TOKEN_ADDRESS
         self.GRINCH_POOL_ADDRESS = self.POOL_ADDRESS
+        self.USDT_TOKEN_ADDRESS = _str_env(
+            "USDT_TOKEN_ADDRESS", "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1ltCqkKsYve9iu3R2"
+        )
+        self.USDT_POOL_ADDRESS = _str_env("USDT_POOL_ADDRESS", "")
+        self.USDT_DECIMALS = _int_env("USDT_DECIMALS", 6)
+        self.TOKEN_SYMBOL = _str_env("TOKEN_SYMBOL", "USDT")
         self.BINANCE_API_KEY = _str_env("BINANCE_API_KEY", "")
         self.BINANCE_API_SECRET = _str_env("BINANCE_API_SECRET", "")
         self.USE_BINANCE_TESTNET = _bool_env("USE_BINANCE_TESTNET", True)

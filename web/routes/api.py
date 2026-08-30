@@ -221,7 +221,7 @@ def api_balance():
                 "price": ton_price,
             },
             "token": {
-                "symbol": "USDT",
+                "symbol": getattr(Config, 'TOKEN_SYMBOL', 'USDT'),
                 "amount": round(usdt_bal, 2),
                 "usd": round(usdt_bal * usdt_price, 2),
                 "price": usdt_price,
