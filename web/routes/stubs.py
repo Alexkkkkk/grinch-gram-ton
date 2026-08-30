@@ -16,14 +16,17 @@ stubs_bp = Blueprint("stubs", __name__)
 # ── Trading control ───────────────────────────────────────────────────────────
 @stubs_bp.route("/api/start", methods=["POST"])
 def start_bot():
-    return jsonify(
-        {"ok": True, "message": "Bot start requested", "mode": Config.TRADE_MODE}
-    )
+    # Keep the legacy dashboard button wired to the real grid controller.
+    from web.routes.api import api_grid_start
+
+    return api_grid_start()
 
 
 @stubs_bp.route("/api/stop", methods=["POST"])
 def stop_bot():
-    return jsonify({"ok": True, "message": "Bot stop requested"})
+    from web.routes.api import api_grid_stop
+
+    return api_grid_stop()
 
 
 # ── TON info ──────────────────────────────────────────────────────────────────

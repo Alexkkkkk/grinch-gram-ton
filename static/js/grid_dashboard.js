@@ -1,6 +1,7 @@
 const socket = io();
 let mainChart;
 let priceData = [], pnlData = [], labels = [];
+let currentGridLevels = [];
 
 // Tell server which timeframe we're viewing
 function notifyTimeframe(tf) {
@@ -118,6 +119,18 @@ function initCharts() {
 }
 
 // ── Socket.io Real-Time ──────────────────────────────────────────────────────
+function updateMarketDataStatus(source, stale = false, available = true) {
+    const el = document.getElementById('marketDataStatus');
+    if (!el) return;
+    if (!available) {
+        el.textContent = 'market data: unavailable';
+        el.style.color = '#f6465d';
+        return;
+    }
+    el.textContent = `market data: ${source || 'exchange'}${stale ? ' · stale' : ' · live'}`;
+    el.style.color = stale ? '#f0b90b' : '#69f0ae';
+}
+
 socket.on('connect', () => {
     addLog('WebSocket connected', 'info');
 });
@@ -128,6 +141,7 @@ socket.on('price', (data) => {
         const pt = document.getElementById('price-ton');
         if (pt) pt.textContent = '$' + data.price.toFixed(2);
         updateGridPriceLines(null, data.price);
+        updateMarketDataStatus(data.source, false, true);
     }
 });
 
@@ -143,6 +157,7 @@ socket.on('status', (data) => {
         const el = document.getElementById('priceChange');
         el.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
         el.className = 'price-change ' + (chg >= 0 ? 'positive' : 'negative');
+        updateMarketDataStatus(data.source, Boolean(data.stale), true);
     }
 });
 
@@ -189,8 +204,7 @@ socket.on('candles', (data) => {
         volumeSeries.setData(volData);
     } else {
         // Incremental update: compare by last candle time instead of Set for O(1)
-        const existing = candleSeries.data() || [];
-        const lastExisting = existing.length > 0 ? existing[existing.length - 1].time : 0;
+        const lastExisting = _lastCandleTime;
 
         for (let i = 0; i < chartData.length; i++) {
             const candle = chartData[i];
@@ -269,6 +283,9 @@ function updateStatus(data) {
     const symEl = document.getElementById('symbol');
     if (symEl) symEl.textContent = data.symbol || 'TON/USDT';
 
+    const market = data.market_data || {};
+    updateMarketDataStatus(market.source, Boolean(market.stale), market.available !== false);
+
     const sec = Number(data.uptime_sec) || 0;
     const d = Math.floor(sec / 86400);
     const h = Math.floor((sec % 86400) / 3600);
@@ -343,10 +360,13 @@ function updateCharts(history) {
     let prices = history.prices || [];
     let pnls = history.pnl || [];
 
-    // Fallback: generate demo data if server returned empty (shouldn't happen now)
+    // Empty means unavailable; never show invented market data.
     if (prices.length === 0) {
-        prices = generateDemoPrices();
-        pnls = generateDemoPnL(prices);
+        mainChart.data.labels = [];
+        mainChart.data.datasets[0].data = [];
+        mainChart.data.datasets[1].data = [];
+        mainChart.update('none');
+        return;
     }
 
     prices = prices.slice(-100);
@@ -361,26 +381,6 @@ function updateCharts(history) {
     mainChart.data.datasets[0].data = prices.map(p => p.price);
     mainChart.data.datasets[1].data = pnls.map(p => p.pnl);
     mainChart.update('none');
-}
-
-function generateDemoPrices() {
-    const pts = [];
-    let price = 1.0;
-    const now = Date.now() / 1000;
-    for (let i = 0; i < 100; i++) {
-        price *= (1 + (Math.random() - 0.48) * 0.016);
-        price = Math.max(0.5, Math.min(2.0, price));
-        pts.push({t: now - (100 - i) * 300, price: price});
-    }
-    return pts;
-}
-
-function generateDemoPnL(prices) {
-    let pnl = 0;
-    return prices.map(p => {
-        pnl += (Math.random() - 0.45) * 0.8;
-        return {t: p.t, pnl: pnl, price: p.price};
-    });
 }
 
 // ── v7 Quantum Intelligence ──────────────────────────────────────────────────
@@ -486,24 +486,26 @@ function updateGridVisual(levels, currentPrice, upper, lower) {
     const container = document.getElementById('gridVisual');
     if (!container) return;
 
-    // Keep price line, remove old levels
+    // Keep the last known levels when only the live price changes.
     const priceLine = document.getElementById('priceLine');
+    if (Array.isArray(levels)) currentGridLevels = levels;
+    const visibleLevels = currentGridLevels;
     container.querySelectorAll('.grid-level').forEach(e => e.remove());
 
-    if (!levels || levels.length === 0 || !currentPrice) {
+    if (!visibleLevels || visibleLevels.length === 0 || !currentPrice) {
         if (priceLine) priceLine.style.top = '50%';
         return;
     }
 
-    const minP = lower || Math.min(...levels.map(l => l.price));
-    const maxP = upper || Math.max(...levels.map(l => l.price));
+    const minP = lower || Math.min(...visibleLevels.map(l => l.price));
+    const maxP = upper || Math.max(...visibleLevels.map(l => l.price));
     const range = maxP - minP || 1;
 
     const pct = 1 - ((currentPrice - minP) / range);
     priceLine.style.top = (Math.max(0.02, Math.min(0.98, pct)) * 100) + '%';
     document.getElementById('priceTag').textContent = currentPrice.toFixed(5);
 
-    levels.forEach(lvl => {
+    visibleLevels.forEach(lvl => {
         const el = document.createElement('div');
         el.className = 'grid-level ' + lvl.side + ' ' + (lvl.status || 'active');
         const lvlPct = 1 - ((lvl.price - minP) / range);
@@ -521,13 +523,27 @@ function updateGridVisual(levels, currentPrice, upper, lower) {
 
 // ── Controls ─────────────────────────────────────────────────────────────────
 async function startBot() {
-    await fetch('/api/start', {method: 'POST'});
-    addLog('Бот запущен', 'info');
+    try {
+        const res = await fetch('/api/start', {method: 'POST'});
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        addLog('Бот запущен', 'info');
+        await fetchAllData();
+    } catch (e) {
+        addLog('Не удалось запустить: ' + e.message, 'sell');
+    }
 }
 
 async function stopBot() {
-    await fetch('/api/stop', {method: 'POST'});
-    addLog('Бот остановлен', 'sell');
+    try {
+        const res = await fetch('/api/stop', {method: 'POST'});
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        addLog('Бот остановлен', 'sell');
+        await fetchAllData();
+    } catch (e) {
+        addLog('Не удалось остановить: ' + e.message, 'sell');
+    }
 }
 
 async function buildGrid() {
@@ -545,7 +561,7 @@ async function buildGrid() {
     const data = await res.json();
     if (data.ok) {
         addLog('Сетка построена: ' + data.levels_count + ' уровней', 'buy');
-        updateGridVisual(data.levels, 1.0, body.upper, body.lower);
+        updateGridVisual(data.levels, data.center_price, body.upper, body.lower);
     } else {
         addLog('Ошибка: ' + (data.error || 'unknown'), 'sell');
     }
@@ -574,7 +590,7 @@ async function aiBuildGrid() {
         if (data.ok) {
             addLog('AI Сетка построена! Шаг: ' + data.step_pct + '%, Режим: ' + data.regime, 'buy');
             if (data.levels) {
-                updateGridVisual(data.levels, 1.0, null, null);
+                updateGridVisual(data.levels, data.price || null, null, null);
             }
         } else {
             addLog('AI Ошибка: ' + (data.error || 'unknown'), 'sell');
@@ -764,22 +780,12 @@ async function fetchCandles(force = false) {
             volume: c.volume || 0
         }));
 
-        // Fallback: generate demo candles if not enough data
-        if (candles.length < 10) {
-            const now = Math.floor(Date.now() / 1000);
-            const basePrice = candles.length > 0 ? candles[candles.length - 1].close : 1.39;
-            const tfSec = { '1c': 1, '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '2h': 7200, '4h': 14400, '6h': 21600 };
-            const interval = tfSec[currentTimeframe] || 900;
-            candles = [];
-            for (let i = 50; i >= 0; i--) {
-                const t = now - i * interval;
-                const change = (Math.random() - 0.5) * 0.02;
-                const open = basePrice * (1 + change);
-                const close = basePrice * (1 + (Math.random() - 0.5) * 0.02);
-                const high = Math.max(open, close) * (1 + Math.random() * 0.01);
-                const low = Math.min(open, close) * (1 - Math.random() * 0.01);
-                candles.push({ timestamp: t, open, high, low, close, volume: Math.random() * 1000 });
-            }
+        if (candles.length === 0) {
+            console.warn('[Candles] Exchange returned no real candles');
+            candleSeries.setData([]);
+            volumeSeries.setData([]);
+            _lastCandleTime = 0;
+            return;
         }
 
         const sorted = candles.sort((a, b) => a.timestamp - b.timestamp);
@@ -801,9 +807,9 @@ async function fetchCandles(force = false) {
             candleSeries.setData(chartData);
             volumeSeries.setData(volData);
         } else {
-            // Incremental update for polling fallback
-            const existing = candleSeries.data() || [];
-            const lastExisting = existing.length > 0 ? existing[existing.length - 1].time : 0;
+            // Incremental update for polling fallback. Lightweight Charts does
+            // not expose a data() reader on series; use our last rendered bar.
+            const lastExisting = _lastCandleTime;
             for (let i = 0; i < chartData.length; i++) {
                 const candle = chartData[i];
                 if (candle.time > lastExisting || (candle.time === lastExisting && i === chartData.length - 1)) {
@@ -826,10 +832,12 @@ function centerLastCandle() {
 
 function updateGridPriceLines(levels, currentPrice) {
     if (!candleSeries) return;
+    if (Array.isArray(levels)) currentGridLevels = levels;
+    const visibleLevels = currentGridLevels;
     gridPriceLines.forEach(line => candleSeries.removePriceLine(line));
     gridPriceLines = [];
-    if (!levels || levels.length === 0) return;
-    levels.forEach(lvl => {
+    if ((!visibleLevels || visibleLevels.length === 0) && !currentPrice) return;
+    (visibleLevels || []).forEach(lvl => {
         const line = candleSeries.createPriceLine({
             price: lvl.price,
             color: lvl.side === 'buy' ? 'rgba(14, 203, 129, 0.6)' : 'rgba(246, 70, 93, 0.6)',

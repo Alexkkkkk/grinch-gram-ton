@@ -44,6 +44,29 @@ _price_change_24h: float = 0.0
 _lock = threading.RLock()
 _last_fetch: float = 0.0
 _bg_thread: Optional[threading.Thread] = None
+_last_source: str = ""
+_last_feed_error: str = ""
+_external_candles_cache: Dict[str, List[dict]] = {}
+_external_candles_fetched_at: Dict[str, float] = {}
+_EXTERNAL_CANDLE_TTL = 3.0
+# MEXC does not provide every timeframe shown by the dashboard. Unsupported
+# timeframes are built from real lower-timeframe OHLCV rows below; never use
+# generated/random candles as a fallback.
+_MEXC_KLINE_INTERVALS = {
+    "1m": "1m",
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+    "4h": "4h",
+    "1d": "1d",
+    "1w": "1W",
+}
+_AGGREGATED_TIMEFRAMES = {
+    "3m": ("1m", 3),
+    "1h": ("15m", 4),
+    "2h": ("15m", 8),
+    "6h": ("15m", 24),
+}
 
 _TF_SECONDS = {
     "1s": 1,
@@ -162,18 +185,43 @@ def _fetch_lbank_price() -> Optional[float]:
 
 
 def update_price() -> float:
-    """Fetch latest Gram price. Never returns garbage (< $0.10)."""
-    # Try sources in order: MEXC -> Gate.io -> LBank
-    price = _fetch_mexc_price()
-    if price is None:
-        price = _fetch_gateio_price()
-    if price is None:
-        price = _fetch_lbank_price()
+    """Fetch the latest real market price without inventing a fallback value."""
+    global _last_source, _last_feed_error
 
-    # Final safety net: hardcoded verified price
-    if price is None or price < 0.10:
-        price = 1.40
-        logger.warning("All price APIs failed — using hardcoded $1.40")
+    sources = (
+        ("MEXC", _fetch_mexc_price),
+        ("Gate.io", _fetch_gateio_price),
+        ("LBank", _fetch_lbank_price),
+    )
+    price = None
+    source = ""
+    errors = []
+    for name, fetcher in sources:
+        try:
+            price = fetcher()
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+            price = None
+        if price is not None and price >= 0.10:
+            source = name
+            break
+
+    if price is None:
+        with _lock:
+            cached_price = _current_price
+            cached_source = _last_source
+        if cached_price > 0:
+            price = cached_price
+            source = f"{cached_source or 'exchange'} (stale)"
+            logger.warning("All price APIs failed; keeping last real price $%.6f", price)
+        else:
+            _last_feed_error = "; ".join(errors) or "all market data sources unavailable"
+            logger.error("No real market price available: %s", _last_feed_error)
+            return 0.0
+
+    with _lock:
+        _last_source = source
+        _last_feed_error = ""
 
     tick_price(price)
 
@@ -184,6 +232,126 @@ def update_price() -> float:
             logger.debug("Price callback error")
 
     return price
+
+
+def get_feed_status() -> dict:
+    """Expose freshness/source metadata for the dashboard without secrets."""
+    with _lock:
+        return {
+            "source": _last_source or None,
+            "last_update": _last_fetch or None,
+            "stale": bool(_last_fetch and time.time() - _last_fetch > 30),
+            "available": _current_price > 0,
+            "error": _last_feed_error or None,
+        }
+
+
+def _fetch_mexc_candles_direct(timeframe: str, limit: int) -> List[dict]:
+    """Fetch one of MEXC's natively supported real OHLCV intervals."""
+    if requests is None:
+        return []
+    interval = _MEXC_KLINE_INTERVALS.get(timeframe)
+    if not interval:
+        return []
+    try:
+        response = requests.get(
+            "https://api.mexc.com/api/v3/klines",
+            params={
+                "symbol": "GRAMUSDT",
+                "interval": interval,
+                "limit": min(max(int(limit), 1), 1000),
+            },
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        candles = []
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, list) or len(row) < 6:
+                continue
+            try:
+                candles.append(
+                    {
+                        "t": int(row[0]) // 1000,
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                        "volume": float(row[5]),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+        return candles
+    except Exception as exc:
+        logger.warning("MEXC candles %s failed: %s", timeframe, exc)
+        return []
+
+
+def _aggregate_candles(
+    candles: List[dict], timeframe: str, source_interval: str
+) -> List[dict]:
+    """Aggregate real exchange candles into a dashboard timeframe."""
+    spec = _AGGREGATED_TIMEFRAMES.get(timeframe)
+    source_seconds = _TF_SECONDS.get(source_interval)
+    if not spec or not source_seconds or not candles:
+        return []
+
+    interval_seconds = _TF_SECONDS[timeframe]
+    buckets: Dict[int, dict] = {}
+    for candle in candles:
+        timestamp = int(candle["t"])
+        bucket_time = (timestamp // interval_seconds) * interval_seconds
+        current = buckets.get(bucket_time)
+        if current is None:
+            buckets[bucket_time] = {
+                "t": bucket_time,
+                "open": candle["open"],
+                "high": candle["high"],
+                "low": candle["low"],
+                "close": candle["close"],
+                "volume": candle.get("volume", 0),
+            }
+            continue
+        current["high"] = max(current["high"], candle["high"])
+        current["low"] = min(current["low"], candle["low"])
+        current["close"] = candle["close"]
+        current["volume"] += candle.get("volume", 0)
+    return [buckets[key] for key in sorted(buckets)]
+
+
+def _fetch_mexc_candles(timeframe: str, limit: int) -> List[dict]:
+    """Fetch real candles, aggregating only from real exchange OHLCV data."""
+    if timeframe in _MEXC_KLINE_INTERVALS:
+        return _fetch_mexc_candles_direct(timeframe, limit)
+
+    source = _AGGREGATED_TIMEFRAMES.get(timeframe)
+    if not source:
+        return []
+    source_interval, multiplier = source
+    # Request enough real source rows for the requested number of output bars.
+    source_limit = min(max(int(limit), 1) * multiplier, 1000)
+    source_candles = _fetch_mexc_candles_direct(source_interval, source_limit)
+    return _aggregate_candles(source_candles, timeframe, source_interval)
+
+
+def _merge_live_price(candles: List[dict], timeframe: str) -> List[dict]:
+    """Update only the still-open exchange candle with the latest real ticker."""
+    if not candles:
+        return candles
+    with _lock:
+        price = _current_price
+    if price <= 0:
+        return candles
+    seconds = _TF_SECONDS.get(timeframe, 300)
+    current_bucket = int(time.time() / seconds) * seconds
+    last = candles[-1]
+    if last.get("t") == current_bucket:
+        last["high"] = max(last["high"], price)
+        last["low"] = min(last["low"], price)
+        last["close"] = price
+    return candles
 
 
 def _build_candles_for_interval(ticks: List[dict], interval_sec: int) -> List[dict]:
@@ -247,6 +415,9 @@ def tick_price(price: float) -> bool:
         now = time.time()
         # Only record if price changed (avoids flat candles)
         if _tick_history and abs(_tick_history[-1]["price"] - price) < 0.0001:
+            # The quote is unchanged, but the successful poll still refreshes freshness.
+            _current_price = price
+            _last_fetch = now
             return False
         _current_price = price
         _last_fetch = now
@@ -291,35 +462,32 @@ def get_price_change_24h() -> float:
 
 
 def fetch_external_candles(timeframe: str = "15m", limit: int = 200) -> List[dict]:
-    with _lock:
-        return list(_candles)[-limit:]
+    return get_candles_timeframe(timeframe, limit)
 
 
 def get_candles_timeframe(timeframe: str = "5m", limit: int = 200) -> List[dict]:
+    """Return real exchange OHLCV candles, with a live update to the open bar."""
     tf = normalize_timeframe(timeframe)
-    sec = _TF_SECONDS.get(tf, 300)
+    safe_limit = min(max(int(limit or 200), 1), 1000)
+    now = time.time()
 
+    if tf in _MEXC_KLINE_INTERVALS or tf in _AGGREGATED_TIMEFRAMES:
+        with _lock:
+            cached = _external_candles_cache.get(tf)
+            fetched_at = _external_candles_fetched_at.get(tf, 0.0)
+        if not cached or now - fetched_at >= _EXTERNAL_CANDLE_TTL:
+            fresh = _fetch_mexc_candles(tf, max(safe_limit, 300))
+            if fresh:
+                with _lock:
+                    _external_candles_cache[tf] = fresh
+                    _external_candles_fetched_at[tf] = now
+                cached = fresh
+        if cached:
+            return _merge_live_price(list(cached[-safe_limit:]), tf)
+
+    # Only real local ticker history is allowed as a fallback. Never fabricate candles.
     with _lock:
-        # Return from cache if available
-        if tf in _candles_cache and len(_candles_cache[tf]) > 0:
-            return list(_candles_cache[tf])[-limit:]
-        # Fallback to base 1m candles
-        if len(_candles) > 0:
-            return list(_candles)[-limit:]
-
-    # No data yet — return single current-price candle
-    price = get_current_price()
-    now = int(time.time())
-    return [
-        {
-            "t": now,
-            "open": price,
-            "high": price,
-            "low": price,
-            "close": price,
-            "volume": 0,
-        }
-    ]
+        return list(_candles_cache.get(tf, _candles))[-safe_limit:]
 
 
 def get_price_history(limit: int = 100) -> List[dict]:
@@ -363,10 +531,10 @@ def normalize_timeframe(timeframe: str = "5m") -> str:
 
 
 def get_history_for_chart(hours: int = 24) -> dict:
-    """Return price and accumulated PnL history for the dashboard chart."""
+    """Return real exchange price history for the dashboard chart."""
     cutoff = time.time() - hours * 3600
-    with _lock:
-        candles = [c for c in _candles if c["t"] > cutoff]
+    requested = min(max(int(hours or 24) * 60, 100), 1000)
+    candles = [c for c in get_candles_timeframe("1m", requested) if c["t"] > cutoff]
     prices = [{"t": c["t"], "price": c["close"]} for c in candles]
     pnls = []
     pnl = 0.0
