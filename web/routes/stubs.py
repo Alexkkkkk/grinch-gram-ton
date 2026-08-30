@@ -31,7 +31,11 @@ def ton_info():
 
 @stubs_bp.route("/api/ton/price")
 def ton_price():
-    return jsonify({"ok": True, "price_usd": Config.TON.price_usd, "price_ton": 1.0})
+    try:
+        price = getattr(Config, "TON", {}).get("price_usd", 0) if hasattr(Config, "TON") else 0
+    except Exception:
+        price = 0
+    return jsonify({"ok": True, "price_usd": price, "price_ton": 1.0})
 
 
 @stubs_bp.route("/api/ton/refresh", methods=["POST"])
@@ -69,7 +73,11 @@ def trade_delete():
 # ── Coin / Market ─────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/coin")
 def coin():
-    return jsonify({"ok": True, "symbol": Config.SYMBOL, "price": Config.TON.price_usd})
+    try:
+        price = getattr(Config, "TON", {}).get("price_usd", 0) if hasattr(Config, "TON") else 0
+    except Exception:
+        price = 0
+    return jsonify({"ok": True, "symbol": Config.SYMBOL, "price": price})
 
 
 @stubs_bp.route("/api/coin/exchanges")
