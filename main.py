@@ -1,6 +1,7 @@
 """Entry point — AI-Trading v3.2 (synchronized & optimized)."""
 
 import hashlib
+import json
 import logging
 import os
 import signal
@@ -15,12 +16,14 @@ from flask_socketio import SocketIO
 from core.price_feed_real import (
     get_candles_timeframe,
     get_current_price,
+    get_feed_status,
     get_price_change_24h,
     register_price_callback,
     start_background_updates,
     tick_price,
     update_price,
 )
+from dedust_client import dedust_client
 from grid_trader import GridTrader
 from quantum_brain import get_brain
 from quantum_evolution import get_evolution
@@ -59,7 +62,7 @@ brain = get_brain()
 
 # 2. GridTrader
 grid_trader = GridTrader()
-grid_trader.inject(ai_engine=brain, price_feed=get_current_price)
+grid_trader.inject(dedust_client=dedust_client, ai_engine=brain, price_feed=get_current_price)
 grid_trader.start_poller()
 
 # 3. Connect brain to grid trader and price feed
@@ -115,7 +118,7 @@ def _init_prefetch():
 # WebSocket Broadcasting (thread-safe, optimized)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_last_candle_hash = ""
+_last_candle_hashes: Dict[str, str] = {}
 _candle_hash_lock = threading.Lock()
 _client_timeframes: Dict[str, str] = {}
 _tf_lock = threading.Lock()
@@ -124,12 +127,21 @@ _tf_lock = threading.Lock()
 def _broadcast_price(price: float):
     """Broadcast price update to all connected clients."""
     if socketio and not _shutdown_event.is_set():
-        socketio.emit("price", {"price": price, "timestamp": time.time()})
+        feed = get_feed_status()
+        socketio.emit(
+            "price",
+            {
+                "price": price,
+                "timestamp": time.time(),
+                "source": feed.get("source"),
+                "stale": feed.get("stale", True),
+                "available": feed.get("available", False),
+            },
+        )
 
 
 def _broadcast_status():
     """Broadcast status + candles to all clients every 2 seconds."""
-    global _last_candle_hash
     last_candle_send = 0
 
     while not _shutdown_event.is_set():
@@ -138,6 +150,7 @@ def _broadcast_status():
                 price = get_current_price()
                 tick_price(price)
                 change = get_price_change_24h()
+                feed = get_feed_status()
 
                 # Lightweight status every 2s
                 socketio.emit(
@@ -146,38 +159,47 @@ def _broadcast_status():
                         "price": price,
                         "change_24h": change,
                         "timestamp": time.time(),
+                        "source": feed.get("source"),
+                        "stale": feed.get("stale", True),
+                        "available": feed.get("available", False),
+                        "error": feed.get("error"),
                     },
                 )
 
-                # Candles: send every 5s and only if changed
+                # Candles: send every 3s and independently to each client's
+                # selected timeframe. A single global timeframe caused one
+                # client's selection to overwrite another's chart.
                 now = time.time()
-                if now - last_candle_send >= 5:
+                if now - last_candle_send >= 3:
                     with _tf_lock:
-                        tf_counts = {}
-                        for tf in _client_timeframes.values():
-                            tf_counts[tf] = tf_counts.get(tf, 0) + 1
-                        target_tf = (
-                            max(tf_counts, key=tf_counts.get) if tf_counts else "15m"
+                        clients_by_tf: Dict[str, list[str]] = {}
+                        for sid, timeframe in _client_timeframes.items():
+                            clients_by_tf.setdefault(timeframe, []).append(sid)
+
+                    for timeframe, sids in clients_by_tf.items():
+                        candles = get_candles_timeframe(timeframe, 300)
+                        candle_json = json.dumps(
+                            candles, sort_keys=True, separators=(",", ":")
                         )
+                        candle_hash = hashlib.md5(
+                            candle_json.encode(), usedforsecurity=False
+                        ).hexdigest()
 
-                    candles = get_candles_timeframe(target_tf, 200)
-                    candle_json = str(candles[-5:]) if candles else ""
-                    candle_hash = hashlib.md5(candle_json.encode()).hexdigest()
+                        with _candle_hash_lock:
+                            send_it = (
+                                candle_hash != _last_candle_hashes.get(timeframe)
+                            )
+                            if send_it:
+                                _last_candle_hashes[timeframe] = candle_hash
 
-                    with _candle_hash_lock:
-                        send_it = candle_hash != _last_candle_hash
                         if send_it:
-                            _last_candle_hash = candle_hash
-
-                    if send_it:
-                        socketio.emit(
-                            "candles",
-                            {
+                            payload = {
                                 "candles": candles,
-                                "timeframe": target_tf,
+                                "timeframe": timeframe,
                                 "timestamp": now,
-                            },
-                        )
+                            }
+                            for sid in sids:
+                                socketio.emit("candles", payload, to=sid)
                     last_candle_send = now
         except Exception as e:
             logger.warning("Broadcast error: %s", e)
@@ -192,8 +214,21 @@ def _handle_subscribe_timeframe(data):
     except RuntimeError:
         sid = None
     if sid and data and data.get("timeframe"):
+        timeframe = str(data["timeframe"])
         with _tf_lock:
-            _client_timeframes[sid] = data["timeframe"]
+            _client_timeframes[sid] = timeframe
+        # Send the selected timeframe immediately so a newly connected client
+        # does not wait for the next broadcaster tick or another price change.
+        candles = get_candles_timeframe(timeframe, 300)
+        socketio.emit(
+            "candles",
+            {
+                "candles": candles,
+                "timeframe": timeframe,
+                "timestamp": time.time(),
+            },
+            to=sid,
+        )
 
 
 @socketio.on("disconnect")
@@ -227,7 +262,7 @@ _broadcast_thread = threading.Thread(target=_broadcast_status, daemon=True)
 _broadcast_thread.start()
 
 # Start background price feed from exchanges
-start_background_updates(interval=10.0)
+start_background_updates(interval=3.0)
 
 # Start background services
 _init_prefetch()
