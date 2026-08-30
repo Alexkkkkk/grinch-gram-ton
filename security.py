@@ -204,10 +204,7 @@ def _is_internal_probe() -> bool:
     source = (_req.remote_addr or "").strip()
     if not _is_trusted_proxy(source):
         return False
-    return not (
-        _req.headers.get("X-Real-IP")
-        or _req.headers.get("X-Forwarded-For")
-    )
+    return not (_req.headers.get("X-Real-IP") or _req.headers.get("X-Forwarded-For"))
 
 
 def _is_banned(ip: str) -> bool:

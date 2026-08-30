@@ -20,9 +20,9 @@ class ErrorHandlerMiddleware:
             return self.application(environ, start_response)
         except Exception:
             logger.exception("Unhandled exception in WSGI application")
-            body = json.dumps(
-                {"ok": False, "error": "Internal server error"}
-            ).encode("utf-8")
+            body = json.dumps({"ok": False, "error": "Internal server error"}).encode(
+                "utf-8"
+            )
             start_response(
                 "500 Internal Server Error",
                 [

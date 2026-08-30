@@ -14,9 +14,11 @@ logger = logging.getLogger("scan_errors")
 try:
     from error_reporter_v2 import report_error
 except ImportError:
+
     def report_error(error: Exception, severity: str = "error") -> None:
         """Keep scanning useful when the optional GitHub reporter is absent."""
         logger.error("[%s] %s", severity.upper(), error)
+
 
 LOG_PATTERNS = [
     "/var/log/grinch/*.log",

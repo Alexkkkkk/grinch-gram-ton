@@ -19,6 +19,7 @@ sys.path.insert(0, "/opt/bot")
 from autonomy.auto_updater import AutoUpdater
 from autonomy.performance_monitor import PerformanceMonitor
 from autonomy.self_healing import SelfHealingEngine
+
 # isort: on
 
 logging.basicConfig(

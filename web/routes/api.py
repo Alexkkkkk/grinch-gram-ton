@@ -328,7 +328,10 @@ def api_grid_build():
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "grid_count must be an integer"}), 400
     if not 2 <= grid_count <= 200:
-        return jsonify({"ok": False, "error": "grid_count must be between 2 and 200"}), 400
+        return (
+            jsonify({"ok": False, "error": "grid_count must be between 2 and 200"}),
+            400,
+        )
 
     price = get_current_price()
     if not price or price <= 0:
