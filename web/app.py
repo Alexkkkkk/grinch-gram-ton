@@ -117,11 +117,13 @@ def create_app() -> Flask:
     from web.routes.auth import auth_bp
     from web.routes.dashboard import dash_bp
     from web.routes.health import health_bp
+    from web.routes.stubs import stubs_bp
 
     app.register_blueprint(api_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(dash_bp)
     app.register_blueprint(health_bp)
+    app.register_blueprint(stubs_bp)
 
     # NOTE: Price feed is initialized in main.py to avoid double-fetch on startup
     # The initial price fetch happens there before SocketIO starts broadcasting.
