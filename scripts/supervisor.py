@@ -22,10 +22,7 @@ from autonomy.self_healing import SelfHealingEngine
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/var/log/grinch/supervisor.log"),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("supervisor")
 
@@ -51,7 +48,11 @@ class Supervisor:
         self.running = True
 
         # Create log directory
-        os.makedirs("/var/log/grinch", exist_ok=True)
+        log_dir = os.getenv("GRINCH_LOG_DIR", "/var/log/grinch")
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+        except OSError:
+            logger.warning("Could not create log directory %s", log_dir)
 
         # Start self-healing
         healing = SelfHealingEngine(check_interval=30)

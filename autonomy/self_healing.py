@@ -21,6 +21,8 @@ logger = logging.getLogger("autonomy.self_healing")
 class SelfHealingEngine:
     """Autonomous healing for AI-Trading bot."""
 
+    container_name = os.getenv("BOT_CONTAINER", "quantum-bot")
+
     HEALING_ACTIONS = {
         "restart_bot": {
             "description": "Restart Docker containers",
@@ -90,7 +92,7 @@ class SelfHealingEngine:
                     "docker",
                     "ps",
                     "--filter",
-                    "name=grinch-bot",
+                    f"name={self.container_name}",
                     "--format",
                     "{{.Status}}",
                 ],
@@ -106,7 +108,11 @@ class SelfHealingEngine:
         try:
             import requests
 
-            resp = requests.get("http://localhost:3000/api/health", timeout=5)
+            resp = requests.get(
+                os.getenv("HEALTH_URL", "http://127.0.0.1:3000/api/health"),
+                headers={"User-Agent": "GrinchHealthMonitor/1.0"},
+                timeout=5,
+            )
             health["checks"]["http"] = (
                 "ok" if resp.status_code == 200 else f"error: {resp.status_code}"
             )

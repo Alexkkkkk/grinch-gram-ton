@@ -1,4 +1,4 @@
-"""Web middleware — timing, auth, errors, rate limiting."""
+"""Reusable WSGI middleware for the web application."""
 
 from .errors import ErrorHandlerMiddleware
 from .timing import TimingMiddleware

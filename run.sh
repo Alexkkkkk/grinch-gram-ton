@@ -27,4 +27,12 @@ if [ -z "$MNEMONIC" ] || echo "$MNEMONIC" | grep -q "abandon"; then
 fi
 
 echo "🚀 Запуск..."
-python3 app.py
+
+# The application entry point is main.py and exposes the Flask-SocketIO
+# application as `app`.  Use Gunicorn here as well as in Docker so the manual
+# start path has the same production behaviour and does not reference the old
+# app.py filename.
+exec python3 -m gunicorn \
+    --config gunicorn.conf.py \
+    --bind "${HOST:-0.0.0.0}:${PORT:-3000}" \
+    main:app

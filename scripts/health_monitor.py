@@ -17,14 +17,18 @@ logger = logging.getLogger("health_monitor")
 GITHUB_API = "https://api.github.com"
 REPO = os.getenv("GITHUB_REPO", "Alexkkkkk/grinch-gram-ton")
 TOKEN = os.getenv("GITHUB_TOKEN", "")
-HEALTH_URL = "http://localhost:3000/api/health"
+HEALTH_URL = os.getenv("HEALTH_URL", "http://127.0.0.1:3000/api/health")
 CHECK_INTERVAL = 60  # seconds
 
 
 def check_health() -> dict:
     """Check bot health."""
     try:
-        resp = requests.get(HEALTH_URL, timeout=10)
+        resp = requests.get(
+            HEALTH_URL,
+            headers={"User-Agent": "GrinchHealthMonitor/1.0"},
+            timeout=10,
+        )
         return {
             "status": "ok" if resp.status_code == 200 else "error",
             "code": resp.status_code,

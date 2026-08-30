@@ -4,11 +4,19 @@ Scan logs for errors and report to GitHub.
 """
 
 import glob
+import logging
 import re
 import sys
 
 sys.path.insert(0, "/opt/bot")
-from error_reporter_v2 import report_error
+logger = logging.getLogger("scan_errors")
+
+try:
+    from error_reporter_v2 import report_error
+except ImportError:
+    def report_error(error: Exception, severity: str = "error") -> None:
+        """Keep scanning useful when the optional GitHub reporter is absent."""
+        logger.error("[%s] %s", severity.upper(), error)
 
 LOG_PATTERNS = [
     "/var/log/grinch/*.log",

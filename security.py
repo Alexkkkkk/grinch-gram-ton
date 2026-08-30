@@ -192,6 +192,24 @@ def get_client_ip() -> str:
     return (ip or "unknown").strip()
 
 
+def _is_internal_probe() -> bool:
+    """Return True for direct host/container probes without proxy headers.
+
+    Docker health checks reach the application through a private bridge address
+    and do not carry a real client IP. They must not be rate-limited or banned
+    based on their standard library User-Agent.
+    """
+    from flask import request as _req
+
+    source = (_req.remote_addr or "").strip()
+    if not _is_trusted_proxy(source):
+        return False
+    return not (
+        _req.headers.get("X-Real-IP")
+        or _req.headers.get("X-Forwarded-For")
+    )
+
+
 def _is_banned(ip: str) -> bool:
     if ip in _perm_banned:
         return True
@@ -226,8 +244,9 @@ def check_request():
     path = _req.path or "/"
     now = time.time()
 
-    # Localhost / container-internal requests — no rate limiting
-    if ip in ("127.0.0.1", "::1", "localhost"):
+    # Localhost / container-internal requests — no rate limiting or scanner
+    # banning. A Docker bridge address is shared by host health probes.
+    if ip in ("127.0.0.1", "::1", "localhost") or _is_internal_probe():
         return None
 
     with _lock:

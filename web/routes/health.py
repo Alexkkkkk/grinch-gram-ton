@@ -1,7 +1,7 @@
 """Advanced health dashboard — comprehensive system status."""
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import psutil
 from flask import Blueprint, jsonify
@@ -17,7 +17,7 @@ def health_check():
     return jsonify(
         {
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "uptime_seconds": int(time.time() - _start_time),
         }
     )
@@ -57,7 +57,7 @@ def full_health():
     return jsonify(
         {
             "status": overall_status,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "uptime_seconds": int(time.time() - _start_time),
             "system": {
                 "cpu_percent": cpu,

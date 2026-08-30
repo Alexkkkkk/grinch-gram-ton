@@ -9,8 +9,7 @@ echo "=========================================="
 # 1. Install dependencies
 echo "[1/8] Installing dependencies..."
 apt-get update -qq
-apt-get install -y -qq python3-pip curl jq htop iotop
-pip3 install -q requests openai psutil 2>/dev/null || true
+apt-get install -y -qq python3-requests python3-psutil curl jq htop iotop
 
 # 2. Create directories
 echo "[2/8] Creating directories..."

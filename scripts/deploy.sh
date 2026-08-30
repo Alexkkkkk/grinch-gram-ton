@@ -60,7 +60,10 @@ sleep 5
 if docker compose ps | grep -q "Up"; then
     log "SUCCESS: Deployed $NEW"
     # Smoke test inside container
-    docker compose exec -T bot python scripts/ci_smoke.py >> "$LOG_FILE" 2>&1 || true
+    if ! docker compose exec -T bot python scripts/ci_smoke.py >> "$LOG_FILE" 2>&1; then
+        log "ERROR: Container smoke test failed!"
+        exit 1
+    fi
 else
     log "ERROR: Containers failed to start!"
     exit 1

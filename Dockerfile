@@ -40,6 +40,8 @@ COPY --chown=bot:bot web/ ./web/
 COPY --chown=bot:bot trading/ ./trading/
 COPY --chown=bot:bot ai/ ./ai/
 COPY --chown=bot:bot db/ ./db/
+COPY --chown=bot:bot autonomy/ ./autonomy/
+COPY --chown=bot:bot scripts/ ./scripts/
 COPY --chown=bot:bot static/ ./static/
 COPY --chown=bot:bot templates/ ./templates/
 
