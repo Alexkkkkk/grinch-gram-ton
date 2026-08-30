@@ -10,6 +10,7 @@ from core.config import Config
 from core.price_feed_real import (
     get_candles_timeframe,
     get_current_price,
+    get_feed_status,
     get_history_for_chart,
 )
 
@@ -82,9 +83,11 @@ def api_status():
             "mode": "GRID",
             "grid_enabled": Config.GRID.enabled,
             "grid_active": grid_active,
-            "demo": Config.DEMO_MODE,
+            "demo": False,
+            "price": get_current_price(),
+            "market_data": get_feed_status(),
             "uptime_sec": int(time.time() - _start_time),
-            "version": "7.1.4-sync",
+            "version": "7.2.0-real-market-data",
         }
     )
 
@@ -249,6 +252,7 @@ def api_grid_status():
                 "lower_price": state.get("lower_price", 0),
                 "sell_levels": len(state.get("sell_levels", [])),
                 "buy_levels": len(state.get("buy_levels", [])),
+                "levels": _grid_levels_payload(state),
                 "total_profit_ton": state.get("total_profit_ton", 0),
                 "last_action": state.get("last_action", ""),
             }
@@ -272,11 +276,12 @@ def api_grid_levels():
 
 @api_bp.route("/grid/start", methods=["POST"])
 def api_grid_start():
-    if _grid_trader:
-        price = get_current_price()
-        _grid_trader.ai_build_grid(price)
-        return jsonify({"ok": True, "price": price})
-    return jsonify({"ok": False, "error": "Grid trader not initialized"})
+    if not _grid_trader:
+        return jsonify({"ok": False, "error": "Grid trader not initialized"}), 503
+    result = _grid_trader.start_grid()
+    if not result.get("ok"):
+        return jsonify(result), 409
+    return jsonify({"ok": True, "price": get_current_price()})
 
 
 @api_bp.route("/grid/stop", methods=["POST"])
@@ -309,6 +314,7 @@ def _ai_snapshot():
         "risk_level": grid_ai.get("risk_level", 0),
         "drawdown_pct": 0.0,
         "trap": {
+            "trap": grid_ai.get("trap_detected", False),
             "detected": grid_ai.get("trap_detected", False),
             "confidence": grid_ai.get("trap_confidence", 0.0),
         },
@@ -364,10 +370,17 @@ def api_grid_ai_status():
         {
             "ok": True,
             "enabled": enabled,
+            "ai_enabled": enabled,
             "signal": snapshot["quantum_signal"]["signal"],
+            "ai_signal": snapshot["quantum_signal"]["signal"],
             "confidence": snapshot["quantum_signal"]["confidence"],
+            "ai_confidence": snapshot["quantum_signal"]["confidence"],
             "trap_detected": snapshot["trap"]["detected"],
+            "ai_trap_detected": snapshot["trap"]["detected"],
             "pause_buying": snapshot["pause_buying"],
+            "ai_pause_reason": (
+                "AI pause active" if snapshot["pause_buying"] else ""
+            ),
             "regime": snapshot["regime"],
             "optimal_step": snapshot["optimal_step"],
         }
@@ -405,6 +418,7 @@ def api_grid_ai_build():
         {
             "ok": bool(state.get("active")),
             "error": None if state.get("active") else "Balances unavailable",
+            "price": price,
             "step_pct": snapshot["optimal_step"],
             "regime": snapshot["regime"],
             "levels": _grid_levels_payload(state),
