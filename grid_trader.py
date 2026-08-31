@@ -33,7 +33,7 @@ class GridLevel:
     id: int
     side: str
     price_ton: float
-    amount_grinch: float = 0.0
+    amount_token: float = 0.0
     amount_ton: float = 0.0
     status: str = "waiting"
     filled_at: Optional[float] = None
@@ -45,7 +45,7 @@ class GridLevel:
     def to_base(self) -> BaseGridLevel:
         """Convert to memory-optimized base level."""
         base = BaseGridLevel(
-            self.price_ton, self.side, self.amount_grinch or self.amount_ton
+            self.price_ton, self.side, self.amount_token or self.amount_ton
         )
         base.filled = self.status == "filled"
         return base
@@ -63,7 +63,7 @@ class GridState:
     completed_fills: List[GridLevel] = field(default_factory=list)
     total_profit_ton: float = 0.0
     total_sell_cycles: int = 0
-    grid_reserved_grinch: float = 0.0
+    grid_reserved_token: float = 0.0
     last_action: str = ""
     last_rebuild: float = 0.0
     last_tick: float = 0.0
@@ -294,7 +294,7 @@ class GridTrader:
                     if res.get("ok"):
                         self._record_trade("SELL", level, price_ton)
                         self._state.last_action = (
-                            f"SELL L{level.id}: {level.amount_grinch:.0f} @ {price_ton:.6f} "
+                            f"SELL L{level.id}: {level.amount_token:.0f} @ {price_ton:.6f} "
                             f"| profit {level.profit_ton:+.3f} TON"
                         )
                         log.info("[Grid] %s", self._state.last_action)
@@ -329,7 +329,7 @@ class GridTrader:
                     res = self._execute_buy(level, price_ton)
                     if res.get("ok"):
                         self._record_trade("BUY", level, price_ton)
-                        self._state.last_action = f"BUY L{level.id}: {level.amount_grinch:.0f} @ {price_ton:.6f}"
+                        self._state.last_action = f"BUY L{level.id}: {level.amount_token:.0f} @ {price_ton:.6f}"
                         log.info("[Grid] %s", self._state.last_action)
                         self._place_resell(level)
                         if self._ai:
@@ -359,7 +359,7 @@ class GridTrader:
         return False
 
     def _maybe_build_grid(self, center_price):
-        ton_bal, grin_bal = self._get_balances()
+        ton_bal, token_bal = self._get_balances()
         if ton_bal is None:
             # Rate-limit warning: log only once per minute to avoid spam
             now = time.time()
@@ -375,7 +375,7 @@ class GridTrader:
         atr_pct = self._calc_atr_pct()
         step = self._adaptive_step(atr_pct)
         self.build_grid(
-            center_price, step_pct=step, grinch_balance=grin_bal, ton_balance=ton_bal
+            center_price, step_pct=step, token_balance=token_bal, ton_balance=ton_bal
         )
 
     @staticmethod
@@ -407,7 +407,7 @@ class GridTrader:
         step_pct=None,
         sell_levels=None,
         buy_levels=None,
-        grinch_balance=None,
+        token_balance=None,
         ton_balance=None,
         active=True,
         upper_price=None,
@@ -446,8 +446,8 @@ class GridTrader:
                 (buy_factor - 1) * 100,
             )
 
-            avail_grinch = max(0.0, float(grinch_balance or 0.0))
-            grin_per_sell = avail_grinch / n_sell if n_sell > 0 else 0
+            avail_token = max(0.0, float(token_balance or 0.0))
+            grin_per_sell = avail_token / n_sell if n_sell > 0 else 0
 
             for i in range(1, n_sell + 1):
                 price = center_price * sell_factor**i
@@ -456,11 +456,11 @@ class GridTrader:
                         id=i,
                         side="sell",
                         price_ton=round(price, 6),
-                        amount_grinch=round(grin_per_sell, 2),
+                        amount_token=round(grin_per_sell, 2),
                         amount_ton=0,
                     )
                 )
-            s.grid_reserved_grinch = avail_grinch
+            s.grid_reserved_token = avail_token
 
             avail_ton = max(
                 0.0, float(ton_balance or 0.0) - (GridCfg.gas_reserve_ton or 5.0)
@@ -476,7 +476,7 @@ class GridTrader:
                         id=-i,
                         side="buy",
                         price_ton=round(price, 6),
-                        amount_grinch=0,
+                        amount_token=0,
                         amount_ton=round(amount_ton, 2),
                     )
                 )
@@ -492,7 +492,7 @@ class GridTrader:
                 n_buy,
                 s.upper_price,
                 s.lower_price,
-                avail_grinch,
+                avail_token,
                 avail_ton,
             )
             return s
@@ -507,7 +507,7 @@ class GridTrader:
         lower_price=None,
     ):
         """Public API for AI-triggered grid build."""
-        ton_bal, grin_bal = self._get_balances()
+        ton_bal, token_bal = self._get_balances()
         ton_budget = (
             float(investment_ton)
             if investment_ton is not None
@@ -523,7 +523,7 @@ class GridTrader:
                 step_pct=step,
                 sell_levels=sell_levels,
                 buy_levels=buy_levels,
-                grinch_balance=0,
+                token_balance=0,
                 ton_balance=ton_budget or 0,
                 active=False,
                 upper_price=upper_price,
@@ -534,7 +534,7 @@ class GridTrader:
             step_pct=self._adaptive_step(self._calc_atr_pct()),
             sell_levels=sell_levels,
             buy_levels=buy_levels,
-            grinch_balance=grin_bal,
+            token_balance=token_bal,
             ton_balance=ton_budget,
             active=True,
             upper_price=upper_price,
@@ -543,10 +543,10 @@ class GridTrader:
 
     def _execute_sell(self, level, price_ton):
         try:
-            if level.amount_grinch <= 0:
+            if level.amount_token <= 0:
                 return {"ok": False, "error": "zero_amount"}
             if self._dc and hasattr(self._dc, "sell"):
-                result = self._dc.sell(level.amount_grinch)
+                result = self._dc.sell(level.amount_token)
                 if result.get("ok"):
                     received_ton = result.get("received_ton", 0)
                     level.status = "filled"
@@ -573,7 +573,7 @@ class GridTrader:
                     level.status = "filled"
                     level.filled_at = time.time()
                     level.fill_price_ton = price_ton
-                    level.amount_grinch = received_grinch
+                    level.amount_token = received_grinch
                     level.tx_hash = result.get("tx_hash", "")
                     return {"ok": True, "received": received_grinch}
             return {"ok": False, "error": "no_dedust_client"}
@@ -594,7 +594,7 @@ class GridTrader:
             "side": side,
             "level_id": level.id,
             "price": price,
-            "amount_grinch": level.amount_grinch,
+            "amount_token": level.amount_token,
             "amount_ton": level.amount_ton,
             "profit_ton": level.profit_ton,
             "timestamp": time.time(),
