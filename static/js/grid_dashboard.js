@@ -2,16 +2,65 @@ const socket = io();
 let mainChart;
 let priceData = [], pnlData = [], labels = [];
 let currentGridLevels = [];
+const GRID_SETTINGS_KEY = 'quantumgrinch.grid.settings.v1';
+const AI_GRID_SETTING_KEY = 'quantumgrinch.grid.ai-enabled.v1';
+const TIMEFRAME_KEY = 'quantumgrinch.grid.timeframe.v1';
 
 // Tell server which timeframe we're viewing
 function notifyTimeframe(tf) {
     socket.emit('subscribe_timeframe', { timeframe: tf });
+    try { localStorage.setItem(TIMEFRAME_KEY, tf); } catch (e) {}
 }
 
 function normalizeInvestmentLabel() {
     const investment = document.getElementById('investment');
     const label = investment && investment.previousElementSibling;
     if (label) label.textContent = 'TON:';
+}
+
+function restoreGridSettings() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(GRID_SETTINGS_KEY) || '{}'); } catch (e) {}
+    ['upperInput', 'lowerInput', 'gridCount', 'investment'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input && Object.prototype.hasOwnProperty.call(saved, id)) {
+            input.value = saved[id];
+        }
+        if (input) input.addEventListener('input', persistGridSettings);
+    });
+}
+
+function persistGridSettings() {
+    const settings = {};
+    ['upperInput', 'lowerInput', 'gridCount', 'investment'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) settings[id] = input.value;
+    });
+    try { localStorage.setItem(GRID_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+}
+
+function restoreTimeframe() {
+    let saved = '15m';
+    try { saved = localStorage.getItem(TIMEFRAME_KEY) || saved; } catch (e) {}
+    const button = document.querySelector(`.tf-btn[data-tf="${saved}"]`);
+    if (button) {
+        document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+        currentTimeframe = saved;
+    }
+}
+
+function persistAiPreference(enabled) {
+    try { localStorage.setItem(AI_GRID_SETTING_KEY, enabled ? 'true' : 'false'); } catch (e) {}
+}
+
+function getSavedAiPreference() {
+    try {
+        const value = localStorage.getItem(AI_GRID_SETTING_KEY);
+        return value === null ? null : value === 'true';
+    } catch (e) {
+        return null;
+    }
 }
 
 // ── Web Worker for RSI/MA indicators (non-blocking UI) ──────────────────────
@@ -573,12 +622,14 @@ async function buildGrid() {
 }
 
 function getGridSettings() {
-    return {
+    const settings = {
         upper: parseFloat(document.getElementById('upperInput').value) || null,
         lower: parseFloat(document.getElementById('lowerInput').value) || null,
         grid_count: parseInt(document.getElementById('gridCount').value) || 40,
         investment: parseFloat(document.getElementById('investment').value) || 1000,
     };
+    persistGridSettings();
+    return settings;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -591,6 +642,7 @@ async function aiToggleGrid() {
         const data = await res.json();
         if (data.ok) {
             addLog('AI Control: ' + (data.ai_enabled ? 'ВКЛЮЧЕН' : 'ВЫКЛЮЧЕН'), 'info');
+            persistAiPreference(data.ai_enabled);
             updateAiToggleButton(data.ai_enabled);
         }
     } catch(e) { console.error(e); }
@@ -633,6 +685,15 @@ async function fetchAiStatus() {
         const data = await res.json();
         if (data.ok) {
             updateAiStatus(data);
+            const saved = getSavedAiPreference();
+            if (saved !== null && saved !== Boolean(data.ai_enabled)) {
+                const toggle = await fetch('/api/grid/ai/toggle', {method: 'POST'});
+                const toggled = await toggle.json();
+                if (toggled.ok) {
+                    persistAiPreference(toggled.ai_enabled);
+                    updateAiToggleButton(toggled.ai_enabled);
+                }
+            }
         }
     } catch(e) { console.error(e); }
 }
@@ -886,6 +947,8 @@ function updateGridPriceLines(levels, currentPrice) {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 normalizeInvestmentLabel();
+restoreGridSettings();
+restoreTimeframe();
 initCharts();
 initCandlestickChart();
 fetchAllData();
