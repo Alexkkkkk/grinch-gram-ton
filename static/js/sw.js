@@ -3,7 +3,7 @@
  * Features: Cache-first strategy, Background Sync, Push Notifications
  */
 
-const CACHE_NAME = 'quantumgrinch-v7';
+const CACHE_NAME = 'quantumgrinch-v8-settings';
 const STATIC_ASSETS = [
   '/',
   '/static/css/grid_style.css',
@@ -40,6 +40,21 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // Always refresh the dashboard shell so new controls and settings logic
+  // reach the browser instead of being hidden behind an old cached page.
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
 
   // API requests: network first, fallback to cache
   if (url.pathname.startsWith('/api/')) {
