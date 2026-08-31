@@ -31,6 +31,7 @@ _PUBLIC_PATHS = {
     "/api/health",
     "/api/health/full",
     "/api/health/metrics",
+    "/api/config",
 }
 
 
