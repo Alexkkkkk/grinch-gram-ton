@@ -409,6 +409,7 @@ class GridTrader:
         buy_levels=None,
         grinch_balance=None,
         ton_balance=None,
+        active=True,
     ):
         with self._lock:
             step = step_pct or GridCfg.step_pct
@@ -419,7 +420,7 @@ class GridTrader:
             n_buy = buy_levels or GridCfg.buy_levels or 20
 
             s = GridState()
-            s.active = True
+            s.active = bool(active)
             s.center_price = center_price
             s.step_pct = step
             s.last_rebuild = time.time()
@@ -485,7 +486,26 @@ class GridTrader:
 
     def ai_build_grid(self, center_price):
         """Public API for AI-triggered grid build."""
-        self._maybe_build_grid(center_price)
+        ton_bal, grin_bal = self._get_balances()
+        if ton_bal is None:
+            # Keep the dashboard useful when the wallet is not configured:
+            # render a market-based preview, but do not mark it active and
+            # never imply that live orders can be placed.
+            step = self._adaptive_step(self._calc_atr_pct())
+            return self.build_grid(
+                center_price,
+                step_pct=step,
+                grinch_balance=0,
+                ton_balance=0,
+                active=False,
+            )
+        return self.build_grid(
+            center_price,
+            step_pct=self._adaptive_step(self._calc_atr_pct()),
+            grinch_balance=grin_bal,
+            ton_balance=ton_bal,
+            active=True,
+        )
 
     def _execute_sell(self, level, price_ton):
         try:

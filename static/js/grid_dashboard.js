@@ -593,6 +593,7 @@ async function aiBuildGrid() {
         const data = await res.json();
         if (data.ok) {
             addLog('AI Сетка построена! Шаг: ' + data.step_pct + '%, Режим: ' + data.regime, 'buy');
+            if (data.warning) addLog(data.warning, 'info');
             if (data.levels) {
                 updateGridVisual(data.levels, data.price || null, null, null);
             }

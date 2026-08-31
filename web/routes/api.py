@@ -424,13 +424,21 @@ def api_grid_ai_build():
     if not price or price <= 0:
         return jsonify({"ok": False, "error": "Current price unavailable"}), 503
 
-    _grid_trader.ai_build_grid(price)
-    state = _grid_trader.get_state_dict()
+    result = _grid_trader.ai_build_grid(price)
+    state = result.to_dict() if hasattr(result, "to_dict") else _grid_trader.get_state_dict()
     snapshot = _ai_snapshot()
+    preview_only = not bool(state.get("active"))
     return jsonify(
         {
-            "ok": bool(state.get("active")),
-            "error": None if state.get("active") else "Balances unavailable",
+            "ok": bool(_grid_levels_payload(state)),
+            "active": bool(state.get("active")),
+            "preview": preview_only,
+            "error": None,
+            "warning": (
+                "Сетка показана в режиме просмотра: баланс кошелька недоступен"
+                if preview_only
+                else None
+            ),
             "price": price,
             "step_pct": snapshot["optimal_step"],
             "regime": snapshot["regime"],
