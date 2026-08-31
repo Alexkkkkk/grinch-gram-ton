@@ -310,6 +310,53 @@ def _grid_levels_payload(state):
     return levels
 
 
+def _grid_request_settings(data, price):
+    """Parse the shared grid controls used by manual and AI builders."""
+    data = data or {}
+    try:
+        grid_count = int(data.get("grid_count") or Config.GRID.count or 40)
+    except (TypeError, ValueError):
+        raise ValueError("grid_count must be an integer")
+    if not 2 <= grid_count <= 200:
+        raise ValueError("grid_count must be between 2 and 200")
+
+    try:
+        investment = float(data.get("investment") or 0)
+    except (TypeError, ValueError):
+        raise ValueError("investment must be a number")
+    if investment < 0:
+        raise ValueError("investment must be non-negative")
+
+    def optional_price(key):
+        value = data.get(key)
+        if value in (None, "", 0, "0"):
+            return None
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{key} must be a number")
+        if parsed <= 0:
+            raise ValueError(f"{key} must be positive")
+        return parsed
+
+    upper = optional_price("upper")
+    lower = optional_price("lower")
+    if upper is not None and upper <= price:
+        raise ValueError("upper must be above the current price")
+    if lower is not None and lower >= price:
+        raise ValueError("lower must be below the current price")
+
+    sell_levels = (grid_count + 1) // 2
+    buy_levels = grid_count - sell_levels
+    return {
+        "sell_levels": sell_levels,
+        "buy_levels": buy_levels,
+        "investment_ton": investment,
+        "upper_price": upper,
+        "lower_price": lower,
+    }
+
+
 def _ai_snapshot():
     """Build one defensive, frontend-compatible snapshot of the AI state."""
     state = _brain.get_state() if _brain else {}
@@ -343,25 +390,20 @@ def api_grid_build():
 
     data = request.get_json(silent=True) or {}
     try:
-        grid_count = int(data.get("grid_count") or 40)
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "grid_count must be an integer"}), 400
-    if not 2 <= grid_count <= 200:
-        return (
-            jsonify({"ok": False, "error": "grid_count must be between 2 and 200"}),
-            400,
-        )
+        price = get_current_price()
+        if not price or price <= 0:
+            return jsonify({"ok": False, "error": "Current price unavailable"}), 503
+        settings = _grid_request_settings(data, price)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
-    price = get_current_price()
-    if not price or price <= 0:
-        return jsonify({"ok": False, "error": "Current price unavailable"}), 503
-
-    sell_levels = max(1, grid_count // 2)
-    buy_levels = max(1, grid_count - sell_levels)
     state = _grid_trader.build_grid(
         center_price=price,
-        sell_levels=sell_levels,
-        buy_levels=buy_levels,
+        sell_levels=settings["sell_levels"],
+        buy_levels=settings["buy_levels"],
+        ton_balance=settings["investment_ton"],
+        upper_price=settings["upper_price"],
+        lower_price=settings["lower_price"],
     )
     state_dict = state.to_dict()
     return jsonify(
@@ -371,6 +413,9 @@ def api_grid_build():
             "levels_count": len(_grid_levels_payload(state_dict)),
             "levels": _grid_levels_payload(state_dict),
             "step_pct": state.step_pct,
+            "upper_price": state.upper_price,
+            "lower_price": state.lower_price,
+            "investment_ton": settings["investment_ton"],
         }
     )
 
@@ -420,11 +465,16 @@ def api_grid_ai_build():
     if not bool(getattr(_grid_trader, "_ai_enabled", False)):
         return jsonify({"ok": False, "error": "AI grid control is disabled"}), 409
 
-    price = get_current_price()
-    if not price or price <= 0:
-        return jsonify({"ok": False, "error": "Current price unavailable"}), 503
+    data = request.get_json(silent=True) or {}
+    try:
+        price = get_current_price()
+        if not price or price <= 0:
+            return jsonify({"ok": False, "error": "Current price unavailable"}), 503
+        settings = _grid_request_settings(data, price)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
-    result = _grid_trader.ai_build_grid(price)
+    result = _grid_trader.ai_build_grid(price, **settings)
     state = result.to_dict() if hasattr(result, "to_dict") else _grid_trader.get_state_dict()
     snapshot = _ai_snapshot()
     preview_only = not bool(state.get("active"))
@@ -443,6 +493,9 @@ def api_grid_ai_build():
             "step_pct": snapshot["optimal_step"],
             "regime": snapshot["regime"],
             "levels": _grid_levels_payload(state),
+            "upper_price": state.get("upper_price", 0),
+            "lower_price": state.get("lower_price", 0),
+            "investment_ton": settings["investment_ton"],
         }
     )
 

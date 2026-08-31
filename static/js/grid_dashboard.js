@@ -557,12 +557,7 @@ async function stopBot() {
 }
 
 async function buildGrid() {
-    const body = {
-        upper: parseFloat(document.getElementById('upperInput').value) || null,
-        lower: parseFloat(document.getElementById('lowerInput').value) || null,
-        grid_count: parseInt(document.getElementById('gridCount').value) || 40,
-        investment: parseFloat(document.getElementById('investment').value) || 1000,
-    };
+    const body = getGridSettings();
     const res = await fetch('/api/grid/build', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -571,10 +566,19 @@ async function buildGrid() {
     const data = await res.json();
     if (data.ok) {
         addLog('Сетка построена: ' + data.levels_count + ' уровней', 'buy');
-        updateGridVisual(data.levels, data.center_price, body.upper, body.lower);
+        updateGridVisual(data.levels, data.center_price, data.upper_price, data.lower_price);
     } else {
         addLog('Ошибка: ' + (data.error || 'unknown'), 'sell');
     }
+}
+
+function getGridSettings() {
+    return {
+        upper: parseFloat(document.getElementById('upperInput').value) || null,
+        lower: parseFloat(document.getElementById('lowerInput').value) || null,
+        grid_count: parseInt(document.getElementById('gridCount').value) || 40,
+        investment: parseFloat(document.getElementById('investment').value) || 1000,
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -595,13 +599,17 @@ async function aiToggleGrid() {
 async function aiBuildGrid() {
     try {
         addLog('AI строит сетку...', 'info');
-        const res = await fetch('/api/grid/ai/build', {method: 'POST'});
+        const res = await fetch('/api/grid/ai/build', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(getGridSettings())
+        });
         const data = await res.json();
         if (data.ok) {
             addLog('AI Сетка построена! Шаг: ' + data.step_pct + '%, Режим: ' + data.regime, 'buy');
             if (data.warning) addLog(data.warning, 'info');
             if (data.levels) {
-                updateGridVisual(data.levels, data.price || null, null, null);
+                updateGridVisual(data.levels, data.price || null, data.upper_price, data.lower_price);
             }
         } else {
             addLog('AI Ошибка: ' + (data.error || 'unknown'), 'sell');

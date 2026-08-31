@@ -410,6 +410,8 @@ class GridTrader:
         grinch_balance=None,
         ton_balance=None,
         active=True,
+        upper_price=None,
+        lower_price=None,
     ):
         with self._lock:
             step = step_pct or GridCfg.step_pct
@@ -422,22 +424,33 @@ class GridTrader:
             s = GridState()
             s.active = bool(active)
             s.center_price = center_price
-            s.step_pct = step
             s.last_rebuild = time.time()
+
+            default_factor = 1 + step / 100
+            sell_factor = default_factor
+            buy_factor = default_factor
+            if upper_price is not None and float(upper_price) > center_price:
+                sell_factor = (float(upper_price) / center_price) ** (1 / n_sell)
+            if lower_price is not None and 0 < float(lower_price) < center_price:
+                buy_factor = (center_price / float(lower_price)) ** (1 / n_buy)
 
             s.upper_price = float(
                 (
                     Decimal(str(center_price))
-                    * (Decimal("1") + Decimal(str(step)) / Decimal("100")) ** n_sell
+                    * Decimal(str(sell_factor)) ** n_sell
                 ).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
             )
-            s.lower_price = round(center_price / (1 + step / 100) ** n_buy, 6)
+            s.lower_price = round(center_price / buy_factor**n_buy, 6)
+            s.step_pct = max(
+                (sell_factor - 1) * 100,
+                (buy_factor - 1) * 100,
+            )
 
             avail_grinch = max(0.0, float(grinch_balance or 0.0))
             grin_per_sell = avail_grinch / n_sell if n_sell > 0 else 0
 
             for i in range(1, n_sell + 1):
-                price = center_price * (1 + step / 100) ** i
+                price = center_price * sell_factor**i
                 s.sell_levels.append(
                     GridLevel(
                         id=i,
@@ -456,7 +469,7 @@ class GridTrader:
             min_order = self._min_profitable_order_ton(step)
 
             for i in range(1, n_buy + 1):
-                price = center_price / (1 + step / 100) ** i
+                price = center_price / buy_factor**i
                 amount_ton = ton_per_buy if ton_per_buy >= min_order else 0
                 s.buy_levels.append(
                     GridLevel(
@@ -484,9 +497,22 @@ class GridTrader:
             )
             return s
 
-    def ai_build_grid(self, center_price):
+    def ai_build_grid(
+        self,
+        center_price,
+        sell_levels=None,
+        buy_levels=None,
+        investment_ton=None,
+        upper_price=None,
+        lower_price=None,
+    ):
         """Public API for AI-triggered grid build."""
         ton_bal, grin_bal = self._get_balances()
+        ton_budget = (
+            float(investment_ton)
+            if investment_ton is not None
+            else ton_bal
+        )
         if ton_bal is None:
             # Keep the dashboard useful when the wallet is not configured:
             # render a market-based preview, but do not mark it active and
@@ -495,16 +521,24 @@ class GridTrader:
             return self.build_grid(
                 center_price,
                 step_pct=step,
+                sell_levels=sell_levels,
+                buy_levels=buy_levels,
                 grinch_balance=0,
-                ton_balance=0,
+                ton_balance=ton_budget or 0,
                 active=False,
+                upper_price=upper_price,
+                lower_price=lower_price,
             )
         return self.build_grid(
             center_price,
             step_pct=self._adaptive_step(self._calc_atr_pct()),
+            sell_levels=sell_levels,
+            buy_levels=buy_levels,
             grinch_balance=grin_bal,
-            ton_balance=ton_bal,
+            ton_balance=ton_budget,
             active=True,
+            upper_price=upper_price,
+            lower_price=lower_price,
         )
 
     def _execute_sell(self, level, price_ton):
