@@ -101,6 +101,10 @@ def create_app() -> Flask:
             "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
         )
         response.headers["Server"] = "nginx"
+        if response.mimetype == "text/html":
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         return response
 
     @app.errorhandler(404)
