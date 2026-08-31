@@ -649,14 +649,20 @@ async function aiToggleGrid() {
 }
 
 async function aiBuildGrid() {
+    const button = document.querySelector('.ai-build');
+    if (button) button.disabled = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
         addLog('AI строит сетку...', 'info');
         const res = await fetch('/api/grid/ai/build', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(getGridSettings())
+            body: JSON.stringify(getGridSettings()),
+            signal: controller.signal
         });
         const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         if (data.ok) {
             addLog('AI Сетка построена! Шаг: ' + data.step_pct + '%, Режим: ' + data.regime, 'buy');
             if (data.warning) addLog(data.warning, 'info');
@@ -666,7 +672,16 @@ async function aiBuildGrid() {
         } else {
             addLog('AI Ошибка: ' + (data.error || 'unknown'), 'sell');
         }
-    } catch(e) { console.error(e); }
+    } catch(e) {
+        const message = e.name === 'AbortError'
+            ? 'таймаут ответа сервера'
+            : (e.message || 'неизвестная ошибка');
+        addLog('AI Ошибка: ' + message, 'sell');
+        console.error(e);
+    } finally {
+        clearTimeout(timeout);
+        if (button) button.disabled = false;
+    }
 }
 
 async function fetchAiRecommendation() {
