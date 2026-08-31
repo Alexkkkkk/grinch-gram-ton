@@ -8,6 +8,12 @@ function notifyTimeframe(tf) {
     socket.emit('subscribe_timeframe', { timeframe: tf });
 }
 
+function normalizeInvestmentLabel() {
+    const investment = document.getElementById('investment');
+    const label = investment && investment.previousElementSibling;
+    if (label) label.textContent = 'TON:';
+}
+
 // ── Web Worker for RSI/MA indicators (non-blocking UI) ──────────────────────
 const indicatorWorker = new Worker(URL.createObjectURL(new Blob([`
     self.onmessage = function(e) {
@@ -871,6 +877,7 @@ function updateGridPriceLines(levels, currentPrice) {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
+normalizeInvestmentLabel();
 initCharts();
 initCandlestickChart();
 fetchAllData();
