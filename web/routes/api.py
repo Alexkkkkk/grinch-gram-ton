@@ -108,7 +108,9 @@ def api_config():
             "ai_enabled": Config.AI.autonomous_mode,
             "ai_min_conf": Config.AI.min_confidence,
             # Public, non-secret constraints used to preview effective buy levels.
-            "grid_min_order_ton": max(0.0, float(os.getenv("GRID_MIN_ORDER_TON", "0.05"))),
+            "grid_min_order_ton": max(
+                0.0, float(os.getenv("GRID_MIN_ORDER_TON", "0.05"))
+            ),
             "grid_gas_per_tx": max(0.0, float(os.getenv("GRID_GAS_PER_TX", "0.004"))),
             "grid_gas_reserve_ton": max(0.0, Config.GRID.gas_reserve_ton),
         }
@@ -456,9 +458,7 @@ def api_grid_ai_status():
             "trap_detected": snapshot["trap"]["detected"],
             "ai_trap_detected": snapshot["trap"]["detected"],
             "pause_buying": snapshot["pause_buying"],
-            "ai_pause_reason": (
-                "AI pause active" if snapshot["pause_buying"] else ""
-            ),
+            "ai_pause_reason": ("AI pause active" if snapshot["pause_buying"] else ""),
             "regime": snapshot["regime"],
             "optimal_step": snapshot["optimal_step"],
             "kimi": snapshot.get("kimi", {}),
@@ -489,10 +489,15 @@ def api_grid_ai_apply_kimi():
 
     kimi = _ai_snapshot().get("kimi", {})
     if not kimi.get("ready"):
-        return jsonify({
-            "ok": False,
-            "error": kimi.get("error") or "Kimi recommendation is not ready",
-        }), 409
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": kimi.get("error") or "Kimi recommendation is not ready",
+                }
+            ),
+            409,
+        )
     try:
         price = get_current_price()
         if not price or price <= 0:
@@ -504,21 +509,27 @@ def api_grid_ai_apply_kimi():
             buy_levels=kimi.get("buy_levels"),
             investment_ton=kimi.get("investment_ton"),
         )
-        state = result.to_dict() if hasattr(result, "to_dict") else _grid_trader.get_state_dict()
-        return jsonify({
-            "ok": True,
-            "source": "kimi",
-            "active": bool(state.get("active")),
-            "price": price,
-            "step_pct": state.get("step_pct", kimi.get("step_pct")),
-            "sell_levels": len(state.get("sell_levels", []) or []),
-            "buy_levels": len(state.get("buy_levels", []) or []),
-            "levels": _grid_levels_payload(state),
-            "upper_price": state.get("upper_price", 0),
-            "lower_price": state.get("lower_price", 0),
-            "investment_ton": kimi.get("investment_ton"),
-            "kimi": kimi,
-        })
+        state = (
+            result.to_dict()
+            if hasattr(result, "to_dict")
+            else _grid_trader.get_state_dict()
+        )
+        return jsonify(
+            {
+                "ok": True,
+                "source": "kimi",
+                "active": bool(state.get("active")),
+                "price": price,
+                "step_pct": state.get("step_pct", kimi.get("step_pct")),
+                "sell_levels": len(state.get("sell_levels", []) or []),
+                "buy_levels": len(state.get("buy_levels", []) or []),
+                "levels": _grid_levels_payload(state),
+                "upper_price": state.get("upper_price", 0),
+                "lower_price": state.get("lower_price", 0),
+                "investment_ton": kimi.get("investment_ton"),
+                "kimi": kimi,
+            }
+        )
     except (TypeError, ValueError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -540,7 +551,11 @@ def api_grid_ai_build():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
     result = _grid_trader.ai_build_grid(price, **settings)
-    state = result.to_dict() if hasattr(result, "to_dict") else _grid_trader.get_state_dict()
+    state = (
+        result.to_dict()
+        if hasattr(result, "to_dict")
+        else _grid_trader.get_state_dict()
+    )
     snapshot = _ai_snapshot()
     preview_only = not bool(state.get("active"))
     return jsonify(

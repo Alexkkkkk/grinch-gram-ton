@@ -91,7 +91,9 @@ class GridConfig:
         default_factory=lambda: _int_env("GRID_RECENTER_COOLDOWN", 1800)
     )
     min_order_ton: float = 15.0
-    gas_reserve_ton: float = field(default_factory=lambda: _float_env("GAS_RESERVE_TON", 0.3))
+    gas_reserve_ton: float = field(
+        default_factory=lambda: _float_env("GAS_RESERVE_TON", 0.3)
+    )
     db_path: str = field(
         default_factory=lambda: _str_env("DATABASE_URL", "sqlite:///data/bot.db")
     )
