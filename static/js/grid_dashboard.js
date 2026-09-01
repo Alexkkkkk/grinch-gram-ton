@@ -569,48 +569,26 @@ function updateV7(v7) {
 }
 
 // ── Grid Visual ──────────────────────────────────────────────────────────────
-function updateGridVisual(levels, currentPrice, upper, lower) {
+function updateGridVisual(levels, currentPrice) {
     const container = document.getElementById('gridVisual');
     if (!container) return;
 
-    // Keep the last known levels when only the live price changes.
-    const priceLine = document.getElementById('priceLine');
+    // Keep the last known levels when only the live price changes. The chart
+    // itself is the source of truth for vertical placement: price lines are
+    // anchored to the candlestick price scale, not to a percentage of the
+    // container height (which changes with each timeframe's auto-scale).
     if (Array.isArray(levels)) {
         currentGridLevels = levels
             .map(lvl => ({...lvl, price: Number(lvl.price ?? lvl.price_ton)}))
             .filter(lvl => Number.isFinite(lvl.price) && lvl.price > 0);
     }
-    const visibleLevels = currentGridLevels;
-    container.querySelectorAll('.grid-level').forEach(e => e.remove());
 
-    if (!visibleLevels || visibleLevels.length === 0 || !currentPrice) {
-        if (priceLine) priceLine.style.top = '50%';
-        return;
+    const priceLine = document.getElementById('priceLine');
+    if (priceLine) {
+        priceLine.style.display = 'none';
+        priceLine.style.top = '50%';
     }
-
-    const minP = Number(lower) || Math.min(...visibleLevels.map(l => l.price));
-    const maxP = Number(upper) || Math.max(...visibleLevels.map(l => l.price));
-    const range = maxP - minP || 1;
-
-    const pct = 1 - ((currentPrice - minP) / range);
-    priceLine.style.top = (Math.max(0.02, Math.min(0.98, pct)) * 100) + '%';
-    document.getElementById('priceTag').textContent = currentPrice.toFixed(5);
-
-    visibleLevels.forEach(lvl => {
-        const el = document.createElement('div');
-        el.className = 'grid-level ' + lvl.side + ' ' + (lvl.status || 'active');
-        const lvlPct = 1 - ((lvl.price - minP) / range);
-        el.style.top = (Math.max(0, Math.min(1, lvlPct)) * 100) + '%';
-        const tag = document.createElement('span');
-        tag.className = 'level-tag ' + lvl.side;
-        tag.textContent = lvl.side[0].toUpperCase() + ' ' + lvl.price.toFixed(5);
-        el.appendChild(tag);
-        container.appendChild(el);
-    });
-
-    // The candlestick chart has its own market-price scale. The grid preview
-    // is intentionally normalized to the configured lower/upper bounds, so
-    // do not overlay grid price lines from a second scale here.
+    updateGridPriceLines(null, Number(currentPrice) || null);
 }
 
 // ── Controls ─────────────────────────────────────────────────────────────────
