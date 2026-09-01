@@ -319,6 +319,22 @@ async function fetchAllData() {
         console.error('[fetch] v7 error:', e);
     }
 
+    try {
+        const res = await fetch('/api/grid/status');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const grid = await res.json();
+        if (Array.isArray(grid.levels)) {
+            updateGridVisual(
+                grid.levels,
+                Number(grid.current_price ?? grid.center_price) || null,
+                grid.upper_price,
+                grid.lower_price
+            );
+        }
+    } catch (e) {
+        console.error('[fetch] grid error:', e);
+    }
+
     // AI Grid data
     try {
         await fetchAiRecommendation();
@@ -576,8 +592,9 @@ function updateGridVisual(levels, currentPrice, upper, lower) {
         container.appendChild(el);
     });
 
-    // Also draw grid levels as price lines on the candlestick chart
-    updateGridPriceLines(levels, currentPrice);
+    // The candlestick chart has its own market-price scale. The grid preview
+    // is intentionally normalized to the configured lower/upper bounds, so
+    // do not overlay grid price lines from a second scale here.
 }
 
 // ── Controls ─────────────────────────────────────────────────────────────────
@@ -840,6 +857,7 @@ function initCandlestickChart() {
         priceScaleId: "vol"
     });
     candleChart.priceScale("vol").applyOptions({
+        visible: false,
         scaleMargins: { top: 0.85, bottom: 0 }
     });
 
@@ -972,6 +990,11 @@ setInterval(fetchAllData, 3000);
 // Grid status
 fetch('/api/grid/status').then(r => r.json()).then(d => {
     if (d.levels && d.levels.length > 0) {
-        updateGridVisual(d.levels, Number(d.center_price) || null, d.upper_price, d.lower_price);
+        updateGridVisual(
+            d.levels,
+            Number(d.current_price ?? d.center_price) || null,
+            d.upper_price,
+            d.lower_price
+        );
     }
 });
