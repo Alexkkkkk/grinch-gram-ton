@@ -12,7 +12,16 @@ import threading
 import time
 from typing import Optional
 
-from dedust import Asset, Factory, JettonRoot, Pool, PoolType, SwapParams, VaultNative
+from dedust import (
+    Asset,
+    Factory,
+    JettonRoot,
+    Pool,
+    PoolType,
+    SwapParams,
+    VaultJetton,
+    VaultNative,
+)
 from pytoniq import Address, LiteBalancer, WalletV5R1
 from pytoniq_core import Address as CoreAddress
 from pytoniq_core import begin_cell
@@ -661,6 +670,35 @@ class DedustClient:
                 return cur
         return None
 
+    async def _wait_for_ton_increase(
+        self,
+        provider,
+        addr,
+        *,
+        baseline_nano: int,
+        min_delta_nano: int,
+        timeout: int = 75,
+        interval: int = 7,
+    ):
+        """Wait for the native-coin payout after a sell.
+
+        A jetton balance decrease only proves that the transfer reached the
+        pool.  It does not prove that the pool executed the swap.  Require a
+        matching native-balance increase before returning ``ok=True``.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            await asyncio.sleep(interval)
+            try:
+                state = await provider.get_account_state(addr)
+                cur = int(getattr(state, "balance", 0) or 0)
+            except Exception as e:
+                log.debug(f"[DeDust] TON settlement poll error: {e}")
+                continue
+            if cur - baseline_nano >= min_delta_nano:
+                return cur
+        return None
+
     def get_balance(self, force: bool = False) -> dict:
         """Надёжный баланс через глобальный кеш (не liteserver).
 
@@ -994,42 +1032,11 @@ class DedustClient:
         return int(min_ton * TON), expected_ton
 
     # ─────────────── построение тела свопа ───────────────────────────────────
-    # CPMM-v2 jetton swap: forward_payload = PayJetton, containing a
-    # SwapPayload and an ExtendedPayoutConfig.  The previous implementation
-    # encoded the second ref using a legacy payout layout; the pool parsed
-    # that as malformed PayoutOptions and aborted with exit code 65535.
-    _LIMITS_PREFIX = 0xC442500F  # SwapPayload tag
-    _SELL_FP_PREFIX = 0xCBC33949  # PayJetton tag
+    # This TON/USDT pool is a legacy DeDust Vault pool, not a CPMM-v2 pool.
+    # CPMM-v2 PayJetton (0xcbc33949) is accepted by the jetton wallet but
+    # aborts inside this pool with exit code 65535, leaving the input assets
+    # in the pool.  Use the legacy VaultJetton/DedustSwap payload instead.
     _JETTON_XFER_OP = 0x0F8A7EA5  # стандартный jetton transfer
-
-    def _build_limits_cell(self, min_out_nano: int, deadline: int):
-        """Build SwapPayload with a 40-bit deadline and no optional fields."""
-        return (
-            begin_cell()
-            .store_uint(self._LIMITS_PREFIX, 32)
-            .store_coins(min_out_nano)
-            .store_uint(deadline, 40)
-            .store_bit(0)  # next
-            .store_bit(0)  # partner_config
-            .store_bit(0)  # referrer_config
-            .end_cell()
-        )
-
-    def _build_payout_config_cell(self, recipient):
-        """Build ExtendedPayoutConfig for both fulfill and reject paths.
-
-        DeDust CPMM-v2 expects two PayoutOptions followed by excesses_to:
-        destination, extra_gas, optional payload and wrap_payload for each
-        option.  Keeping the same recipient on both paths ensures a rejected
-        swap/refund is delivered back to the trading wallet.
-        """
-        builder = begin_cell()
-        for _ in range(2):
-            builder.store_address(recipient)
-            builder.store_coins(0)
-            builder.store_maybe_ref(None)
-            builder.store_bit(0)
-        return builder.store_address(recipient).end_cell()
 
     def _build_sell_transfer_body(
         self,
@@ -1040,13 +1047,14 @@ class DedustClient:
         deadline: int,
         fwd_nano: int,
     ):
-        """Build a standard TEP-74 transfer with a CPMM-v2 PayJetton payload."""
-        forward_payload = (
-            begin_cell()
-            .store_uint(self._SELL_FP_PREFIX, 32)
-            .store_ref(self._build_limits_cell(min_out_nano, deadline))
-            .store_ref(self._build_payout_config_cell(recipient))
-            .end_cell()
+        """Build a TEP-74 transfer with the legacy DeDust swap payload."""
+        forward_payload = VaultJetton.create_swap_payload(
+            pool_address=pool_addr,
+            limit=min_out_nano,
+            swap_params=SwapParams(
+                deadline=deadline,
+                recipient_address=recipient,
+            ),
         )
         return (
             begin_cell()
@@ -1274,13 +1282,11 @@ class DedustClient:
             pool, _, usdt_asset = await self._get_pool(provider)
 
             # ── Газ для sell ────────────────────────────────────────────────
-            # gas_nano = total attached to jetton wallet transfer.
-            # fwd_nano = forwarded from jetton wallet → pool (gas for pool execution).
-            # Для CPMM-v2 пулу передаём 0.25 TON на исполнение свопа.
-            # Кошелёк жеттонов получает 0.35 TON: разница покрывает его
-            # собственные расходы, а неиспользованный остаток возвращается.
-            gas_nano = int(0.35 * TON)
-            fwd_nano = int(0.25 * TON)
+            # This matches a known successful legacy DeDust trace for this
+            # pool: 0.25 TON to the jetton wallet and 0.18 TON forwarded to
+            # the pool.  The unused remainder is returned as excesses.
+            gas_nano = int(0.25 * TON)
+            fwd_nano = int(0.18 * TON)
 
             # ── Preflight: деплой кошелька если uninit ───────────────────────
             if not await self._ensure_wallet_deployed(wallet, provider):
@@ -1297,6 +1303,7 @@ class DedustClient:
             # ── Preflight: хватает ли TON на газ? ──────────────────────────
             state = await provider.get_account_state(wallet.address)
             ton_nano = getattr(state, "balance", 0) or 0
+            baseline_ton_nano = int(ton_nano)
             # L4-fix: gas_nano уже включает все расходы; extra 0.01 TON создавал
             # ложную блокировку при пограничном балансе → убираем двойной счёт.
             needed_nano = gas_nano
@@ -1402,6 +1409,34 @@ class DedustClient:
                     ),
                 }
 
+            # Do not report success merely because USDT left the wallet:
+            # the previous CPMM-v2 payload did exactly that and then aborted
+            # inside the pool.  Allow a small fee buffer below min-out.
+            fee_buffer_nano = int(0.02 * TON)
+            min_ton_delta = max(min_out_nano - fee_buffer_nano, 1)
+            ton_confirmed = await self._wait_for_ton_increase(
+                provider,
+                wallet.address,
+                baseline_nano=baseline_ton_nano,
+                min_delta_nano=min_ton_delta,
+            )
+            if ton_confirmed is None:
+                return {
+                    "ok": False,
+                    "side": "sell",
+                    "broadcast": True,
+                    "settlement_unverified": True,
+                    "usdt_sold": round(
+                        (baseline_nano - confirmed)
+                        / (10**Config.USDT_DECIMALS),
+                        6,
+                    ),
+                    "error": (
+                        "USDT списался, но ожидаемый приход GRAM не подтверждён "
+                        "on-chain. Повторная продажа автоматически не выполняется."
+                    ),
+                }
+
             return {
                 "ok": True,
                 "side": "sell",
@@ -1411,6 +1446,9 @@ class DedustClient:
                 "expected_ton": round(expected_ton, 6),
                 "usdt_sold": round(
                     (baseline_nano - confirmed) / (10**Config.USDT_DECIMALS), 6
+                ),
+                "ton_received": round(
+                    (ton_confirmed - baseline_ton_nano) / TON, 6
                 ),
                 "slippage_pct": Config.SLIPPAGE_PCT,
             }

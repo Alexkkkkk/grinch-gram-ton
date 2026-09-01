@@ -680,7 +680,15 @@ class GridTrader:
             if level.amount_token <= 0:
                 return {"ok": False, "error": "zero_amount"}
             if self._dc and hasattr(self._dc, "sell"):
-                result = self._dc.sell(level.amount_token)
+                # Keep the AMM-side profitability guard active for grid sells.
+                # Without this argument the DEX client can execute a sell
+                # below the level's entry cost.
+                entry_cost = level.entry_cost_ton or level.amount_ton
+                min_net_ton = entry_cost + self._gas_per_tx()
+                result = self._dc.sell(
+                    level.amount_token,
+                    min_net_ton=min_net_ton,
+                )
                 if result.get("ok"):
                     # DeDust returns expected_ton; older clients used
                     # received_ton. Accept both so a successful sell is not
@@ -690,7 +698,6 @@ class GridTrader:
                     )
                     if received_ton <= 0:
                         return {"ok": False, "error": "missing_received_ton"}
-                    entry_cost = level.entry_cost_ton or level.amount_ton
                     level.status = "filled"
                     level.filled_at = time.time()
                     level.fill_price_ton = price_ton

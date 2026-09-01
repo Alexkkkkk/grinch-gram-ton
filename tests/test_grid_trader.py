@@ -29,13 +29,17 @@ def test_buy_creates_adjacent_sell_and_sell_uses_expected_ton():
     trader._state.buy_levels = []
 
     class FakeDeDust:
+        sell_min_net_ton = None
+
         def buy(self, amount):
             return {"ok": True, "usdt_received": 0.155, "tx_hash": "buy-hash"}
 
-        def sell(self, amount):
+        def sell(self, amount, min_net_ton=None):
+            self.sell_min_net_ton = min_net_ton
             return {"ok": True, "expected_ton": 0.207, "tx_hash": "sell-hash"}
 
-    trader.inject(dedust_client=FakeDeDust())
+    fake_dedust = FakeDeDust()
+    trader.inject(dedust_client=fake_dedust)
     from grid_trader import GridLevel
     buy = GridLevel(id=-1, side="buy", price_ton=1.288462, amount_ton=0.2)
     assert trader._execute_buy(buy, buy.price_ton)["ok"]
@@ -47,5 +51,6 @@ def test_buy_creates_adjacent_sell_and_sell_uses_expected_ton():
     assert sell.amount_token == 0.155
     assert sell.entry_cost_ton > 0.2
     assert trader._execute_sell(sell, sell.price_ton)["ok"]
+    assert fake_dedust.sell_min_net_ton == sell.entry_cost_ton + trader._gas_per_tx()
     assert sell.profit_ton == 0.207 - sell.entry_cost_ton - trader._gas_per_tx()
     assert sell.tx_hash == "sell-hash"
