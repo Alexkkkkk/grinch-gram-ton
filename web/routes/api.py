@@ -1,6 +1,7 @@
 """API blueprint — production REST endpoints with v7 Quantum Intelligence.
 ALL v7 data now comes from unified QuantumBrain — no duplicate calculations."""
 
+import os
 import sys
 import time
 
@@ -106,6 +107,10 @@ def api_config():
             "trailing_stop_pct": Config.TRAIL.base_pct,
             "ai_enabled": Config.AI.autonomous_mode,
             "ai_min_conf": Config.AI.min_confidence,
+            # Public, non-secret constraints used to preview effective buy levels.
+            "grid_min_order_ton": max(0.0, float(os.getenv("GRID_MIN_ORDER_TON", "0.05"))),
+            "grid_gas_per_tx": max(0.0, float(os.getenv("GRID_GAS_PER_TX", "0.004"))),
+            "grid_gas_reserve_ton": max(0.0, Config.GRID.gas_reserve_ton),
         }
     )
 
