@@ -27,9 +27,13 @@ async function fetchGridConfig() {
         const res = await fetch('/api/config');
         if (!res.ok) return;
         const cfg = await res.json();
-        _cachedFee = (cfg.fees && cfg.fees.pct) || 0.25;
-        _cachedStep = (cfg.grid && cfg.grid.step_pct) || 4.0;
-    } catch (e) { /* ignore */ }
+        // /api/config is intentionally flat; support the older nested shape too.
+        const fee = Number(cfg.fee_pct ?? cfg.fees?.pct);
+        const step = Number(cfg.grid_step ?? cfg.grid?.step_pct);
+        if (Number.isFinite(fee) && fee >= 0) _cachedFee = fee;
+        if (Number.isFinite(step) && step > 0) _cachedStep = step;
+    } catch (e) { /* keep safe defaults */ }
+    calculateStepProfit();
 }
 
 function calculateStepProfit() {
@@ -38,14 +42,36 @@ function calculateStepProfit() {
     const profitEl = document.getElementById('stepProfit');
     if (!gridCountEl || !investmentEl || !profitEl) return;
 
-    const gridCount = parseInt(gridCountEl.value) || 40;
-    const investment = parseFloat(investmentEl.value) || 1000;
-    const nBuy = Math.max(1, Math.floor(gridCount / 2));
-    const tonPerLevel = investment / nBuy;
+    const gridCount = Number.parseInt(gridCountEl.value, 10);
+    const investment = Number.parseFloat(investmentEl.value);
+    const nSell = Math.max(1, Math.ceil((Number.isFinite(gridCount) ? gridCount : 40) / 2));
+    const nBuy = Math.max(1, (Number.isFinite(gridCount) ? gridCount : 40) - nSell);
+    if (!Number.isFinite(investment) || investment <= 0) {
+        profitEl.value = '—';
+        profitEl.style.color = '#848e9c';
+        return;
+    }
 
-    const fee = _cachedFee / 100.0;
-    const step = _cachedStep;
-    const cycleFactor = (1.0 + step / 100.0) * Math.pow(1.0 - fee, 2) - 1.0;
+    const priceText = document.getElementById('price-ton')?.textContent || '';
+    const centerPrice = Number.parseFloat(priceText.replace(/[^0-9.,-]/g, '').replace(',', '.'));
+    const upper = Number.parseFloat(document.getElementById('upperInput')?.value);
+    const lower = Number.parseFloat(document.getElementById('lowerInput')?.value);
+    const configuredStep = Math.max(0, Number(_cachedStep) || 0);
+    let sellStep = configuredStep;
+    let buyStep = configuredStep;
+
+    // Match GridTrader: each explicit bound replaces that side's default step.
+    if (Number.isFinite(centerPrice) && centerPrice > 0) {
+        if (Number.isFinite(upper) && upper > centerPrice) {
+            sellStep = (Math.pow(upper / centerPrice, 1 / nSell) - 1) * 100;
+        }
+        if (Number.isFinite(lower) && lower > 0 && lower < centerPrice) {
+            buyStep = (Math.pow(centerPrice / lower, 1 / nBuy) - 1) * 100;
+        }
+    }
+    const step = Math.max(0, sellStep, buyStep);
+    const fee = Math.min(1, Math.max(0, (Number(_cachedFee) || 0) / 100));
+    const cycleFactor = (1 + step / 100) * Math.pow(1 - fee, 2) - 1;
 
     if (cycleFactor <= 0) {
         profitEl.value = '—';
@@ -53,8 +79,9 @@ function calculateStepProfit() {
         return;
     }
 
+    const tonPerLevel = investment / nBuy;
     const profitTon = tonPerLevel * cycleFactor;
-    const priceTon = parseFloat(document.getElementById('price-ton')?.textContent?.replace('$', '')) || 1.4;
+    const priceTon = Number.isFinite(centerPrice) && centerPrice > 0 ? centerPrice : 1.4;
     const profitUsdt = profitTon * priceTon;
 
     profitEl.value = '+' + profitTon.toFixed(4) + ' TON  (+$' + profitUsdt.toFixed(2) + ')';
@@ -1059,7 +1086,6 @@ function updateGridPriceLines(levels, currentPrice) {
 // ── Init ───────────────────────────────────────────────────────────────────────
 normalizeInvestmentLabel();
 restoreGridSettings();
-attachProfitCalculator();
 normalizeTimeframeButtons();
 restoreTimeframe();
 initCharts();
