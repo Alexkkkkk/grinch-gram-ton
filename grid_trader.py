@@ -428,9 +428,9 @@ class GridTrader:
     @staticmethod
     def _min_profitable_order_ton(step_pct):
         try:
-            configured_min = max(0.0, float(os.getenv("GRID_MIN_ORDER_TON", "15")))
+            configured_min = max(0.0, float(os.getenv("GRID_MIN_ORDER_TON", "0.05")))
         except (TypeError, ValueError):
-            configured_min = 15.0
+            configured_min = 0.05
         # Explicit opt-in is required because small orders can lose more on
         # gas than they gain from a grid step.
         if os.getenv("GRID_ALLOW_UNPROFITABLE_ORDERS", "0") == "1":
@@ -441,8 +441,10 @@ class GridTrader:
         cycle_factor = (1.0 + step / 100.0) * (1.0 - fee) ** 2 - 1.0
         if cycle_factor <= 0:
             return float("inf")
-        gas_min = (0.30 * 2.0) / cycle_factor
-        return max(configured_min, math.ceil(gas_min * 10.0) / 10.0)
+        # Realistic gas per tx from on-chain data (~0.004 TON)
+        gas_per_tx = float(os.getenv("GRID_GAS_PER_TX", "0.004"))
+        gas_min = (gas_per_tx * 2.0) / cycle_factor
+        return max(configured_min, gas_min)
 
     def build_grid(
         self,
