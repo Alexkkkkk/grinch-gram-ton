@@ -62,7 +62,9 @@ brain = get_brain()
 
 # 2. GridTrader
 grid_trader = GridTrader()
-grid_trader.inject(dedust_client=dedust_client, ai_engine=brain, price_feed=get_current_price)
+grid_trader.inject(
+    dedust_client=dedust_client, ai_engine=brain, price_feed=get_current_price
+)
 grid_trader.start_poller()
 
 # 3. Connect brain to grid trader and price feed
@@ -186,9 +188,7 @@ def _broadcast_status():
                         ).hexdigest()
 
                         with _candle_hash_lock:
-                            send_it = (
-                                candle_hash != _last_candle_hashes.get(timeframe)
-                            )
+                            send_it = candle_hash != _last_candle_hashes.get(timeframe)
                             if send_it:
                                 _last_candle_hashes[timeframe] = candle_hash
 
