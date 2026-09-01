@@ -21,6 +21,9 @@ function normalizeInvestmentLabel() {
 // ── Step Profit Calculator ────────────────────────────────────────────────────
 let _cachedFee = 0.25; // default DeDust fee %
 let _cachedStep = 4.0;  // default grid step %
+let _cachedMinOrder = 0.05;
+let _cachedGasPerTx = 0.004;
+let _cachedGasReserve = 0.3;
 
 async function fetchGridConfig() {
     try {
@@ -30,8 +33,14 @@ async function fetchGridConfig() {
         // /api/config is intentionally flat; support the older nested shape too.
         const fee = Number(cfg.fee_pct ?? cfg.fees?.pct);
         const step = Number(cfg.grid_step ?? cfg.grid?.step_pct);
+        const minOrder = Number(cfg.grid_min_order_ton ?? cfg.grid?.min_order_ton);
+        const gasPerTx = Number(cfg.grid_gas_per_tx ?? cfg.grid?.gas_per_tx);
+        const gasReserve = Number(cfg.grid_gas_reserve_ton ?? cfg.grid?.gas_reserve_ton);
         if (Number.isFinite(fee) && fee >= 0) _cachedFee = fee;
         if (Number.isFinite(step) && step > 0) _cachedStep = step;
+        if (Number.isFinite(minOrder) && minOrder >= 0) _cachedMinOrder = minOrder;
+        if (Number.isFinite(gasPerTx) && gasPerTx >= 0) _cachedGasPerTx = gasPerTx;
+        if (Number.isFinite(gasReserve) && gasReserve >= 0) _cachedGasReserve = gasReserve;
     } catch (e) { /* keep safe defaults */ }
     calculateStepProfit();
 }
@@ -45,7 +54,8 @@ function calculateStepProfit() {
     const gridCount = Number.parseInt(gridCountEl.value, 10);
     const investment = Number.parseFloat(investmentEl.value);
     const nSell = Math.max(1, Math.ceil((Number.isFinite(gridCount) ? gridCount : 40) / 2));
-    const nBuy = Math.max(1, (Number.isFinite(gridCount) ? gridCount : 40) - nSell);
+    const requestedBuy = Math.max(1, (Number.isFinite(gridCount) ? gridCount : 40) - nSell);
+    profitEl.title = '';
     if (!Number.isFinite(investment) || investment <= 0) {
         profitEl.value = '—';
         profitEl.style.color = '#848e9c';
@@ -57,34 +67,58 @@ function calculateStepProfit() {
     const upper = Number.parseFloat(document.getElementById('upperInput')?.value);
     const lower = Number.parseFloat(document.getElementById('lowerInput')?.value);
     const configuredStep = Math.max(0, Number(_cachedStep) || 0);
+    const fee = Math.min(1, Math.max(0, (Number(_cachedFee) || 0) / 100));
+    const availableTon = Math.max(0, investment - Math.max(0, Number(_cachedGasReserve) || 0));
     let sellStep = configuredStep;
     let buyStep = configuredStep;
 
-    // Match GridTrader: each explicit bound replaces that side's default step.
-    if (Number.isFinite(centerPrice) && centerPrice > 0) {
-        if (Number.isFinite(upper) && upper > centerPrice) {
-            sellStep = (Math.pow(upper / centerPrice, 1 / nSell) - 1) * 100;
-        }
-        if (Number.isFinite(lower) && lower > 0 && lower < centerPrice) {
-            buyStep = (Math.pow(centerPrice / lower, 1 / nBuy) - 1) * 100;
-        }
+    if (Number.isFinite(centerPrice) && centerPrice > 0 && Number.isFinite(upper) && upper > centerPrice) {
+        sellStep = (Math.pow(upper / centerPrice, 1 / nSell) - 1) * 100;
     }
-    const step = Math.max(0, sellStep, buyStep);
-    const fee = Math.min(1, Math.max(0, (Number(_cachedFee) || 0) / 100));
-    const cycleFactor = (1 + step / 100) * Math.pow(1 - fee, 2) - 1;
 
-    if (cycleFactor <= 0) {
+    // GridTrader removes buy levels that cannot cover fees and two gas spends.
+    // Iterate because an explicit lower bound changes buyStep when the count changes.
+    let effectiveBuy = requestedBuy;
+    for (let i = 0; i < 4; i += 1) {
+        if (Number.isFinite(centerPrice) && centerPrice > 0 && Number.isFinite(lower) && lower > 0 && lower < centerPrice) {
+            buyStep = (Math.pow(centerPrice / lower, 1 / Math.max(1, effectiveBuy)) - 1) * 100;
+        } else {
+            buyStep = configuredStep;
+        }
+        const step = Math.max(0, sellStep, buyStep);
+        const cycleFactor = (1 + step / 100) * Math.pow(1 - fee, 2) - 1;
+        if (cycleFactor <= 0) {
+            effectiveBuy = 0;
+            break;
+        }
+        const breakEvenOrder = Math.max(
+            Number(_cachedMinOrder) || 0,
+            (2 * (Number(_cachedGasPerTx) || 0)) / cycleFactor
+        );
+        const affordableBuy = breakEvenOrder > 0
+            ? Math.floor((availableTon + 1e-9) / breakEvenOrder)
+            : requestedBuy;
+        const nextBuy = Math.min(requestedBuy, Math.max(0, affordableBuy));
+        if (nextBuy === effectiveBuy) break;
+        effectiveBuy = nextBuy;
+    }
+
+    const step = Math.max(0, sellStep, buyStep);
+    const cycleFactor = (1 + step / 100) * Math.pow(1 - fee, 2) - 1;
+    if (effectiveBuy <= 0 || cycleFactor <= 0) {
         profitEl.value = '—';
         profitEl.style.color = '#848e9c';
+        profitEl.title = 'Недостаточно TON для прибыльного buy-уровня';
         return;
     }
 
-    const tonPerLevel = investment / nBuy;
-    const profitTon = tonPerLevel * cycleFactor;
+    const profitTon = (investment / effectiveBuy) * cycleFactor;
     const priceTon = Number.isFinite(centerPrice) && centerPrice > 0 ? centerPrice : 1.4;
     const profitUsdt = profitTon * priceTon;
-
     profitEl.value = '+' + profitTon.toFixed(4) + ' TON  (+$' + profitUsdt.toFixed(2) + ')';
+    if (effectiveBuy < requestedBuy) {
+        profitEl.title = `Backend сократит buy-уровни: ${effectiveBuy} из ${requestedBuy}`;
+    }
     profitEl.style.color = '#0ecb81';
 }
 
