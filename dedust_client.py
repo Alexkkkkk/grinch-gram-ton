@@ -994,53 +994,42 @@ class DedustClient:
         return int(min_ton * TON), expected_ton
 
     # ─────────────── построение тела свопа ───────────────────────────────────
-    # Пул USDT/TON — нестандартный CPMM-v2: своп исполняется сообщением
-    # op 0xa5a7cbf8 для forward-payload продажи; покупка отправляется через
-    # Native Vault, а продажа — jetton-transfer USDT в пул с
-    # forward-payload свопа). Прямой вызов пула для покупки здесь приводит к
-    # exit 65535 (bounce), поэтому для покупки используется SDK Native Vault.
-    # Формат sell-тела выведен обратной разработкой реальных успешных
-    # сделок и проверен ПОБАЙТОВО: реконструкция оригинальных тел из этих же
-    # билдеров совпадает бит-в-бит. Константы ниже подтверждены тем же путём.
-    _SWAP_OP = 0xA5A7CBF8  # своп (root для покупки / forward для продажи)
-    _LIMITS_PREFIX = 0xC442500F  # ref0: префикс ячейки лимитов
-    _PARAMS_C2 = 0x400  # ref1: константа-разделитель перед hash получателя
-    _SELL_PARAMS_C1 = 0x801  # ref1: маркер направления — продажа
-    _SELL_FP_PREFIX = 0xCBC33949  # forward-payload продажи: префикс
+    # CPMM-v2 jetton swap: forward_payload = PayJetton, containing a
+    # SwapPayload and an ExtendedPayoutConfig.  The previous implementation
+    # encoded the second ref using a legacy payout layout; the pool parsed
+    # that as malformed PayoutOptions and aborted with exit code 65535.
+    _LIMITS_PREFIX = 0xC442500F  # SwapPayload tag
+    _SELL_FP_PREFIX = 0xCBC33949  # PayJetton tag
     _JETTON_XFER_OP = 0x0F8A7EA5  # стандартный jetton transfer
 
     def _build_limits_cell(self, min_out_nano: int, deadline: int):
-        """ref0: префикс + min_out:Coins + 8 нулей + deadline:uint32 + 3 нуля."""
+        """Build SwapPayload with a 40-bit deadline and no optional fields."""
         return (
             begin_cell()
             .store_uint(self._LIMITS_PREFIX, 32)
             .store_coins(min_out_nano)
-            .store_uint(0, 8)
-            .store_uint(deadline, 32)
-            .store_uint(0, 3)
+            .store_uint(deadline, 40)
+            .store_bit(0)  # next
+            .store_bit(0)  # partner_config
+            .store_bit(0)  # referrer_config
             .end_cell()
         )
 
-    def _build_params_cell(self, recipient, c1: int):
-        """ref1: адрес получателя + пустой реферал + c1 + salt + c2 + hash получателя.
+    def _build_payout_config_cell(self, recipient):
+        """Build ExtendedPayoutConfig for both fulfill and reject paths.
 
-        ВАЖНО: поле salt — это (recip_hash * 2) mod 2^256 (левый битовый сдвиг).
-        Проверено на 5 реальных успешных свопах в пуле USDT/TON: field1 ВСЕГДА
-        равно field2*2 mod 2^256. При salt = recip_hash (field1 == field2) пул
-        падает с exit 9 (cell underflow) и возвращает TON без обмена.
+        DeDust CPMM-v2 expects two PayoutOptions followed by excesses_to:
+        destination, extra_gas, optional payload and wrap_payload for each
+        option.  Keeping the same recipient on both paths ensures a rejected
+        swap/refund is delivered back to the trading wallet.
         """
-        recip_hash = int.from_bytes(recipient.hash_part, "big")
-        salt = (recip_hash * 2) % (2**256)
-        return (
-            begin_cell()
-            .store_address(recipient)
-            .store_address(None)
-            .store_uint(c1, 16)
-            .store_uint(salt, 256)
-            .store_uint(self._PARAMS_C2, 16)
-            .store_uint(recip_hash, 256)
-            .end_cell()
-        )
+        builder = begin_cell()
+        for _ in range(2):
+            builder.store_address(recipient)
+            builder.store_coins(0)
+            builder.store_maybe_ref(None)
+            builder.store_bit(0)
+        return builder.store_address(recipient).end_cell()
 
     def _build_sell_transfer_body(
         self,
@@ -1051,12 +1040,12 @@ class DedustClient:
         deadline: int,
         fwd_nano: int,
     ):
-        """Тело продажи: jetton-transfer USDT НАПРЯМУЮ в пул с forward-payload свопа."""
+        """Build a standard TEP-74 transfer with a CPMM-v2 PayJetton payload."""
         forward_payload = (
             begin_cell()
             .store_uint(self._SELL_FP_PREFIX, 32)
             .store_ref(self._build_limits_cell(min_out_nano, deadline))
-            .store_ref(self._build_params_cell(recipient, self._SELL_PARAMS_C1))
+            .store_ref(self._build_payout_config_cell(recipient))
             .end_cell()
         )
         return (
@@ -1287,10 +1276,11 @@ class DedustClient:
             # ── Газ для sell ────────────────────────────────────────────────
             # gas_nano = total attached to jetton wallet transfer.
             # fwd_nano = forwarded from jetton wallet → pool (gas for pool execution).
-            # Реальные сделки: пул получает ~0.20 TON fwd и возвращает излишек.
-            # Буфер 0.05 TON не нужен: sell ВОЗВРАЩАЕТ TON из резервов пула.
-            gas_nano = int(0.25 * TON)
-            fwd_nano = int(0.18 * TON)
+            # Для CPMM-v2 пулу передаём 0.25 TON на исполнение свопа.
+            # Кошелёк жеттонов получает 0.35 TON: разница покрывает его
+            # собственные расходы, а неиспользованный остаток возвращается.
+            gas_nano = int(0.35 * TON)
+            fwd_nano = int(0.25 * TON)
 
             # ── Preflight: деплой кошелька если uninit ───────────────────────
             if not await self._ensure_wallet_deployed(wallet, provider):
