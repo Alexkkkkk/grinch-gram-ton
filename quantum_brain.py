@@ -11,6 +11,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import List
 
+from kimi_grid_control import KimiGridControl
+
 log = logging.getLogger("quantum_brain")
 
 
@@ -47,6 +49,19 @@ class BrainState:
     unified_signal: str = "HOLD"
     unified_confidence: float = 0.0
     unified_action: str = "WAIT"
+
+    kimi_enabled: bool = False
+    kimi_ready: bool = False
+    kimi_signal: str = "HOLD"
+    kimi_confidence: float = 0.0
+    kimi_action: str = "WAIT"
+    kimi_step_pct: float = 3.5
+    kimi_investment_ton: float = 0.0
+    kimi_sell_levels: int = 20
+    kimi_buy_levels: int = 20
+    kimi_reason: str = ""
+    kimi_last_update: float = 0.0
+    kimi_error: str = ""
 
     last_update: float = 0.0
     update_count: int = 0
@@ -90,6 +105,20 @@ class BrainState:
                 "confidence": round(self.unified_confidence, 1),
                 "action": self.unified_action,
             },
+            "kimi": {
+                "enabled": self.kimi_enabled,
+                "ready": self.kimi_ready,
+                "signal": self.kimi_signal,
+                "confidence": round(self.kimi_confidence, 1),
+                "action": self.kimi_action,
+                "step_pct": round(self.kimi_step_pct, 2),
+                "investment_ton": round(self.kimi_investment_ton, 6),
+                "sell_levels": self.kimi_sell_levels,
+                "buy_levels": self.kimi_buy_levels,
+                "reason": self.kimi_reason,
+                "last_update": self.kimi_last_update,
+                "error": self.kimi_error,
+            },
             "last_update": self.last_update,
         }
 
@@ -103,6 +132,7 @@ class QuantumBrain:
         self._running = False
         self._thread = None
         self._fill_history: deque = deque(maxlen=200)
+        self._kimi = KimiGridControl()
 
     def inject(self, grid_trader=None, price_feed=None):
         self._grid_trader = grid_trader
@@ -136,6 +166,7 @@ class QuantumBrain:
         self._run_swarm()
         self._run_xai()
         self._run_grid_ai()
+        self._run_kimi_control()
         self._unify_decision()
         self._execute_action()
         self.state.last_update = time.time()
@@ -359,6 +390,94 @@ class QuantumBrain:
         else:
             self.state.risk_level = 0
 
+    def _run_kimi_control(self):
+        info = self._kimi.status()
+        self.state.kimi_enabled = bool(info["enabled"])
+        self.state.kimi_ready = bool(info["ready"])
+        self.state.kimi_error = info.get("last_error", "")
+        if len(self.state.price_history) < 14:
+            return
+
+        prices = list(self.state.price_history)[-40:]
+        returns = [
+            round((prices[i] - prices[i - 1]) / prices[i - 1] * 100, 4)
+            for i in range(1, len(prices))
+            if prices[i - 1] > 0
+        ]
+        wallet = {"available": False, "ton": None, "token": None}
+        if self._grid_trader and hasattr(self._grid_trader, "_get_balances"):
+            try:
+                ton, token = self._grid_trader._get_balances()
+                wallet = {
+                    "available": ton is not None,
+                    "ton": round(float(ton), 6) if ton is not None else None,
+                    "token": round(float(token), 6) if token is not None else None,
+                }
+            except Exception:
+                wallet = {"available": False, "ton": None, "token": None}
+
+        current_grid = {"active": False, "step_pct": 0.0, "sell_levels": 0, "buy_levels": 0}
+        if self._grid_trader:
+            try:
+                grid_state = self._grid_trader.get_state_dict()
+                current_grid = {
+                    "active": bool(grid_state.get("active")),
+                    "step_pct": round(float(grid_state.get("step_pct", 0) or 0), 2),
+                    "sell_levels": len(grid_state.get("sell_levels", []) or []),
+                    "buy_levels": len(grid_state.get("buy_levels", []) or []),
+                }
+            except Exception:
+                pass
+
+        market = {
+            "price": round(self.state.price, 8),
+            "recent_prices": [round(p, 8) for p in prices],
+            "recent_returns_pct": returns[-20:],
+            "wallet": wallet,
+            "current_grid": current_grid,
+            "defaults": {
+                "investment_ton": wallet.get("ton"),
+                "sell_levels": 20,
+                "buy_levels": 20,
+            },
+            "limits": {
+                "min_step_pct": 3.0,
+                "max_step_pct": 8.0,
+                "max_total_levels": self._kimi.max_total_levels,
+                "gas_reserve_ton": 0.3,
+                "min_profitable_order_ton": 0.05,
+            },
+            "local": {
+                "prophet_signal": self.state.prophet_signal,
+                "prophet_confidence": round(self.state.prophet_confidence, 1),
+                "sentiment_signal": self.state.sentiment_signal,
+                "sentiment_fg": round(self.state.sentiment_fg, 1),
+                "swarm_consensus": self.state.swarm_consensus,
+                "regime": self.state.regime,
+                "atr_pct": round(self.state.atr_pct, 2),
+                "optimal_step": round(self.state.optimal_step, 2),
+                "risk_level": self.state.risk_level,
+                "trap_detected": self.state.trap_detected,
+                "pause_buying": self.state.pause_buying,
+            },
+        }
+        self._kimi.decide(market)
+        info = self._kimi.status()
+        self.state.kimi_enabled = bool(info["enabled"])
+        self.state.kimi_ready = bool(info["ready"])
+        self.state.kimi_error = info.get("last_error", "")
+        decision = info.get("decision") or {}
+        if decision:
+            self.state.kimi_signal = decision.get("signal", "HOLD")
+            self.state.kimi_confidence = float(decision.get("confidence", 0.0) or 0.0)
+            self.state.kimi_action = decision.get("action", "WAIT")
+            self.state.kimi_step_pct = float(decision.get("step_pct", self.state.optimal_step) or self.state.optimal_step)
+            self.state.kimi_investment_ton = float(decision.get("investment_ton", 0.0) or 0.0)
+            self.state.kimi_sell_levels = int(decision.get("sell_levels", 20) or 20)
+            self.state.kimi_buy_levels = int(decision.get("buy_levels", 20) or 20)
+            self.state.kimi_reason = decision.get("reason", "")
+            self.state.kimi_last_update = float(decision.get("updated_at", 0.0) or 0.0)
+
     def _unify_decision(self):
         signals = [
             self.state.prophet_signal,
@@ -379,11 +498,32 @@ class QuantumBrain:
         self.state.unified_signal = agreement
         self.state.unified_confidence = confidence
 
+        # Local safety rules always take precedence over the external model.
         if self.state.trap_detected and confidence < 70:
             self.state.unified_action = "STOP"
-        elif self.state.pause_buying:
+            return
+        if self.state.pause_buying:
             self.state.unified_action = "PAUSE_BUY"
-        elif agreement == "BUY" and confidence > 60 and not self._grid_trader_active():
+            return
+
+        if self.state.kimi_ready:
+            self.state.unified_signal = self.state.kimi_signal
+            self.state.unified_confidence = self.state.kimi_confidence
+            kimi_action = self.state.kimi_action
+            if kimi_action == "STOP":
+                self.state.unified_action = "STOP"
+            elif kimi_action == "PAUSE_BUY":
+                self.state.unified_action = "PAUSE_BUY"
+            elif (
+                kimi_action in ("BUILD", "START")
+                and self.state.kimi_confidence >= self._kimi.min_confidence
+            ):
+                self.state.unified_action = kimi_action
+            else:
+                self.state.unified_action = "WAIT"
+            return
+
+        if agreement == "BUY" and confidence > 60 and not self._grid_trader_active():
             self.state.unified_action = "BUILD"
         else:
             self.state.unified_action = "WAIT"
@@ -418,6 +558,16 @@ class QuantumBrain:
                 "profit_ton": profit_ton,
                 "profit_pct": profit_pct,
             }
+        )
+
+    def kimi_required_for_auto_grid(self) -> bool:
+        return bool(self._kimi.required_for_auto_grid and self._kimi.enabled)
+
+    def kimi_allows_initial_build(self) -> bool:
+        return bool(
+            self.state.kimi_ready
+            and self.state.kimi_action in ("BUILD", "START")
+            and self.state.kimi_confidence >= self._kimi.min_confidence
         )
 
     def get_state(self) -> dict:

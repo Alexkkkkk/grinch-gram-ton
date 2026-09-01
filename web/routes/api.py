@@ -368,6 +368,19 @@ def _ai_snapshot():
     state = _brain.get_state() if _brain else {}
     grid_ai = state.get("grid_ai", {})
     unified = state.get("unified", {})
+    kimi = dict(state.get("kimi", {}))
+    wallet = {"available": False, "ton": None, "token": None}
+    if _grid_trader and hasattr(_grid_trader, "_get_balances"):
+        try:
+            ton, token = _grid_trader._get_balances()
+            wallet = {
+                "available": ton is not None,
+                "ton": round(float(ton), 6) if ton is not None else None,
+                "token": round(float(token), 6) if token is not None else None,
+            }
+        except Exception:
+            pass
+    kimi["wallet"] = wallet
     return {
         "quantum_signal": {
             "signal": unified.get("signal", "HOLD"),
@@ -385,6 +398,7 @@ def _ai_snapshot():
             "confidence": grid_ai.get("trap_confidence", 0.0),
         },
         "pause_buying": grid_ai.get("pause_buying", False),
+        "kimi": kimi,
     }
 
 
@@ -447,6 +461,7 @@ def api_grid_ai_status():
             ),
             "regime": snapshot["regime"],
             "optimal_step": snapshot["optimal_step"],
+            "kimi": snapshot.get("kimi", {}),
         }
     )
 
@@ -462,6 +477,50 @@ def api_grid_ai_toggle():
 @api_bp.route("/grid/ai/recommendation")
 def api_grid_ai_recommendation():
     return jsonify({"ok": True, "recommendation": _ai_snapshot()})
+
+
+@api_bp.route("/grid/ai/apply-kimi", methods=["POST"])
+def api_grid_ai_apply_kimi():
+    """Apply the latest Kimi sizing recommendation on explicit operator request."""
+    if not _grid_trader:
+        return jsonify({"ok": False, "error": "Grid trader not initialized"}), 503
+    if not bool(getattr(_grid_trader, "_ai_enabled", False)):
+        return jsonify({"ok": False, "error": "AI grid control is disabled"}), 409
+
+    kimi = _ai_snapshot().get("kimi", {})
+    if not kimi.get("ready"):
+        return jsonify({
+            "ok": False,
+            "error": kimi.get("error") or "Kimi recommendation is not ready",
+        }), 409
+    try:
+        price = get_current_price()
+        if not price or price <= 0:
+            return jsonify({"ok": False, "error": "Current price unavailable"}), 503
+        result = _grid_trader.ai_build_grid(
+            price,
+            step_pct=kimi.get("step_pct"),
+            sell_levels=kimi.get("sell_levels"),
+            buy_levels=kimi.get("buy_levels"),
+            investment_ton=kimi.get("investment_ton"),
+        )
+        state = result.to_dict() if hasattr(result, "to_dict") else _grid_trader.get_state_dict()
+        return jsonify({
+            "ok": True,
+            "source": "kimi",
+            "active": bool(state.get("active")),
+            "price": price,
+            "step_pct": state.get("step_pct", kimi.get("step_pct")),
+            "sell_levels": len(state.get("sell_levels", []) or []),
+            "buy_levels": len(state.get("buy_levels", []) or []),
+            "levels": _grid_levels_payload(state),
+            "upper_price": state.get("upper_price", 0),
+            "lower_price": state.get("lower_price", 0),
+            "investment_ton": kimi.get("investment_ton"),
+            "kimi": kimi,
+        })
+    except (TypeError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 @api_bp.route("/grid/ai/build", methods=["POST"])

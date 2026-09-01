@@ -122,6 +122,10 @@ class GridTrader:
         self._ai_trap_detected = False
         self._ai_pause_reason = ""
         self._ai_recommendation = {}
+        self._ai_recommended_step = 0.0
+        self._ai_recommended_investment_ton = None
+        self._ai_recommended_sell_levels = None
+        self._ai_recommended_buy_levels = None
 
     def inject(
         self, dedust_client=None, ai_engine=None, trader_ref=None, price_feed=None
@@ -257,6 +261,21 @@ class GridTrader:
             "Pause buying" if state["grid_ai"]["pause_buying"] else ""
         )
         self._ai_recommendation = state
+        kimi = state.get("kimi", {})
+        try:
+            self._ai_recommended_step = float(kimi.get("step_pct", 0) or 0) if kimi.get("ready") else 0.0
+        except (TypeError, ValueError):
+            self._ai_recommended_step = 0.0
+        try:
+            self._ai_recommended_investment_ton = (
+                float(kimi.get("investment_ton")) if kimi.get("ready") and kimi.get("investment_ton") is not None else None
+            )
+            self._ai_recommended_sell_levels = int(kimi.get("sell_levels", 0) or 0) if kimi.get("ready") else 0
+            self._ai_recommended_buy_levels = int(kimi.get("buy_levels", 0) or 0) if kimi.get("ready") else 0
+        except (TypeError, ValueError):
+            self._ai_recommended_investment_ton = None
+            self._ai_recommended_sell_levels = None
+            self._ai_recommended_buy_levels = None
 
         if state["unified"]["action"] == "STOP" and self._state.active:
             log.warning("[QuantumBrain] Auto-stop: unified action = STOP")
@@ -268,7 +287,20 @@ class GridTrader:
             return
         if state["unified"]["action"] in ("BUILD", "START") and not self._state.active:
             log.info("[QuantumBrain] Auto-start: action=%s", state["unified"]["action"])
-            self.ai_build_grid(price_ton)
+            kimi_blocked = (
+                self._ai
+                and hasattr(self._ai, "kimi_required_for_auto_grid")
+                and self._ai.kimi_required_for_auto_grid()
+                and not self._ai.kimi_allows_initial_build()
+            )
+            if not kimi_blocked:
+                self.ai_build_grid(
+                    price_ton,
+                    step_pct=self._ai_recommended_step or None,
+                    investment_ton=self._ai_recommended_investment_ton,
+                    sell_levels=self._ai_recommended_sell_levels,
+                    buy_levels=self._ai_recommended_buy_levels,
+                )
 
     def _calc_drawdown(self, current_price):
         if not self._state.center_price or self._state.center_price <= 0:
@@ -387,6 +419,17 @@ class GridTrader:
         return False
 
     def _maybe_build_grid(self, center_price):
+        if (
+            not self._state.active
+            and not self._state.sell_levels
+            and not self._state.buy_levels
+            and self._ai_enabled
+            and self._ai
+            and hasattr(self._ai, "kimi_required_for_auto_grid")
+            and self._ai.kimi_required_for_auto_grid()
+            and not self._ai.kimi_allows_initial_build()
+        ):
+            return
         ton_bal, token_bal = self._get_balances()
         if ton_bal is None:
             # Rate-limit warning: log only once per minute to avoid spam
@@ -401,7 +444,7 @@ class GridTrader:
                 self._last_balance_warn = now
             return
         atr_pct = self._calc_atr_pct()
-        step = self._adaptive_step(atr_pct)
+        step = self._ai_recommended_step or self._adaptive_step(atr_pct)
         # GRID_INVESTMENT is the working TON budget; build_grid adds the
         # configured gas reserve back when splitting buy levels.
         try:
@@ -415,8 +458,14 @@ class GridTrader:
         self.build_grid(
             center_price,
             step_pct=step,
+            sell_levels=self._ai_recommended_sell_levels,
+            buy_levels=self._ai_recommended_buy_levels,
             token_balance=token_bal,
-            ton_balance=ton_for_grid,
+            ton_balance=(
+                min(ton_for_grid, self._ai_recommended_investment_ton)
+                if self._ai_recommended_investment_ton is not None
+                else ton_for_grid
+            ),
         )
 
     @staticmethod
@@ -480,8 +529,8 @@ class GridTrader:
             step = max(
                 GridCfg.min_step_pct or 3.0, min(GridCfg.max_step_pct or 8.0, step)
             )
-            n_sell = sell_levels or GridCfg.sell_levels or 20
-            n_buy = buy_levels or GridCfg.buy_levels or 20
+            n_sell = sell_levels if sell_levels is not None else (GridCfg.sell_levels or 20)
+            n_buy = buy_levels if buy_levels is not None else (GridCfg.buy_levels or 20)
 
             # Never allocate buy levels below the configured break-even size
             # unless the operator explicitly opts into unprofitable orders.
@@ -589,6 +638,7 @@ class GridTrader:
         investment_ton=None,
         upper_price=None,
         lower_price=None,
+        step_pct=None,
     ):
         """Public API for AI-triggered grid build."""
         ton_bal, token_bal = self._get_balances()
@@ -601,7 +651,7 @@ class GridTrader:
             # Keep the dashboard useful when the wallet is not configured:
             # render a market-based preview, but do not mark it active and
             # never imply that live orders can be placed.
-            step = self._adaptive_step(self._calc_atr_pct())
+            step = self._adaptive_step(self._calc_atr_pct()) if step_pct is None else float(step_pct)
             return self.build_grid(
                 center_price,
                 step_pct=step,
@@ -615,7 +665,7 @@ class GridTrader:
             )
         return self.build_grid(
             center_price,
-            step_pct=self._adaptive_step(self._calc_atr_pct()),
+            step_pct=(self._adaptive_step(self._calc_atr_pct()) if step_pct is None else float(step_pct)),
             sell_levels=sell_levels,
             buy_levels=buy_levels,
             token_balance=token_bal,

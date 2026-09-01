@@ -814,6 +814,32 @@ async function aiBuildGrid() {
     }
 }
 
+async function applyKimiGrid() {
+    const button = document.getElementById('kimi-apply-btn');
+    if (button) button.disabled = true;
+    try {
+        addLog('Применяю план Kimi к сетке...', 'info');
+        const res = await fetch('/api/grid/ai/apply-kimi', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        if (data.ok) {
+            addLog(`Kimi: сетка обновлена — ${data.sell_levels} SELL / ${data.buy_levels} BUY, шаг ${Number(data.step_pct).toFixed(1)}%`, 'buy');
+            if (data.levels) {
+                updateGridVisual(data.levels, data.price || null, data.upper_price, data.lower_price);
+            }
+            await fetchAllData();
+        }
+    } catch (e) {
+        addLog('Kimi: не удалось применить план — ' + (e.message || 'ошибка'), 'sell');
+    } finally {
+        if (button) button.disabled = false;
+        await fetchAiRecommendation();
+    }
+}
+
 async function fetchAiRecommendation() {
     try {
         const res = await fetch('/api/grid/ai/recommendation');
@@ -851,29 +877,60 @@ function updateAiToggleButton(enabled) {
     }
 }
 
+function escapeAiHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
 function updateAiDisplay(r) {
     const panel = document.getElementById('ai-recommendation');
     if (!panel) return;
 
     const qs = r.quantum_signal || {};
     const signal = qs.signal || 'HOLD';
-    const conf = qs.confidence || 0;
+    const conf = Number(qs.confidence) || 0;
     const regime = r.regime || 'UNKNOWN';
-    const step = r.optimal_step || '—';
-    const risk = r.risk_level || 0;
-    const dd = r.drawdown_pct || 0;
+    const step = Number(r.optimal_step);
+    const risk = Number(r.risk_level) || 0;
+    const dd = Number(r.drawdown_pct) || 0;
     const trap = r.trap || {};
     const pause = r.pause_buying ? 'ДА' : 'Нет';
-
+    const kimi = r.kimi || {};
+    const wallet = kimi.wallet || {};
+    const kimiReady = Boolean(kimi.ready);
+    const kimiAction = kimi.action || 'WAIT';
+    const kimiSignal = kimi.signal || 'HOLD';
+    const kimiConf = Number(kimi.confidence) || 0;
+    const kimiStep = Number(kimi.step_pct);
+    const kimiInvestment = Number(kimi.investment_ton);
+    const sellLevels = Number(kimi.sell_levels) || 0;
+    const buyLevels = Number(kimi.buy_levels) || 0;
+    const walletTon = Number(wallet.ton);
+    const walletToken = Number(wallet.token);
+    const reason = kimi.reason || (kimi.error ? 'Kimi временно недоступна' : 'Ожидание первого решения Kimi');
     const signalClass = 'ai-signal-' + signal.toLowerCase();
+    const kimiSignalClass = 'ai-signal-' + kimiSignal.toLowerCase();
+    const applyButton = document.getElementById('kimi-apply-btn');
+    if (applyButton) applyButton.disabled = !kimiReady;
 
     panel.innerHTML = `
-        <div class="ai-signal-row">
-            <span class="ai-signal-label">Сигнал:</span>
-            <span class="ai-signal-value ${signalClass}">${signal} (${Math.round(conf)}%)</span>
+        <div class="ai-kimi-card ${kimiReady ? 'is-ready' : 'is-waiting'}">
+          <div class="ai-kimi-heading"><span>✦ KIMI GRID PILOT</span><span class="ai-kimi-pill">${kimiReady ? 'ONLINE' : 'WAITING'}</span></div>
+          <div class="ai-kimi-grid">
+            <div><span>Решение</span><strong>${escapeAiHtml(kimiAction)}</strong></div>
+            <div><span>Сигнал</span><strong class="${kimiSignalClass}">${escapeAiHtml(kimiSignal)} ${Math.round(kimiConf)}%</strong></div>
+            <div><span>Шаг</span><strong>${Number.isFinite(kimiStep) ? kimiStep.toFixed(1) : '—'}%</strong></div>
+            <div><span>Инвестиция</span><strong>${Number.isFinite(kimiInvestment) ? kimiInvestment.toFixed(2) : '—'} TON</strong></div>
+            <div><span>Уровни</span><strong>${sellLevels} SELL / ${buyLevels} BUY</strong></div>
+            <div><span>Кошелёк</span><strong>${Number.isFinite(walletTon) ? walletTon.toFixed(2) : '—'} TON · ${Number.isFinite(walletToken) ? walletToken.toFixed(0) : '—'} token</strong></div>
+          </div>
+          <div class="ai-kimi-note">${escapeAiHtml(reason)}</div>
         </div>
-        <div class="ai-row"><span>Режим рынка:</span><span>${regime}</span></div>
-        <div class="ai-row"><span>Оптимальный шаг:</span><span>${typeof step === 'number' ? step.toFixed(1) : step}%</span></div>
+        <div class="ai-signal-row">
+            <span class="ai-signal-label">Локальный сигнал:</span>
+            <span class="ai-signal-value ${signalClass}">${escapeAiHtml(signal)} (${Math.round(conf)}%)</span>
+        </div>
+        <div class="ai-row"><span>Режим рынка:</span><span>${escapeAiHtml(regime)}</span></div>
+        <div class="ai-row"><span>Локальный шаг:</span><span>${Number.isFinite(step) ? step.toFixed(1) : '—'}%</span></div>
         <div class="ai-row"><span>Уровень риска:</span><span class="${risk >= 2 ? 'ai-risk-high' : ''}">${risk}/3</span></div>
         <div class="ai-row"><span>Просадка:</span><span>${dd.toFixed(1)}%</span></div>
         <div class="ai-row"><span>Ловушка:</span><span class="${trap.trap ? 'ai-trap-yes' : ''}">${trap.trap ? 'ДА (' + trap.confidence + '%)' : 'Нет'}</span></div>
@@ -882,12 +939,11 @@ function updateAiDisplay(r) {
 }
 
 function updateAiStatus(data) {
-    // Update AI fields in status
     const aiSignal = document.getElementById('ai-signal');
     if (aiSignal) aiSignal.textContent = data.ai_signal || '—';
 
     const aiConf = document.getElementById('ai-confidence');
-    if (aiConf) aiConf.textContent = (data.ai_confidence || 0).toFixed(0) + '%';
+    if (aiConf) aiConf.textContent = (Number(data.ai_confidence) || 0).toFixed(0) + '%';
 
     const aiRegime = document.getElementById('ai-regime');
     if (aiRegime) aiRegime.textContent = data.regime || '—';
@@ -897,6 +953,23 @@ function updateAiStatus(data) {
 
     const aiPause = document.getElementById('ai-pause');
     if (aiPause) aiPause.textContent = data.ai_pause_reason || '—';
+
+    const kimi = data.kimi || {};
+    const wallet = kimi.wallet || {};
+    const kimiStatus = document.getElementById('kimi-status');
+    if (kimiStatus) {
+        kimiStatus.textContent = kimi.ready
+            ? `${kimi.action || 'WAIT'} · ${kimi.model || 'Kimi'}`
+            : (kimi.error ? 'Недоступна: ' + kimi.error : 'Ожидание ответа');
+    }
+    const walletTon = document.getElementById('kimi-wallet-ton');
+    if (walletTon) walletTon.textContent = Number.isFinite(Number(wallet.ton)) ? Number(wallet.ton).toFixed(2) + ' TON' : '—';
+    const kimiPlan = document.getElementById('kimi-plan');
+    if (kimiPlan) kimiPlan.textContent = kimi.ready
+        ? `${Number(kimi.step_pct || 0).toFixed(1)}% · ${kimi.sell_levels || 0}/${kimi.buy_levels || 0}`
+        : '—';
+    const applyButton = document.getElementById('kimi-apply-btn');
+    if (applyButton) applyButton.disabled = !kimi.ready;
 
     updateAiToggleButton(data.ai_enabled);
 }

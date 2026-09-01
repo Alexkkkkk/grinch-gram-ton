@@ -757,6 +757,29 @@ canvas { max-height: 260px; }
     background: linear-gradient(135deg, #4fc3f7, #2a9fd6);
 }
 
+.ai-kimi-apply {
+    background: linear-gradient(135deg, #9b6cff, #6241c7);
+    box-shadow: 0 0 12px rgba(155, 108, 255, 0.28);
+}
+.ai-kimi-apply:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.ai-kimi-status-item { border: 1px solid rgba(155, 108, 255, 0.2); }
+.ai-kimi-card {
+    margin: 0 0 12px;
+    padding: 12px;
+    border: 1px solid rgba(155, 108, 255, 0.35);
+    border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, rgba(111, 76, 190, 0.18), rgba(18, 20, 27, 0.4));
+}
+.ai-kimi-card.is-waiting { border-color: rgba(240, 185, 11, 0.3); }
+.ai-kimi-heading { display: flex; justify-content: space-between; align-items: center; color: #c6b3ff; font-size: 11px; font-weight: 800; letter-spacing: .08em; margin-bottom: 10px; }
+.ai-kimi-pill { padding: 3px 7px; border-radius: 999px; font-size: 9px; background: rgba(14, 203, 129, .16); color: #69f0ae; letter-spacing: .05em; }
+.is-waiting .ai-kimi-pill { background: rgba(240, 185, 11, .14); color: #f0b90b; }
+.ai-kimi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 8px; }
+.ai-kimi-grid div { display: flex; flex-direction: column; gap: 3px; }
+.ai-kimi-grid span { color: var(--text-secondary); font-size: 10px; }
+.ai-kimi-grid strong { color: var(--text-primary); font-size: 12px; }
+.ai-kimi-note { margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,.07); color: #b9b1ce; font-size: 11px; line-height: 1.4; }
+
 .ai-status-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
