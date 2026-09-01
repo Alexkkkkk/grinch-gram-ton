@@ -18,6 +18,62 @@ function normalizeInvestmentLabel() {
     if (label) label.textContent = 'TON:';
 }
 
+// ── Step Profit Calculator ────────────────────────────────────────────────────
+let _cachedFee = 0.25; // default DeDust fee %
+let _cachedStep = 4.0;  // default grid step %
+
+async function fetchGridConfig() {
+    try {
+        const res = await fetch('/api/config');
+        if (!res.ok) return;
+        const cfg = await res.json();
+        _cachedFee = (cfg.fees && cfg.fees.pct) || 0.25;
+        _cachedStep = (cfg.grid && cfg.grid.step_pct) || 4.0;
+    } catch (e) { /* ignore */ }
+}
+
+function calculateStepProfit() {
+    const gridCountEl = document.getElementById('gridCount');
+    const investmentEl = document.getElementById('investment');
+    const profitEl = document.getElementById('stepProfit');
+    if (!gridCountEl || !investmentEl || !profitEl) return;
+
+    const gridCount = parseInt(gridCountEl.value) || 40;
+    const investment = parseFloat(investmentEl.value) || 1000;
+    const nBuy = Math.max(1, Math.floor(gridCount / 2));
+    const tonPerLevel = investment / nBuy;
+
+    const fee = _cachedFee / 100.0;
+    const step = _cachedStep;
+    const cycleFactor = (1.0 + step / 100.0) * Math.pow(1.0 - fee, 2) - 1.0;
+
+    if (cycleFactor <= 0) {
+        profitEl.value = '—';
+        profitEl.style.color = '#848e9c';
+        return;
+    }
+
+    const profitTon = tonPerLevel * cycleFactor;
+    const priceTon = parseFloat(document.getElementById('price-ton')?.textContent?.replace('$', '')) || 1.4;
+    const profitUsdt = profitTon * priceTon;
+
+    profitEl.value = '+' + profitTon.toFixed(4) + ' TON  (+$' + profitUsdt.toFixed(2) + ')';
+    profitEl.style.color = '#0ecb81';
+}
+
+function attachProfitCalculator() {
+    fetchGridConfig();
+    ['gridCount', 'investment', 'upperInput', 'lowerInput'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', calculateStepProfit);
+    });
+    // Also recalculate when price updates
+    const priceObserver = new MutationObserver(calculateStepProfit);
+    const priceEl = document.getElementById('price-ton');
+    if (priceEl) priceObserver.observe(priceEl, { childList: true, subtree: true });
+    calculateStepProfit();
+}
+
 function restoreGridSettings() {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(GRID_SETTINGS_KEY) || '{}'); } catch (e) {}
@@ -28,6 +84,8 @@ function restoreGridSettings() {
         }
         if (input) input.addEventListener('input', persistGridSettings);
     });
+    // Attach profit calculator to all grid inputs
+    attachProfitCalculator();
 }
 
 function persistGridSettings() {
@@ -1001,6 +1059,7 @@ function updateGridPriceLines(levels, currentPrice) {
 // ── Init ───────────────────────────────────────────────────────────────────────
 normalizeInvestmentLabel();
 restoreGridSettings();
+attachProfitCalculator();
 normalizeTimeframeButtons();
 restoreTimeframe();
 initCharts();
