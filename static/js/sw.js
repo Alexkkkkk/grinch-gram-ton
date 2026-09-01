@@ -3,11 +3,11 @@
  * Features: Cache-first strategy, Background Sync, Push Notifications
  */
 
-const CACHE_NAME = 'quantumgrinch-v9-timeframes';
+const CACHE_NAME = 'quantumgrinch-v10-step-profit';
 const STATIC_ASSETS = [
   '/',
   '/static/css/grid_style.css',
-  '/static/js/grid_dashboard.js',
+  '/static/js/grid_dashboard.js?v=20260901-step-profit-2',
   '/static/js/lightweight-charts.standalone.production.js',
   '/static/manifest.json',
   'https://cdn.socket.io/4.7.2/socket.io.min.js',
