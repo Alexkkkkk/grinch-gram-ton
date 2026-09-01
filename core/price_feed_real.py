@@ -393,19 +393,18 @@ def _build_candles_from_ticks():
     if not new_ticks:
         return
     _last_processed_tick_time = ticks[-1]["t"]
-    # Build base 1-minute candles for all timeframe derivations
+    # Build base 1-minute candles, plus genuine one-second candles from the
+    # local tick stream for the dashboard's 1s timeframe.
     base_candles = _build_candles_for_interval(ticks, 60)
     with _lock:
         _candles.clear()
         for c in base_candles[-500:]:
             _candles.append(c)
-        # Pre-build common timeframes in cache
+        # Pre-build each timeframe at its actual interval. In particular, do
+        # not substitute minute candles for the 1s view.
         for tf, sec in _TF_SECONDS.items():
-            if sec >= 60:
-                built = _build_candles_for_interval(ticks, sec)
-                _candles_cache[tf] = deque(built[-500:], maxlen=500)
-            else:
-                _candles_cache[tf] = deque(base_candles[-500:], maxlen=500)
+            built = _build_candles_for_interval(ticks, sec)
+            _candles_cache[tf] = deque(built[-500:], maxlen=500)
 
 
 def tick_price(price: float) -> bool:
@@ -503,6 +502,10 @@ def get_candles() -> List[dict]:
 def normalize_timeframe(timeframe: str = "5m") -> str:
     """Normalize chart timeframe aliases to supported timeframe keys."""
     aliases = {
+        "1c": "1s",
+        "1sec": "1s",
+        "1сек": "1s",
+        "1с": "1s",
         "1min": "1m",
         "3min": "3m",
         "5min": "5m",

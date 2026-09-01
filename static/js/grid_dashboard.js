@@ -39,9 +39,23 @@ function persistGridSettings() {
     try { localStorage.setItem(GRID_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
 }
 
+function normalizeTimeframeButtons() {
+    // Keep older cached HTML compatible with the canonical timeframe keys.
+    const secondButton = document.querySelector('.tf-btn[data-tf="1c"]');
+    if (secondButton) secondButton.dataset.tf = '1s';
+
+    // Older templates contained both 1М and 1мин, although both meant 1m.
+    const legacyMinute = Array.from(document.querySelectorAll('.tf-btn[data-tf="1m"]'))
+        .find(button => button.textContent.trim() === '1М');
+    const readableMinute = Array.from(document.querySelectorAll('.tf-btn[data-tf="1m"]'))
+        .find(button => button.textContent.trim() === '1мин');
+    if (legacyMinute && readableMinute) legacyMinute.remove();
+}
+
 function restoreTimeframe() {
     let saved = '15m';
     try { saved = localStorage.getItem(TIMEFRAME_KEY) || saved; } catch (e) {}
+    if (saved === '1c') saved = '1s';
     const button = document.querySelector(`.tf-btn[data-tf="${saved}"]`);
     if (button) {
         document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
@@ -218,6 +232,7 @@ socket.on('status', (data) => {
 
 // ── Real-time candle updates via dedicated WebSocket event ─────────────────────
 let _lastCandleTime = 0;
+let _renderedTimeframe = null;
 
 socket.on('candles', (data) => {
     if (!data || !data.candles || !candleSeries) return;
@@ -253,8 +268,8 @@ socket.on('candles', (data) => {
 
     const lastTime = sorted[sorted.length - 1].t;
 
-    if (_lastCandleTime === 0 || Math.abs(lastTime - _lastCandleTime) > 3600) {
-        // Full reset on init or large gap
+    if (_renderedTimeframe !== currentTimeframe || _lastCandleTime === 0) {
+        // Full reset on init or after a timeframe change
         candleSeries.setData(chartData);
         volumeSeries.setData(volData);
     } else {
@@ -276,6 +291,7 @@ socket.on('candles', (data) => {
         }
     }
     _lastCandleTime = lastTime;
+    _renderedTimeframe = currentTimeframe;
 });
 
 // ── Periodic data fetch (non-price data) ─────────────────────────────────────
@@ -801,7 +817,23 @@ function addLog(msg, type) {
 // ── Candlestick Chart (LightweightCharts) ─────────────────────────────────────
 let candleChart, candleSeries, volumeSeries;
 let currentTimeframe = '15m';
+let _candleRequestId = 0;
 let gridPriceLines = [];
+
+function resetCandleChart() {
+    _lastCandleTime = 0;
+    _renderedTimeframe = null;
+    if (candleSeries) candleSeries.setData([]);
+    if (volumeSeries) volumeSeries.setData([]);
+}
+
+function applyTimeframeScale() {
+    if (!candleChart) return;
+    candleChart.timeScale().applyOptions({
+        timeVisible: true,
+        secondsVisible: currentTimeframe === '1s'
+    });
+}
 
 function initCandlestickChart() {
     if (typeof LightweightCharts === "undefined") {
@@ -867,11 +899,14 @@ function initCandlestickChart() {
             document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentTimeframe = btn.dataset.tf;
+            resetCandleChart();
+            applyTimeframeScale();
             notifyTimeframe(currentTimeframe);
             fetchCandles(true); // force reset
         });
     });
 
+    applyTimeframeScale();
     fetchCandles(true); // initial load with force reset
     notifyTimeframe(currentTimeframe); // tell server our initial timeframe
     setInterval(() => fetchCandles(false), 5000); // HTTP fallback without reset
@@ -879,10 +914,15 @@ function initCandlestickChart() {
 }
 
 async function fetchCandles(force = false) {
+    const timeframeAtRequest = currentTimeframe;
+    const requestId = ++_candleRequestId;
     try {
-        const res = await fetch(`/api/candles?timeframe=${currentTimeframe}&limit=300`);
+        const res = await fetch(`/api/candles?timeframe=${encodeURIComponent(timeframeAtRequest)}&limit=300`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        // A slower response from the previous timeframe must never overwrite
+        // the chart after the user has already selected a new one.
+        if (requestId !== _candleRequestId || timeframeAtRequest !== currentTimeframe) return;
         // Normalize fields: API uses "timestamp", WebSocket uses "t"
         let candles = (data.candles || []).map(c => ({
             timestamp: c.timestamp || c.t,
@@ -898,6 +938,7 @@ async function fetchCandles(force = false) {
             candleSeries.setData([]);
             volumeSeries.setData([]);
             _lastCandleTime = 0;
+            _renderedTimeframe = null;
             return;
         }
 
@@ -915,8 +956,8 @@ async function fetchCandles(force = false) {
             color: c.close >= c.open ? "rgba(14,203,129,0.4)" : "rgba(246,70,93,0.4)"
         }));
 
-        if (force) _lastCandleTime = 0; // reset only on explicit force
-        if (_lastCandleTime === 0 || Math.abs(sorted[sorted.length - 1].timestamp - _lastCandleTime) > 3600) {
+        if (force || _renderedTimeframe !== timeframeAtRequest || _lastCandleTime === 0) {
+            _lastCandleTime = 0;
             candleSeries.setData(chartData);
             volumeSeries.setData(volData);
         } else {
@@ -932,6 +973,7 @@ async function fetchCandles(force = false) {
             }
         }
         _lastCandleTime = sorted[sorted.length - 1].timestamp;
+        _renderedTimeframe = timeframeAtRequest;
         candleChart.timeScale().fitContent();
     } catch (e) {
         console.error('[Candles]', e);
@@ -981,6 +1023,7 @@ function updateGridPriceLines(levels, currentPrice) {
 // ── Init ───────────────────────────────────────────────────────────────────────
 normalizeInvestmentLabel();
 restoreGridSettings();
+normalizeTimeframeButtons();
 restoreTimeframe();
 initCharts();
 initCandlestickChart();

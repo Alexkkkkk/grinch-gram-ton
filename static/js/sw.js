@@ -3,7 +3,7 @@
  * Features: Cache-first strategy, Background Sync, Push Notifications
  */
 
-const CACHE_NAME = 'quantumgrinch-v8-settings';
+const CACHE_NAME = 'quantumgrinch-v9-timeframes';
 const STATIC_ASSETS = [
   '/',
   '/static/css/grid_style.css',
