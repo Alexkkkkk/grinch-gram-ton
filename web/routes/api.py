@@ -247,6 +247,7 @@ def api_grid_status():
             {
                 "active": state.get("active", False),
                 "center_price": state.get("center_price", 0),
+                "current_price": get_current_price(),
                 "step_pct": state.get("step_pct", 0),
                 "upper_price": state.get("upper_price", 0),
                 "lower_price": state.get("lower_price", 0),
