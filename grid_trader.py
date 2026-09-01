@@ -39,6 +39,8 @@ class GridLevel:
     filled_at: Optional[float] = None
     fill_price_ton: float = 0.0
     profit_ton: float = 0.0
+    # Total TON cost of the paired buy, including the estimated network fee.
+    entry_cost_ton: float = 0.0
     tx_hash: str = ""
     note: str = ""
 
@@ -330,7 +332,11 @@ class GridTrader:
                                     regime=self._detect_regime(),
                                     profit_ton=level.profit_ton,
                                     profit_pct=(
-                                        level.profit_ton / max(level.amount_ton, 0.001)
+                                        level.profit_ton
+                                        / max(
+                                            level.entry_cost_ton or level.amount_ton,
+                                            0.001,
+                                        )
                                     )
                                     * 100,
                                 )
@@ -426,14 +432,26 @@ class GridTrader:
         return max(GridCfg.min_step_pct or 3.0, 3.0)
 
     @staticmethod
-    def _min_profitable_order_ton(step_pct):
+    @staticmethod
+    def _allow_unprofitable_orders():
+        return os.getenv("GRID_ALLOW_UNPROFITABLE_ORDERS", "0").strip() == "1"
+
+    @staticmethod
+    def _gas_per_tx():
+        try:
+            return max(0.0, float(os.getenv("GRID_GAS_PER_TX", "0.004")))
+        except (TypeError, ValueError):
+            return 0.004
+
+    @classmethod
+    def _min_profitable_order_ton(cls, step_pct):
         try:
             configured_min = max(0.0, float(os.getenv("GRID_MIN_ORDER_TON", "0.05")))
         except (TypeError, ValueError):
             configured_min = 0.05
         # Explicit opt-in is required because small orders can lose more on
         # gas than they gain from a grid step.
-        if os.getenv("GRID_ALLOW_UNPROFITABLE_ORDERS", "0") == "1":
+        if cls._allow_unprofitable_orders():
             return configured_min
         fee = Config.FEES.pct / 100.0
         step = float(step_pct) if step_pct else GridCfg.step_pct
@@ -442,8 +460,7 @@ class GridTrader:
         if cycle_factor <= 0:
             return float("inf")
         # Realistic gas per tx from on-chain data (~0.004 TON)
-        gas_per_tx = float(os.getenv("GRID_GAS_PER_TX", "0.004"))
-        gas_min = (gas_per_tx * 2.0) / cycle_factor
+        gas_min = (cls._gas_per_tx() * 2.0) / cycle_factor
         return max(configured_min, gas_min)
 
     def build_grid(
@@ -465,6 +482,28 @@ class GridTrader:
             )
             n_sell = sell_levels or GridCfg.sell_levels or 20
             n_buy = buy_levels or GridCfg.buy_levels or 20
+
+            # Never allocate buy levels below the configured break-even size
+            # unless the operator explicitly opts into unprofitable orders.
+            gas_reserve = float(GridCfg.gas_reserve_ton or 0.0)
+            avail_ton = max(0.0, float(ton_balance or 0.0) - gas_reserve)
+            min_order = self._min_profitable_order_ton(step)
+            if (
+                not self._allow_unprofitable_orders()
+                and math.isfinite(min_order)
+                and min_order > 0
+            ):
+                affordable_buys = int((avail_ton + 1e-9) / min_order)
+                if affordable_buys < n_buy:
+                    log.warning(
+                        "[Grid] Reducing buy levels from %d to %d: "
+                        "%.4f TON per level is below break-even %.4f TON",
+                        n_buy,
+                        max(0, affordable_buys),
+                        (avail_ton / n_buy) if n_buy else 0.0,
+                        min_order,
+                    )
+                    n_buy = max(0, affordable_buys)
 
             s = GridState()
             s.active = bool(active)
@@ -507,11 +546,7 @@ class GridTrader:
                 )
             s.grid_reserved_token = avail_token
 
-            avail_ton = max(
-                0.0, float(ton_balance or 0.0) - (GridCfg.gas_reserve_ton or 5.0)
-            )
             ton_per_buy = avail_ton / n_buy if n_buy > 0 else 0
-            min_order = self._min_profitable_order_ton(step)
 
             for i in range(1, n_buy + 1):
                 price = center_price / buy_factor**i
@@ -597,15 +632,31 @@ class GridTrader:
             if self._dc and hasattr(self._dc, "sell"):
                 result = self._dc.sell(level.amount_token)
                 if result.get("ok"):
-                    received_ton = result.get("received_ton", 0)
+                    # DeDust returns expected_ton; older clients used
+                    # received_ton. Accept both so a successful sell is not
+                    # recorded as a zero-value fill.
+                    received_ton = float(
+                        result.get("received_ton", result.get("expected_ton", 0)) or 0
+                    )
+                    if received_ton <= 0:
+                        return {"ok": False, "error": "missing_received_ton"}
+                    entry_cost = level.entry_cost_ton or level.amount_ton
                     level.status = "filled"
                     level.filled_at = time.time()
                     level.fill_price_ton = price_ton
-                    level.profit_ton = received_ton - level.amount_ton
+                    # Include the sell-side network estimate. A paired sell
+                    # already carries the buy-side estimate in entry_cost_ton.
+                    level.profit_ton = (
+                        received_ton - entry_cost - self._gas_per_tx()
+                    )
                     level.tx_hash = result.get("tx_hash", "")
                     self._state.total_profit_ton += level.profit_ton
                     self._state.total_sell_cycles += 1
-                    return {"ok": True, "received": received_ton}
+                    return {
+                        "ok": True,
+                        "received": received_ton,
+                        "profit_ton": level.profit_ton,
+                    }
             return {"ok": False, "error": "no_dedust_client"}
         except Exception as e:
             log.error("[Grid] sell error: %s", e)
@@ -618,25 +669,96 @@ class GridTrader:
             if self._dc and hasattr(self._dc, "buy"):
                 result = self._dc.buy(level.amount_ton)
                 if result.get("ok"):
-                    received_grinch = result.get("received_grinch", 0)
+                    received_token = float(
+                        result.get(
+                            "received_usdt",
+                            result.get(
+                                "usdt_received",
+                                result.get("received_grinch", 0),
+                            ),
+                        )
+                        or 0
+                    )
+                    if received_token <= 0:
+                        return {"ok": False, "error": "missing_received_token"}
                     level.status = "filled"
                     level.filled_at = time.time()
                     level.fill_price_ton = price_ton
-                    level.amount_token = received_grinch
+                    level.amount_token = received_token
+                    level.entry_cost_ton = level.amount_ton + self._gas_per_tx()
                     level.tx_hash = result.get("tx_hash", "")
-                    return {"ok": True, "received": received_grinch}
+                    return {"ok": True, "received": received_token}
             return {"ok": False, "error": "no_dedust_client"}
         except Exception as e:
             log.error("[Grid] buy error: %s", e)
             return {"ok": False, "error": str(e)}
 
     def _place_rebuy(self, level):
-        """Place a new buy level after sell fill."""
-        pass  # Implement if needed
+        """Recreate the buy one grid step below a filled sell."""
+        step_factor = 1.0 + (self._state.step_pct or GridCfg.step_pct) / 100.0
+        anchor = level.fill_price_ton or level.price_ton
+        if anchor <= 0 or step_factor <= 1:
+            return
+        target_price = round(anchor / step_factor, 6)
+        if any(
+            item.status == "waiting"
+            and item.side == "buy"
+            and abs(item.price_ton - target_price) < 1e-9
+            for item in self._state.buy_levels
+        ):
+            return
+        amount_ton = level.amount_ton
+        if amount_ton <= 0 and level.amount_token > 0:
+            amount_ton = level.amount_token / target_price
+        min_order = self._min_profitable_order_ton(self._state.step_pct)
+        if (
+            not self._allow_unprofitable_orders()
+            and (not math.isfinite(min_order) or amount_ton + 1e-9 < min_order)
+        ):
+            log.info(
+                "[Grid] Skip rebuy at %.6f: %.4f TON is below break-even %.4f TON",
+                target_price,
+                amount_ton,
+                min_order,
+            )
+            return
+        next_id = -(max([abs(item.id) for item in self._state.buy_levels] or [0]) + 1)
+        self._state.buy_levels.append(
+            GridLevel(
+                id=next_id,
+                side="buy",
+                price_ton=target_price,
+                amount_ton=round(amount_ton, 6),
+                note=f"rebuy_after_sell:{level.id}",
+            )
+        )
 
     def _place_resell(self, level):
-        """Place a new sell level after buy fill."""
-        pass  # Implement if needed
+        """Create the sell one grid step above a filled buy."""
+        step_factor = 1.0 + (self._state.step_pct or GridCfg.step_pct) / 100.0
+        anchor = level.fill_price_ton or level.price_ton
+        if anchor <= 0 or step_factor <= 1 or level.amount_token <= 0:
+            return
+        target_price = round(anchor * step_factor, 6)
+        if any(
+            item.status == "waiting"
+            and item.side == "sell"
+            and abs(item.price_ton - target_price) < 1e-9
+            for item in self._state.sell_levels
+        ):
+            return
+        next_id = max([item.id for item in self._state.sell_levels] or [0]) + 1
+        self._state.sell_levels.append(
+            GridLevel(
+                id=next_id,
+                side="sell",
+                price_ton=target_price,
+                amount_token=round(level.amount_token, 6),
+                amount_ton=level.amount_ton,
+                entry_cost_ton=level.entry_cost_ton,
+                note=f"resell_after_buy:{level.id}",
+            )
+        )
 
     def _record_trade(self, side, level, price):
         trade = {
