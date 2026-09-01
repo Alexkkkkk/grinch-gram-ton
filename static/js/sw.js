@@ -3,13 +3,15 @@
  * Features: Cache-first strategy, Background Sync, Push Notifications
  */
 
-const CACHE_NAME = 'quantumgrinch-v10-step-profit';
+const CACHE_NAME = 'quantumgrinch-v11-step-profit';
 const STATIC_ASSETS = [
   '/',
   '/static/css/grid_style.css',
-  '/static/js/grid_dashboard.js?v=20260901-step-profit-2',
+  '/static/js/grid_dashboard.js?v=20260901-step-profit-3',
   '/static/js/lightweight-charts.standalone.production.js',
   '/static/manifest.json',
+];
+const OPTIONAL_ASSETS = [
   'https://cdn.socket.io/4.7.2/socket.io.min.js',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'
 ];
@@ -17,8 +19,10 @@ const STATIC_ASSETS = [
 // Install: cache static assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await cache.addAll(STATIC_ASSETS);
+      // A CDN outage must not prevent the new worker from installing.
+      await Promise.all(OPTIONAL_ASSETS.map((url) => cache.add(url).catch(() => null)));
     }).then(() => self.skipWaiting())
   );
 });
