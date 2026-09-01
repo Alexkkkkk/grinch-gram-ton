@@ -1,4 +1,3 @@
-
 from grid_trader import GridTrader
 
 
