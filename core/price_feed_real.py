@@ -213,9 +213,13 @@ def update_price() -> float:
         if cached_price > 0:
             price = cached_price
             source = f"{cached_source or 'exchange'} (stale)"
-            logger.warning("All price APIs failed; keeping last real price $%.6f", price)
+            logger.warning(
+                "All price APIs failed; keeping last real price $%.6f", price
+            )
         else:
-            _last_feed_error = "; ".join(errors) or "all market data sources unavailable"
+            _last_feed_error = (
+                "; ".join(errors) or "all market data sources unavailable"
+            )
             logger.error("No real market price available: %s", _last_feed_error)
             return 0.0
 
