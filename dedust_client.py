@@ -12,7 +12,7 @@ import threading
 import time
 from typing import Optional
 
-from dedust import Asset, Factory, JettonRoot, Pool, PoolType
+from dedust import Asset, Factory, JettonRoot, Pool, PoolType, SwapParams, VaultNative
 from pytoniq import Address, LiteBalancer, WalletV5R1
 from pytoniq_core import Address as CoreAddress
 from pytoniq_core import begin_cell
@@ -785,8 +785,9 @@ class DedustClient:
         return None, None
 
     # ── Реальные резервы пула (источник истины для курса свопа) ──────────────
-    # Комиссия пула USDT/TON на DeDust нестандартная — 1% (CPMM v2).
-    _POOL_FEE = 0.01
+    # Комиссия реального USDT/TON CPMM-пула: 10/10000 = 0.1%.
+    # Значение подтверждено get_trade_fee на адресе пула.
+    _POOL_FEE = 0.001
     _RESERVES_TIMEOUT = 8
     _RESERVES_CACHE_TTL = 120.0  # увеличен с 45→120с чтобы реже долбить API
 
@@ -804,7 +805,7 @@ class DedustClient:
         """Читает РЕАЛЬНЫЕ резервы пула (ton_reserve, usdt_reserve).
 
         Приоритет источников:
-          1) TonCenter runGetMethod → get_pool_data (точные резервы без газа/ренты)
+          1) TonCenter runGetMethod → get_reserves (резервы, которые использует CPMM)
           2) TonAPI account/jettons (fallback, ~3% off из-за gas/rent остатка)
 
         Возвращает (ton_reserve, usdt_reserve) в обычных единицах или None.
@@ -821,12 +822,12 @@ class DedustClient:
 
         pool = Config.USDT_POOL_ADDRESS
 
-        # ── 1. TonCenter runGetMethod: get_pool_data (точные резервы) ─────────
+        # ── 1. TonCenter runGetMethod: get_reserves (точные резервы CPMM) ──────
         try:
             r = _HTTP.post(
                 "https://toncenter.com/api/v2/runGetMethod",
                 headers={**_tc_headers(), "Content-Type": "application/json"},
-                json={"address": pool, "method": "get_pool_data", "stack": []},
+                json={"address": pool, "method": "get_reserves", "stack": []},
                 timeout=self._RESERVES_TIMEOUT,
             )
             if r.status_code == 200:
@@ -834,10 +835,10 @@ class DedustClient:
                 result = data.get("result", {}) if data.get("ok") else {}
                 if result.get("exit_code") == 0:
                     stack = result.get("stack", [])
-                    # DeDust CPMM get_pool_data стек (19 элементов):
-                    # [9]  = TON reserve (nanoton)
-                    # [10] = USDT reserve (nano, 9 decimals)
-                    if len(stack) >= 11:
+                    # DeDust CPMM get_reserves стек:
+                    # [0] = TON reserve (nanoton)
+                    # [1] = USDT reserve (base units, 6 decimals for USDT)
+                    if len(stack) >= 2:
 
                         def _parse_stack_num(item):
                             # item: ["num","0x..."] или {"value":"0x..."}
@@ -853,10 +854,10 @@ class DedustClient:
                                 return int(s, 16)
                             return int(s)
 
-                        r0 = _parse_stack_num(stack[9])  # TON nanoton
-                        r1 = _parse_stack_num(stack[10])  # USDT nano
+                        r0 = _parse_stack_num(stack[0])  # TON nanoton
+                        r1 = _parse_stack_num(stack[1])  # USDT base units
                         ton_r = r0 / TON
-                        usdt_r = r1 / TON
+                        usdt_r = r1 / (10**Config.USDT_DECIMALS)
                         if ton_r > 0 and usdt_r > 0:
                             reserves = (ton_r, usdt_r)
                             self._pool_reserves_cache = reserves
@@ -908,7 +909,9 @@ class DedustClient:
                 jaddr = jetton.get("address", "")
                 jsymbol = (jetton.get("symbol", "") or "").upper()
                 if self._same_addr(jaddr, Config.TOKEN_ADDRESS) or jsymbol == "USDT":
-                    usdt_reserve = float(b.get("balance", 0)) / TON
+                    usdt_reserve = float(b.get("balance", 0)) / (
+                        10**Config.USDT_DECIMALS
+                    )
                     break
             if ton_reserve > 0 and usdt_reserve and usdt_reserve > 0:
                 reserves = (ton_reserve, usdt_reserve)
@@ -990,19 +993,18 @@ class DedustClient:
         min_ton = expected_ton * (1 - Config.SLIPPAGE_PCT / 100.0)
         return int(min_ton * TON), expected_ton
 
-    # ─────────────── построение тела свопа (op 0xa5a7cbf8) ──────────────────
+    # ─────────────── построение тела свопа ───────────────────────────────────
     # Пул USDT/TON — нестандартный CPMM-v2: своп исполняется сообщением
-    # op 0xa5a7cbf8, отправленным НАПРЯМУЮ в пул (покупка — нативный TON прямо
-    # в пул, без native-vault; продажа — jetton-transfer USDT в пул с
-    # forward-payload свопа). Канонический dedust-SDK 1.1.4 шлёт легаси-op
-    # 0x61ee542d через vault, который ЭТОТ контракт не понимает → exit 65535
-    # (bounce). Формат тела выведён обратной разработкой реальных успешных
+    # op 0xa5a7cbf8 для forward-payload продажи; покупка отправляется через
+    # Native Vault, а продажа — jetton-transfer USDT в пул с
+    # forward-payload свопа). Прямой вызов пула для покупки здесь приводит к
+    # exit 65535 (bounce), поэтому для покупки используется SDK Native Vault.
+    # Формат sell-тела выведен обратной разработкой реальных успешных
     # сделок и проверен ПОБАЙТОВО: реконструкция оригинальных тел из этих же
     # билдеров совпадает бит-в-бит. Константы ниже подтверждены тем же путём.
     _SWAP_OP = 0xA5A7CBF8  # своп (root для покупки / forward для продажи)
     _LIMITS_PREFIX = 0xC442500F  # ref0: префикс ячейки лимитов
     _PARAMS_C2 = 0x400  # ref1: константа-разделитель перед hash получателя
-    _BUY_PARAMS_C1 = 0x800  # ref1: маркер направления — покупка
     _SELL_PARAMS_C1 = 0x801  # ref1: маркер направления — продажа
     _SELL_FP_PREFIX = 0xCBC33949  # forward-payload продажи: префикс
     _JETTON_XFER_OP = 0x0F8A7EA5  # стандартный jetton transfer
@@ -1040,20 +1042,6 @@ class DedustClient:
             .end_cell()
         )
 
-    def _build_buy_body(
-        self, recipient, amount_nano: int, min_out_nano: int, deadline: int
-    ):
-        """Тело покупки: op 0xa5a7cbf8 — отправляется НАПРЯМУЮ в пул с нативным TON."""
-        return (
-            begin_cell()
-            .store_uint(self._SWAP_OP, 32)
-            .store_uint(secrets.randbits(64), 64)
-            .store_coins(amount_nano)
-            .store_ref(self._build_limits_cell(min_out_nano, deadline))
-            .store_ref(self._build_params_cell(recipient, self._BUY_PARAMS_C1))
-            .end_cell()
-        )
-
     def _build_sell_transfer_body(
         self,
         recipient,
@@ -1088,7 +1076,7 @@ class DedustClient:
     # ─────────────────────────── swap: buy ─────────────────────────────────
 
     async def _buy_async(self, ton_amount: float) -> dict:
-        """TON → USDT: отправляем нативный TON НАПРЯМУЮ в пул с payload свопа."""
+        """TON → USDT: отправляем swap-payload в DeDust Native Vault."""
         # Защита от проскальзывания: считаем min-out ДО отправки средств.
         min_out_nano, expected_usdt = self._min_out_buy_usdt(ton_amount)
         if min_out_nano is None:
@@ -1105,13 +1093,13 @@ class DedustClient:
         wallet, provider = await self._wallet_and_provider()
         try:
             pool, ton_asset, _ = await self._get_pool(provider)
+            native_vault = await Factory.get_native_vault(provider)
 
             amount_nano = int(ton_amount * TON)
-            # Покупка шлёт нативный TON НАПРЯМУЮ в пул (op 0xa5a7cbf8); пул
-            # берёт газ на выдачу USDT (с деплоем jetton-кошелька покупателя
-            # при необходимости) и возвращает излишек. Реальные сделки
-            # укладываются в ~0.2 TON; берём 0.3 TON с запасом.
-            gas_nano = int(0.3 * TON)
+            # Native Vault принимает swap-payload и сам маршрутизирует TON в пул.
+            # Для этого пула рабочая on-chain транзакция прикладывала 0.25 TON
+            # сверх суммы swap (0.45 TON total для покупки 0.2 TON).
+            gas_nano = max(int(Config.BUY_GAS_TON * TON), int(0.25 * TON))
 
             # ── Preflight: деплой кошелька если uninit ───────────────────────
             # WalletV5R1 может быть uninit если на адрес уже пришли TON,
@@ -1150,20 +1138,19 @@ class DedustClient:
                     "have_ton": round(ton_nano / TON, 3),
                 }
 
-            deadline = int(time.time()) + 300
-            body = self._build_buy_body(
-                recipient=wallet.address,
-                amount_nano=amount_nano,
-                min_out_nano=min_out_nano,
-                deadline=deadline,
+            deadline = int(time.time()) + 600
+            body = VaultNative.create_swap_payload(
+                amount=amount_nano,
+                pool_address=pool.address,
+                limit=min_out_nano,
+                swap_params=SwapParams(deadline=deadline),
             )
 
             # Базовый USDT-баланс ДО свопа — для проверки реального исполнения.
             baseline_nano = await self._usdt_balance_nano(provider, wallet.address)
 
-            # Своп шлётся НАПРЯМУЮ в пул (не через native-vault SDK).
             await wallet.transfer(
-                destination=pool.address,
+                destination=native_vault.address,
                 amount=amount_nano + gas_nano,
                 body=body,
             )
