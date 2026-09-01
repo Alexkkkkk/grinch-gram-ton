@@ -192,6 +192,15 @@ class GridTrader:
                 return self._trader.get_balances()
             if self._dc and hasattr(self._dc, "get_balances"):
                 return self._dc.get_balances()
+            # DedustClient exposes the read-only wallet query as get_balance
+            # (singular). Normalize it to the tuple expected by the grid.
+            if self._dc and hasattr(self._dc, "get_balance"):
+                balances = self._dc.get_balance()
+                if isinstance(balances, dict):
+                    ton = float(balances.get("TON", 0) or 0)
+                    token_key = getattr(Config, "TOKEN_SYMBOL", "USDT")
+                    token = balances.get(token_key, balances.get("USDT", 0))
+                    return ton, float(token or 0)
         except Exception as e:
             log.debug("[Grid] balance error: %s", e)
         return None, None
@@ -277,6 +286,19 @@ class GridTrader:
                 self._price_history = self._price_history[-100:]
 
             self._update_ai(price_ton)
+
+            # A persisted grid can predate wallet initialization and contain
+            # zero sell inventory. Rebuild it once live token inventory is
+            # available, otherwise the UI shows sell levels that can never fill.
+            if (
+                self._state.active
+                and self._state.sell_levels
+                and not any(level.amount_token > 0 for level in self._state.sell_levels)
+            ):
+                _, token_bal = self._get_balances()
+                if token_bal is not None and float(token_bal) > 0:
+                    self._maybe_build_grid(price_ton)
+                    return
 
             if not self._state.active or not self._state.sell_levels:
                 self._maybe_build_grid(price_ton)
@@ -374,8 +396,21 @@ class GridTrader:
             return
         atr_pct = self._calc_atr_pct()
         step = self._adaptive_step(atr_pct)
+        # GRID_INVESTMENT is the working TON budget; build_grid adds the
+        # configured gas reserve back when splitting buy levels.
+        try:
+            configured_investment = float(getattr(Config, "GRID_INVESTMENT", 0) or 0)
+        except (TypeError, ValueError):
+            configured_investment = 0.0
+        gas_reserve = float(GridCfg.gas_reserve_ton or 0.0)
+        ton_for_grid = float(ton_bal)
+        if configured_investment > 0:
+            ton_for_grid = min(ton_for_grid, configured_investment + gas_reserve)
         self.build_grid(
-            center_price, step_pct=step, token_balance=token_bal, ton_balance=ton_bal
+            center_price,
+            step_pct=step,
+            token_balance=token_bal,
+            ton_balance=ton_for_grid,
         )
 
     @staticmethod
@@ -392,6 +427,14 @@ class GridTrader:
 
     @staticmethod
     def _min_profitable_order_ton(step_pct):
+        try:
+            configured_min = max(0.0, float(os.getenv("GRID_MIN_ORDER_TON", "15")))
+        except (TypeError, ValueError):
+            configured_min = 15.0
+        # Explicit opt-in is required because small orders can lose more on
+        # gas than they gain from a grid step.
+        if os.getenv("GRID_ALLOW_UNPROFITABLE_ORDERS", "0") == "1":
+            return configured_min
         fee = Config.FEES.pct / 100.0
         step = float(step_pct) if step_pct else GridCfg.step_pct
         step = max(step, 0.0)
@@ -399,7 +442,7 @@ class GridTrader:
         if cycle_factor <= 0:
             return float("inf")
         gas_min = (0.30 * 2.0) / cycle_factor
-        return max(15.0, math.ceil(gas_min * 10.0) / 10.0)
+        return max(configured_min, math.ceil(gas_min * 10.0) / 10.0)
 
     def build_grid(
         self,
@@ -470,7 +513,7 @@ class GridTrader:
 
             for i in range(1, n_buy + 1):
                 price = center_price / buy_factor**i
-                amount_ton = ton_per_buy if ton_per_buy >= min_order else 0
+                amount_ton = ton_per_buy if ton_per_buy + 1e-9 >= min_order else 0
                 s.buy_levels.append(
                     GridLevel(
                         id=-i,
@@ -481,6 +524,10 @@ class GridTrader:
                     )
                 )
 
+            s.last_action = (
+                f"GRID_BUILT: {n_sell + n_buy} levels; "
+                f"buy {ton_per_buy:.2f} TON each; sell {grin_per_sell:.2f} token each"
+            )
             self._state = s
             self._save_state()
             log.info(
