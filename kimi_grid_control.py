@@ -115,10 +115,18 @@ class KimiGridControl:
                 return fallback
 
         sell_levels = max(
-            1, min(self.max_total_levels - 1, int_value("sell_levels", defaults["sell_levels"]))
+            1,
+            min(
+                self.max_total_levels - 1,
+                int_value("sell_levels", defaults["sell_levels"]),
+            ),
         )
         buy_levels = max(
-            0, min(self.max_total_levels - sell_levels, int_value("buy_levels", defaults["buy_levels"]))
+            0,
+            min(
+                self.max_total_levels - sell_levels,
+                int_value("buy_levels", defaults["buy_levels"]),
+            ),
         )
         investment = raw.get("investment_ton", defaults.get("investment_ton"))
         if investment is not None:
@@ -181,12 +189,21 @@ class KimiGridControl:
                 response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content
-            decision = self._validate(content and self._parse_content(content), fallback_step, defaults, wallet)
+            decision = self._validate(
+                content and self._parse_content(content),
+                fallback_step,
+                defaults,
+                wallet,
+            )
         except Exception as exc:
             raw_error = str(exc).lower()
             if "insufficient balance" in raw_error or "insufficient funds" in raw_error:
                 safe_error = "account balance is insufficient"
-            elif "401" in raw_error or "403" in raw_error or "authentication" in raw_error:
+            elif (
+                "401" in raw_error
+                or "403" in raw_error
+                or "authentication" in raw_error
+            ):
                 safe_error = "authentication or permission error"
             elif "429" in raw_error or "rate limit" in raw_error:
                 safe_error = "rate limit reached"
