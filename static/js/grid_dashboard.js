@@ -881,7 +881,19 @@ function escapeAiHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
+function ensureKimiPanel() {
+    const buttons = document.querySelector('.ai-buttons');
+    if (buttons && !document.getElementById('kimi-apply-btn')) {
+        buttons.insertAdjacentHTML('beforeend', '<button class="ai-btn ai-kimi-apply" id="kimi-apply-btn" onclick="applyKimiGrid()" disabled>✨ Применить план Kimi</button>');
+    }
+    const status = document.querySelector('.ai-status-row');
+    if (status && !document.getElementById('kimi-status')) {
+        status.insertAdjacentHTML('beforeend', '<div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">Kimi:</span><span class="ai-status-value" id="kimi-status">Ожидание данных</span></div><div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">Баланс TON:</span><span class="ai-status-value" id="kimi-wallet-ton">—</span></div><div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">План сетки:</span><span class="ai-status-value" id="kimi-plan">—</span></div>');
+    }
+}
+
 function updateAiDisplay(r) {
+    ensureKimiPanel();
     const panel = document.getElementById('ai-recommendation');
     if (!panel) return;
 
@@ -939,6 +951,7 @@ function updateAiDisplay(r) {
 }
 
 function updateAiStatus(data) {
+    ensureKimiPanel();
     const aiSignal = document.getElementById('ai-signal');
     if (aiSignal) aiSignal.textContent = data.ai_signal || '—';
 
