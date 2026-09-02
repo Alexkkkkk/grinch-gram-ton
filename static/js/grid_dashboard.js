@@ -1,3 +1,57 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+// Performance Utilities — Debounce, Prefetch, IntersectionObserver
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Debounce — limit function calls (e.g. for input events)
+function debounce(fn, ms = 300) {
+    let timer;
+    return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), ms);
+    };
+}
+
+// Prefetch API endpoint on hover (faster click response)
+function prefetchOnHover(element, url) {
+    if (!element || !url) return;
+    let prefetched = false;
+    element.addEventListener('mouseenter', () => {
+        if (prefetched) return;
+        prefetched = true;
+        const link = document.createElement('link');
+        link.rel = 'prefetch';
+        link.href = url;
+        document.head.appendChild(link);
+    }, { once: true });
+}
+
+// Intersection Observer — lazy load charts only when visible
+function lazyLoadChart(chartElement, initFn) {
+    if (!chartElement || !initFn) return;
+    if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    initFn();
+                    observer.disconnect();
+                }
+            });
+        }, { rootMargin: '100px' });
+        observer.observe(chartElement);
+    } else {
+        initFn(); // Fallback
+    }
+}
+
+// Request Idle Callback — run non-critical tasks when browser is idle
+function idle(fn, timeout = 2000) {
+    if ('requestIdleCallback' in window) {
+        requestIdleCallback(fn, { timeout });
+    } else {
+        setTimeout(fn, 1);
+    }
+}
+
 const socket = io();
 let mainChart;
 let priceData = [], pnlData = [], labels = [];
