@@ -270,7 +270,10 @@ class GridTrader:
         except (TypeError, ValueError):
             self._ai_recommended_step = 0.0
         configured_step = float(GridCfg.step_pct or 0.0)
-        if configured_step > 0:
+        # In adaptive mode, keep the AI/market step recommendation. A fixed
+        # GRID_STEP_PCT remains an explicit operator override when adaptive
+        # stepping is disabled.
+        if configured_step > 0 and not GridCfg.adaptive_step:
             self._ai_recommended_step = configured_step
         try:
             self._ai_recommended_investment_ton = (
@@ -559,15 +562,18 @@ class GridTrader:
 
     @staticmethod
     def _adaptive_step(atr_pct):
+        """Choose an aggressive but fee-aware spacing from market volatility."""
         if not GridCfg.adaptive_step:
             return GridCfg.step_pct
+        min_step = max(float(GridCfg.min_step_pct or 0.9), 0.9)
+        max_step = max(min_step, float(GridCfg.max_step_pct or 2.5))
         if atr_pct >= 8.0:
-            return min(GridCfg.max_step_pct or 8.0, 7.0)
-        elif atr_pct >= 5.0:
-            return min(GridCfg.max_step_pct or 8.0, 5.0)
-        elif atr_pct >= 3.0:
-            return 4.0
-        return max(GridCfg.min_step_pct or 3.0, 3.0)
+            return min(max_step, 2.5)
+        if atr_pct >= 5.0:
+            return min(max_step, 2.2)
+        if atr_pct >= 3.0:
+            return min(max_step, 2.0)
+        return min(max_step, max(min_step, 1.8))
 
     @staticmethod
     @staticmethod
@@ -892,14 +898,27 @@ class GridTrader:
                         level.filled_at = time.time()
                         level.fill_price_ton = price_ton
                         level.amount_token = round(received_usdt, 6)
-                        level.profit_ton = 0.0
+                        # Initial TON inventory conversion is not a profit.
+                        # A resell_after_buy is a completed compounded cycle;
+                        # mark its realised USDT result back into TON value and
+                        # include both swap legs plus network gas.
+                        if level.note.startswith("resell_after_buy:") and level.entry_cost_ton > 0:
+                            level.profit_ton = round(
+                                received_usdt / max(price_ton, 1e-9)
+                                - level.entry_cost_ton
+                                - self._gas_per_tx(),
+                                6,
+                            )
+                            self._state.total_profit_ton += level.profit_ton
+                        else:
+                            level.profit_ton = 0.0
                         level.tx_hash = result.get("tx_hash", "")
                         self._state.total_sell_cycles += 1
                         return {
                             "ok": True,
                             "received": received_usdt,
                             "received_usdt": received_usdt,
-                            "profit_ton": 0.0,
+                            "profit_ton": level.profit_ton,
                         }
                 return {"ok": False, "error": "no_dedust_client"}
 
@@ -996,6 +1015,14 @@ class GridTrader:
             log.error("[Grid] buy error: %s", e)
             return {"ok": False, "error": str(e)}
 
+    @staticmethod
+    def _reinvest_ratio():
+        try:
+            pct = float(os.getenv("GRID_REINVEST_PROFIT_PCT", "100"))
+        except (TypeError, ValueError):
+            pct = 100.0
+        return min(1.0, max(0.0, pct / 100.0))
+
     def _place_rebuy(self, level):
         """Create a BUY one grid step below a filled SELL."""
         step_factor = 1.0 + (self._state.step_pct or GridCfg.step_pct) / 100.0
@@ -1015,7 +1042,9 @@ class GridTrader:
         if sell_as_ton:
             # The exact USDT received by SELL is the only funding source for
             # the paired BUY. Do not reserve or invent an upfront balance.
-            usdt_amount = float(level.amount_token or 0)
+            received_usdt = float(level.amount_token or 0)
+            reinvest_ratio = self._reinvest_ratio()
+            usdt_amount = round(received_usdt * reinvest_ratio, 6)
             estimated_ton = usdt_amount / target_price if target_price > 0 else 0.0
             min_order = self._min_profitable_order_ton(self._state.step_pct)
             if usdt_amount <= 0 or (
@@ -1039,7 +1068,10 @@ class GridTrader:
                     price_ton=target_price,
                     amount_token=round(usdt_amount, 6),
                     amount_ton=round(estimated_ton, 6),
-                    note=f"rebuy_after_sell:{level.id}; funded_by_usdt",
+                    note=(
+                        f"rebuy_after_sell:{level.id}; funded_by_usdt; "
+                        f"reinvest={reinvest_ratio:.0%}"
+                    ),
                 )
             )
             self._state.lower_price = min(
