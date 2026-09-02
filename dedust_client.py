@@ -1114,7 +1114,9 @@ class DedustClient:
             # Native Vault принимает swap-payload и сам маршрутизирует TON в пул.
             # Для этого пула рабочая on-chain транзакция прикладывала 0.25 TON
             # сверх суммы swap (0.45 TON total для покупки 0.2 TON).
-            gas_nano = max(int(Config.BUY_GAS_TON * TON), int(self._BUY_MIN_GAS_TON * TON))
+            gas_nano = max(
+                int(Config.BUY_GAS_TON * TON), int(self._BUY_MIN_GAS_TON * TON)
+            )
 
             # ── Preflight: деплой кошелька если uninit ───────────────────────
             # WalletV5R1 может быть uninit если на адрес уже пришли TON,
