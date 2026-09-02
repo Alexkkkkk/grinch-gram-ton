@@ -596,6 +596,7 @@ class GridTrader:
                 n_buy = affordable_buy
 
             buy_factor, actual_step_pct = factors_for_buy(n_buy)
+            min_order = self._min_profitable_order_ton(actual_step_pct)
 
             s = GridState()
             s.active = bool(active)
