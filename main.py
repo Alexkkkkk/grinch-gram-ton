@@ -96,7 +96,12 @@ def _graceful_shutdown(signum, frame):
     grid_trader.stop()
     brain.stop()
     if socketio:
-        socketio.stop()
+        try:
+            socketio.stop()
+        except RuntimeError:
+            # Gunicorn may invoke the signal handler outside an HTTP request;
+            # Flask-SocketIO cannot stop its Werkzeug server in that context.
+            logger.debug("SocketIO stop skipped outside request context")
     sys.exit(0)
 
 
