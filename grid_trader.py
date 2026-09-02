@@ -314,7 +314,9 @@ class GridTrader:
 
         if action == "REBUILD" and self._state.active:
             if os.getenv("GROQ_AUTO_REBUILD_ENABLED", "1").strip() != "1":
-                log.info("[Groq] REBUILD ignored: auto rebuild disabled by configuration")
+                log.info(
+                    "[Groq] REBUILD ignored: auto rebuild disabled by configuration"
+                )
                 return
             # Never discard a pending paired rebuy or a filled level. Groq must
             # wait for the current cycle to settle before replacing the grid.
@@ -602,9 +604,7 @@ class GridTrader:
             step = max(
                 GridCfg.min_step_pct or 3.0, min(GridCfg.max_step_pct or 8.0, step)
             )
-            n_sell = (
-                sell_levels if sell_levels is not None else GridCfg.sell_levels
-            )
+            n_sell = sell_levels if sell_levels is not None else GridCfg.sell_levels
             n_buy = buy_levels if buy_levels is not None else GridCfg.buy_levels
 
             # Reserve gas before sizing orders. When explicit bounds are used,
@@ -617,12 +617,20 @@ class GridTrader:
 
             default_factor = 1 + step / 100
             sell_factor = default_factor
-            if upper_price is not None and float(upper_price) > center_price and n_sell > 0:
+            if (
+                upper_price is not None
+                and float(upper_price) > center_price
+                and n_sell > 0
+            ):
                 sell_factor = (float(upper_price) / center_price) ** (1 / n_sell)
 
             def factors_for_buy(count):
                 buy_factor = default_factor
-                if lower_price is not None and 0 < float(lower_price) < center_price and count > 0:
+                if (
+                    lower_price is not None
+                    and 0 < float(lower_price) < center_price
+                    and count > 0
+                ):
                     buy_factor = (center_price / float(lower_price)) ** (1 / count)
                 actual_step_pct = max(
                     (sell_factor - 1) * 100,
@@ -637,7 +645,9 @@ class GridTrader:
                 affordable_buy = 0
                 for candidate in range(requested_buy, 0, -1):
                     candidate_buy_factor, actual_step_pct = factors_for_buy(candidate)
-                    candidate_min_order = self._min_profitable_order_ton(actual_step_pct)
+                    candidate_min_order = self._min_profitable_order_ton(
+                        actual_step_pct
+                    )
                     candidate_order_ton = avail_ton / candidate
                     if candidate_order_ton + 1e-9 >= candidate_min_order:
                         affordable_buy = candidate
@@ -807,7 +817,8 @@ class GridTrader:
                     result = self._dc.buy(ton_amount)
                     if result.get("ok"):
                         received_usdt = float(
-                            result.get("usdt_received", result.get("received_usdt", 0)) or 0
+                            result.get("usdt_received", result.get("received_usdt", 0))
+                            or 0
                         )
                         if received_usdt <= 0:
                             return {"ok": False, "error": "missing_received_usdt"}
@@ -952,7 +963,9 @@ class GridTrader:
                     min_order,
                 )
                 return
-            next_id = -(max([abs(item.id) for item in self._state.buy_levels] or [0]) + 1)
+            next_id = -(
+                max([abs(item.id) for item in self._state.buy_levels] or [0]) + 1
+            )
             self._state.buy_levels.append(
                 GridLevel(
                     id=next_id,
