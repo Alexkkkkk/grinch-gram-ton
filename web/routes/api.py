@@ -419,10 +419,15 @@ def api_grid_build():
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
+    try:
+        _, token_balance = _grid_trader._get_balances()
+    except Exception:
+        token_balance = 0.0
     state = _grid_trader.build_grid(
         center_price=price,
         sell_levels=settings["sell_levels"],
         buy_levels=settings["buy_levels"],
+        token_balance=token_balance if token_balance is not None else 0.0,
         ton_balance=settings["investment_ton"],
         upper_price=settings["upper_price"],
         lower_price=settings["lower_price"],
