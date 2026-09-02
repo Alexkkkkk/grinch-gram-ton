@@ -416,7 +416,12 @@ class QuantumBrain:
             except Exception:
                 wallet = {"available": False, "ton": None, "token": None}
 
-        current_grid = {"active": False, "step_pct": 0.0, "sell_levels": 0, "buy_levels": 0}
+        current_grid = {
+            "active": False,
+            "step_pct": 0.0,
+            "sell_levels": 0,
+            "buy_levels": 0,
+        }
         if self._grid_trader:
             try:
                 grid_state = self._grid_trader.get_state_dict()
@@ -471,8 +476,13 @@ class QuantumBrain:
             self.state.kimi_signal = decision.get("signal", "HOLD")
             self.state.kimi_confidence = float(decision.get("confidence", 0.0) or 0.0)
             self.state.kimi_action = decision.get("action", "WAIT")
-            self.state.kimi_step_pct = float(decision.get("step_pct", self.state.optimal_step) or self.state.optimal_step)
-            self.state.kimi_investment_ton = float(decision.get("investment_ton", 0.0) or 0.0)
+            self.state.kimi_step_pct = float(
+                decision.get("step_pct", self.state.optimal_step)
+                or self.state.optimal_step
+            )
+            self.state.kimi_investment_ton = float(
+                decision.get("investment_ton", 0.0) or 0.0
+            )
             self.state.kimi_sell_levels = int(decision.get("sell_levels", 20) or 20)
             self.state.kimi_buy_levels = int(decision.get("buy_levels", 20) or 20)
             self.state.kimi_reason = decision.get("reason", "")

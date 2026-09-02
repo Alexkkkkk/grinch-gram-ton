@@ -1,4 +1,3 @@
-import os
 
 from grid_trader import GridTrader
 
@@ -41,6 +40,7 @@ def test_buy_creates_adjacent_sell_and_sell_uses_expected_ton():
     fake_dedust = FakeDeDust()
     trader.inject(dedust_client=fake_dedust)
     from grid_trader import GridLevel
+
     buy = GridLevel(id=-1, side="buy", price_ton=1.288462, amount_ton=0.2)
     assert trader._execute_buy(buy, buy.price_ton)["ok"]
     trader._state.buy_levels.append(buy)
