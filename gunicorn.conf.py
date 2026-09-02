@@ -23,7 +23,8 @@ capture_output = True
 enable_stdio_inheritance = True
 
 # Performance
-preload_app = True
+# Background pollers must share state with the HTTP worker.
+preload_app = False
 max_requests = 500
 max_requests_jitter = 50
 
