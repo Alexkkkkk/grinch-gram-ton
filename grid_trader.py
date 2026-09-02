@@ -449,6 +449,13 @@ class GridTrader:
                                 )
                             except Exception:
                                 pass
+                    else:
+                        log.warning(
+                            "[Grid] SELL skipped: level=%s price=%.6f error=%s",
+                            level.id,
+                            level.price_ton,
+                            res.get("error", "unknown"),
+                        )
                     self._save_state()
                     return
 
@@ -479,6 +486,13 @@ class GridTrader:
                                 )
                             except Exception:
                                 pass
+                    else:
+                        log.warning(
+                            "[Grid] BUY skipped: level=%s price=%.6f error=%s",
+                            level.id,
+                            level.price_ton,
+                            res.get("error", "unknown"),
+                        )
                     self._save_state()
                     return
 
@@ -606,6 +620,12 @@ class GridTrader:
             )
             n_sell = sell_levels if sell_levels is not None else GridCfg.sell_levels
             n_buy = buy_levels if buy_levels is not None else GridCfg.buy_levels
+            sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+            # TON-first mode is intentionally sell-first: BUY levels are funded
+            # only by USDT received from a completed SELL. Never display or
+            # evaluate unfunded initial BUY levels.
+            if sell_as_ton:
+                n_buy = 0
 
             # Reserve gas before sizing orders. When explicit bounds are used,
             # profitability must be calculated from the actual per-level price
@@ -614,6 +634,12 @@ class GridTrader:
             avail_ton = max(0.0, float(ton_balance or 0.0) - gas_reserve)
             n_sell = max(0, int(n_sell or 0))
             n_buy = max(0, int(n_buy or 0))
+            try:
+                fixed_sell_ton = max(
+                    0.0, float(os.getenv("GRID_SELL_AMOUNT_TON", "0") or 0)
+                )
+            except (TypeError, ValueError):
+                fixed_sell_ton = 0.0
 
             default_factor = 1 + step / 100
             sell_factor = default_factor
@@ -665,6 +691,53 @@ class GridTrader:
             buy_factor, actual_step_pct = factors_for_buy(n_buy)
             min_order = self._min_profitable_order_ton(actual_step_pct)
 
+            # In TON-first mode each initial SELL must be large enough for the
+            # later SELL->BUY round trip to cover swap fees and two gas charges.
+            # Older builds allowed 19 x 0.935 TON orders at a 0.9% step, while
+            # the real break-even size is about 2.02 TON; every rebuy was then
+            # rejected. Reduce the level count and use the available budget so
+            # the generated grid can actually complete cycles.
+            effective_sell_amount_ton = 0.0
+            if sell_as_ton and n_sell > 0:
+                if not self._allow_unprofitable_orders():
+                    affordable_sell = int(avail_ton / min_order) if min_order > 0 else 0
+                    if affordable_sell < n_sell:
+                        log.warning(
+                            "[Grid] Reducing SELL levels from %d to %d: "
+                            "%.4f TON per level is below the actual break-even size %.4f TON",
+                            n_sell,
+                            affordable_sell,
+                            (avail_ton / n_sell) if n_sell else 0.0,
+                            min_order,
+                        )
+                        n_sell = max(0, affordable_sell)
+                        if (
+                            upper_price is not None
+                            and float(upper_price) > center_price
+                            and n_sell > 0
+                        ):
+                            sell_factor = (float(upper_price) / center_price) ** (1 / n_sell)
+                        buy_factor, actual_step_pct = factors_for_buy(n_buy)
+                        min_order = self._min_profitable_order_ton(actual_step_pct)
+
+                if n_sell > 0:
+                    per_level_budget = avail_ton / n_sell
+                    requested = fixed_sell_ton or per_level_budget
+                    if self._allow_unprofitable_orders():
+                        effective_sell_amount_ton = min(requested, per_level_budget)
+                    else:
+                        effective_sell_amount_ton = min(
+                            max(requested, min_order), per_level_budget
+                        )
+
+                if n_sell == 0 or effective_sell_amount_ton <= 0:
+                    log.error(
+                        "[Grid] No affordable profitable SELL levels: available=%.4f TON minimum=%.4f TON",
+                        avail_ton,
+                        min_order,
+                    )
+                    active = False
+
             s = GridState()
             s.active = bool(active)
             s.center_price = center_price
@@ -681,20 +754,12 @@ class GridTrader:
                 (buy_factor - 1) * 100,
             )
 
-            sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
-            try:
-                fixed_sell_ton = max(
-                    0.0, float(os.getenv("GRID_SELL_AMOUNT_TON", "0") or 0)
-                )
-            except (TypeError, ValueError):
-                fixed_sell_ton = 0.0
-
             # In TON/USDT mode, initial SELL levels are fixed TON amounts.
             # There are no initial BUY levels: each BUY is created only from
             # the USDT actually received by its paired SELL.
             avail_token = 0.0 if sell_as_ton else max(0.0, float(token_balance or 0.0))
             grin_per_sell = avail_token / n_sell if n_sell > 0 else 0
-            sell_amount_ton = fixed_sell_ton if sell_as_ton else 0.0
+            sell_amount_ton = effective_sell_amount_ton if sell_as_ton else 0.0
 
             for i in range(1, n_sell + 1):
                 price = center_price * sell_factor**i
@@ -711,18 +776,19 @@ class GridTrader:
 
             ton_per_buy = avail_ton / n_buy if n_buy > 0 else 0
 
-            for i in range(1, n_buy + 1):
-                price = center_price / buy_factor**i
-                amount_ton = ton_per_buy if ton_per_buy + 1e-9 >= min_order else 0
-                s.buy_levels.append(
-                    GridLevel(
-                        id=-i,
-                        side="buy",
-                        price_ton=round(price, 6),
-                        amount_token=0,
-                        amount_ton=round(amount_ton, 2),
+            if not sell_as_ton:
+                for i in range(1, n_buy + 1):
+                    price = center_price / buy_factor**i
+                    amount_ton = ton_per_buy if ton_per_buy + 1e-9 >= min_order else 0
+                    s.buy_levels.append(
+                        GridLevel(
+                            id=-i,
+                            side="buy",
+                            price_ton=round(price, 6),
+                            amount_token=0,
+                            amount_ton=round(amount_ton, 2),
+                        )
                     )
-                )
 
             if sell_as_ton:
                 s.last_action = (
@@ -976,6 +1042,9 @@ class GridTrader:
                     note=f"rebuy_after_sell:{level.id}; funded_by_usdt",
                 )
             )
+            self._state.lower_price = min(
+                item.price_ton for item in self._state.buy_levels
+            )
             return
 
         amount_ton = level.amount_ton
@@ -1049,6 +1118,9 @@ class GridTrader:
                 note=f"resell_after_buy:{level.id}",
             )
         )
+        self._state.upper_price = max(
+            item.price_ton for item in self._state.sell_levels
+        )
 
     def _record_trade(self, side, level, price):
         trade = {
@@ -1074,28 +1146,69 @@ class GridTrader:
             return self._state.to_dict()
 
     def _save_state(self):
+        tmp_path = STATE_FILE + ".tmp"
         try:
             os.makedirs(DATA_DIR, exist_ok=True)
-            with open(STATE_FILE, "w") as f:
-                json.dump(self._state.to_dict(), f)
+            payload = self._state.to_dict()
+            with open(tmp_path, "w") as f:
+                json.dump(payload, f, separators=(",", ":"))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, STATE_FILE)
         except Exception as e:
             log.warning("[Grid] save state error: %s", e)
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    def _sanitize_loaded_state(self):
+        # Older TON-first builds incorrectly persisted unfunded BUY levels.
+        # They can never execute because no USDT exists before the first SELL.
+        if os.getenv("GRID_SELL_AS_TON", "0").strip() != "1":
+            return
+        valid_buys = [
+            level
+            for level in self._state.buy_levels
+            if level.status != "waiting" or level.amount_token > 0
+        ]
+        removed = len(self._state.buy_levels) - len(valid_buys)
+        if not removed:
+            return
+        self._state.buy_levels = valid_buys
+        self._state.lower_price = min(
+            (level.price_ton for level in valid_buys),
+            default=self._state.center_price,
+        )
+        log.warning("[Grid] removed %d unfunded BUY levels from legacy state", removed)
+        self._save_state()
 
     def _load_state(self):
         try:
             if os.path.exists(STATE_FILE):
                 with open(STATE_FILE, "r") as f:
                     self._state = GridState.from_dict(json.load(f))
+                self._sanitize_loaded_state()
         except Exception as e:
             log.warning("[Grid] load state error: %s", e)
 
     def _save_trade_history(self):
+        tmp_path = TRADE_HISTORY_FILE + ".tmp"
         try:
             os.makedirs(DATA_DIR, exist_ok=True)
-            with open(TRADE_HISTORY_FILE, "w") as f:
-                json.dump(self._trade_history, f)
+            with open(tmp_path, "w") as f:
+                json.dump(self._trade_history, f, separators=(",", ":"))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, TRADE_HISTORY_FILE)
         except Exception as e:
             log.warning("[Grid] save history error: %s", e)
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _load_trade_history(self):
         try:
