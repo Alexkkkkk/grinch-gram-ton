@@ -274,11 +274,19 @@ class GridTrader:
                 if kimi.get("ready") and kimi.get("investment_ton") is not None
                 else None
             )
-            self._ai_recommended_sell_levels = (
+            # None delegates to configured defaults; zero would erase all levels
+            # when Kimi is unavailable or returns an empty recommendation.
+            recommended_sell = (
                 int(kimi.get("sell_levels", 0) or 0) if kimi.get("ready") else 0
             )
-            self._ai_recommended_buy_levels = (
+            recommended_buy = (
                 int(kimi.get("buy_levels", 0) or 0) if kimi.get("ready") else 0
+            )
+            self._ai_recommended_sell_levels = (
+                recommended_sell if recommended_sell > 0 else None
+            )
+            self._ai_recommended_buy_levels = (
+                recommended_buy if recommended_buy > 0 else None
             )
         except (TypeError, ValueError):
             self._ai_recommended_investment_ton = None
