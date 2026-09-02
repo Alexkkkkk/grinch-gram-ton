@@ -692,17 +692,16 @@ class GridTrader:
             n_sell = sell_levels if sell_levels is not None else GridCfg.sell_levels
             n_buy = buy_levels if buy_levels is not None else GridCfg.buy_levels
             sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
-            # TON-first mode is intentionally sell-first: BUY levels are funded
-            # only by USDT received from a completed SELL. Never display or
-            # evaluate unfunded initial BUY levels.
-            if sell_as_ton:
-                n_buy = 0
+            # TON-first mode never invents BUY liquidity. Initial BUY levels
+            # are allowed only when real USDT is present in token_balance;
+            # later BUY levels are funded by completed SELLs.
 
             # Reserve gas before sizing orders. When explicit bounds are used,
             # profitability must be calculated from the actual per-level price
             # factors, not from the configured fallback step.
             gas_reserve = float(GridCfg.gas_reserve_ton or 0.0)
             avail_ton = max(0.0, float(ton_balance or 0.0) - gas_reserve)
+            avail_token = max(0.0, float(token_balance or 0.0))
             n_sell = max(0, int(n_sell or 0))
             n_buy = max(0, int(n_buy or 0))
             try:
@@ -736,7 +735,8 @@ class GridTrader:
                 return buy_factor, actual_step_pct
 
             # Select the largest affordable count whose actual price step can
-            # cover both swap fees and the estimated buy/sell gas.
+            # cover both swap fees and the estimated buy/sell gas. In TON-first
+            # mode the initial BUY budget is real USDT, not TON.
             if not self._allow_unprofitable_orders() and n_buy > 0:
                 requested_buy = n_buy
                 affordable_buy = 0
@@ -745,17 +745,22 @@ class GridTrader:
                     candidate_min_order = self._min_profitable_order_ton(
                         actual_step_pct
                     )
-                    candidate_order_ton = avail_ton / candidate
+                    if sell_as_ton:
+                        first_buy_price = center_price / candidate_buy_factor
+                        candidate_order_ton = (
+                            avail_token / candidate / max(first_buy_price, 1e-9)
+                        ) * (1.0 - Config.FEES.pct / 100.0)
+                    else:
+                        candidate_order_ton = avail_ton / candidate
                     if candidate_order_ton + 1e-9 >= candidate_min_order:
                         affordable_buy = candidate
                         break
                 if affordable_buy < requested_buy:
                     log.warning(
                         "[Grid] Reducing buy levels from %d to %d: "
-                        "%.4f TON per level is below the actual break-even size",
+                        "initial budget is below the actual break-even size",
                         requested_buy,
                         affordable_buy,
-                        (avail_ton / requested_buy) if requested_buy else 0.0,
                     )
                 n_buy = affordable_buy
 
@@ -839,9 +844,8 @@ class GridTrader:
             )
 
             # In TON/USDT mode, initial SELL levels are fixed TON amounts.
-            # There are no initial BUY levels: each BUY is created only from
-            # the USDT actually received by its paired SELL.
-            avail_token = 0.0 if sell_as_ton else max(0.0, float(token_balance or 0.0))
+            # Any initial BUY levels below are backed by the real USDT balance;
+            # subsequent BUYs are created from completed SELL proceeds.
             grin_per_sell = avail_token / n_sell if n_sell > 0 else 0
             sell_amount_ton = effective_sell_amount_ton if sell_as_ton else 0.0
 
@@ -860,7 +864,24 @@ class GridTrader:
 
             ton_per_buy = avail_ton / n_buy if n_buy > 0 else 0
 
-            if not sell_as_ton:
+            if sell_as_ton:
+                usdt_per_buy = avail_token / n_buy if n_buy > 0 else 0.0
+                for i in range(1, n_buy + 1):
+                    price = center_price / buy_factor**i
+                    estimated_ton = (
+                        usdt_per_buy / max(price, 1e-9)
+                    ) * (1.0 - Config.FEES.pct / 100.0)
+                    s.buy_levels.append(
+                        GridLevel(
+                            id=-i,
+                            side="buy",
+                            price_ton=round(price, 6),
+                            amount_token=round(usdt_per_buy, 6),
+                            amount_ton=round(estimated_ton, 6),
+                            note="initial_wallet_usdt",
+                        )
+                    )
+            else:
                 for i in range(1, n_buy + 1):
                     price = center_price / buy_factor**i
                     amount_ton = ton_per_buy if ton_per_buy + 1e-9 >= min_order else 0
@@ -876,9 +897,9 @@ class GridTrader:
 
             if sell_as_ton:
                 s.last_action = (
-                    f"GRID_BUILT: {n_sell} SELL levels; "
+                    f"GRID_BUILT: {n_sell} SELL + {n_buy} funded BUY levels; "
                     f"sell {sell_amount_ton:.4f} TON each; "
-                    "BUY funded only after SELL settles USDT"
+                    f"reinvest {self._reinvest_ratio():.0%} of SELL proceeds"
                 )
             else:
                 s.last_action = (
