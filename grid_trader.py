@@ -71,6 +71,13 @@ class GridState:
     last_tick: float = 0.0
     win_streak: int = 0
     loss_streak: int = 0
+    # Persistent strategy telemetry used by the self-tuning controller.
+    completed_cycles: int = 0
+    profitable_cycles: int = 0
+    losing_cycles: int = 0
+    learned_step_pct: float = 0.0
+    reinvest_ratio: float = 1.0
+    last_learning_at: float = 0.0
 
     def to_dict(self):
         d = asdict(self)
@@ -537,6 +544,12 @@ class GridTrader:
             return
         atr_pct = self._calc_atr_pct()
         step = self._ai_recommended_step or self._adaptive_step(atr_pct)
+        if (
+            not self._ai_recommended_step
+            and self._state.completed_cycles >= 3
+            and self._state.learned_step_pct > 0
+        ):
+            step = self._state.learned_step_pct
         # GRID_INVESTMENT is the working TON budget; build_grid adds the
         # configured gas reserve back when splitting buy levels.
         try:
@@ -562,18 +575,70 @@ class GridTrader:
 
     @staticmethod
     def _adaptive_step(atr_pct):
-        """Choose an aggressive but fee-aware spacing from market volatility."""
+        """Choose a super-aggressive, fee-aware spacing from volatility."""
         if not GridCfg.adaptive_step:
             return GridCfg.step_pct
-        min_step = max(float(GridCfg.min_step_pct or 0.9), 0.9)
-        max_step = max(min_step, float(GridCfg.max_step_pct or 2.5))
+        super_aggressive = os.getenv("GRID_SUPER_AGGRESSIVE", "0").strip() == "1"
+        configured_floor = max(float(GridCfg.min_step_pct or 1.2), 1.2)
+        configured_ceiling = max(
+            configured_floor, float(GridCfg.max_step_pct or (4.0 if super_aggressive else 2.5))
+        )
+        if super_aggressive:
+            floor = max(configured_floor, 2.0)
+            targets = (2.5, 3.0, 3.5, 4.0)
+        else:
+            floor = configured_floor
+            targets = (1.8, 2.0, 2.2, 2.5)
         if atr_pct >= 8.0:
-            return min(max_step, 2.5)
-        if atr_pct >= 5.0:
-            return min(max_step, 2.2)
-        if atr_pct >= 3.0:
-            return min(max_step, 2.0)
-        return min(max_step, max(min_step, 1.8))
+            target = targets[3]
+        elif atr_pct >= 5.0:
+            target = targets[2]
+        elif atr_pct >= 3.0:
+            target = targets[1]
+        else:
+            target = targets[0]
+        return min(configured_ceiling, max(floor, target))
+
+    def _learn_from_cycle(self, profit_ton):
+        """Persist cycle outcomes and tune the next grid without code changes."""
+        self._state.completed_cycles += 1
+        if profit_ton > 0:
+            self._state.profitable_cycles += 1
+            self._state.win_streak += 1
+            self._state.loss_streak = 0
+        else:
+            self._state.losing_cycles += 1
+            self._state.loss_streak += 1
+            self._state.win_streak = 0
+
+        current_step = float(self._state.step_pct or GridCfg.step_pct or 2.0)
+        min_step = max(float(GridCfg.min_step_pct or 1.2), 1.2)
+        max_step = max(min_step, float(GridCfg.max_step_pct or 4.0))
+        learned = current_step
+        reinvest = 1.0
+        if self._state.loss_streak >= 2:
+            # Give the next grid more room and de-risk compounding after
+            # repeated losses, while remaining aggressive.
+            learned = min(max_step, current_step * 1.15)
+            reinvest = 0.85
+        elif self._state.win_streak >= 3:
+            # Tighten slightly after a proven profitable run to harvest more
+            # cycles; keep the step above the configured fee-aware floor.
+            learned = max(min_step, current_step * 0.95)
+
+        self._state.learned_step_pct = round(learned, 6)
+        self._state.reinvest_ratio = reinvest
+        self._state.last_learning_at = time.time()
+        log.info(
+            "[Grid AI] Learned cycle=%d profit=%.6f TON wins=%d losses=%d "
+            "next_step=%.3f%% reinvest=%.0f%%",
+            self._state.completed_cycles,
+            profit_ton,
+            self._state.win_streak,
+            self._state.loss_streak,
+            self._state.learned_step_pct,
+            self._state.reinvest_ratio * 100,
+        )
 
     @staticmethod
     @staticmethod
@@ -744,10 +809,23 @@ class GridTrader:
                     )
                     active = False
 
+            previous = self._state
             s = GridState()
             s.active = bool(active)
             s.center_price = center_price
             s.last_rebuild = time.time()
+            # Keep learning telemetry across grid rebuilds so the strategy
+            # evolves from real outcomes instead of resetting every time.
+            s.total_profit_ton = previous.total_profit_ton
+            s.total_sell_cycles = previous.total_sell_cycles
+            s.completed_cycles = previous.completed_cycles
+            s.profitable_cycles = previous.profitable_cycles
+            s.losing_cycles = previous.losing_cycles
+            s.win_streak = previous.win_streak
+            s.loss_streak = previous.loss_streak
+            s.learned_step_pct = previous.learned_step_pct or step
+            s.reinvest_ratio = previous.reinvest_ratio or 1.0
+            s.last_learning_at = previous.last_learning_at
 
             s.upper_price = float(
                 (
@@ -910,6 +988,7 @@ class GridTrader:
                                 6,
                             )
                             self._state.total_profit_ton += level.profit_ton
+                            self._learn_from_cycle(level.profit_ton)
                         else:
                             level.profit_ton = 0.0
                         level.tx_hash = result.get("tx_hash", "")
@@ -1015,13 +1094,14 @@ class GridTrader:
             log.error("[Grid] buy error: %s", e)
             return {"ok": False, "error": str(e)}
 
-    @staticmethod
-    def _reinvest_ratio():
+    def _reinvest_ratio(self):
         try:
             pct = float(os.getenv("GRID_REINVEST_PROFIT_PCT", "100"))
         except (TypeError, ValueError):
             pct = 100.0
-        return min(1.0, max(0.0, pct / 100.0))
+        configured = min(1.0, max(0.0, pct / 100.0))
+        learned = min(1.0, max(0.0, float(self._state.reinvest_ratio or 1.0)))
+        return min(configured, learned)
 
     def _place_rebuy(self, level):
         """Create a BUY one grid step below a filled SELL."""
