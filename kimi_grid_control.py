@@ -108,7 +108,10 @@ class KimiGridControl:
             step = fallback_step
         min_step = max(0.1, _float_env("GRID_MIN_STEP_PCT", 0.9))
         max_step = max(min_step, _float_env("GRID_MAX_STEP_PCT", 8.0))
-        step = max(min_step, min(max_step, step))
+        if not _bool_env('GRID_ADAPTIVE_STEP', False):
+            step = _float_env('GRID_STEP_PCT', min_step)
+        else:
+            step = max(min_step, min(max_step, step))
 
         def int_value(name: str, fallback: int) -> int:
             try:
