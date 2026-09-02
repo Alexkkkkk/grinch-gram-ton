@@ -789,6 +789,9 @@ class GridAI:
         v5: P&L-симуляция 5 кандидатов + OOF мета-стекинг +
             используется предсказанный ATR (не только текущий).
         """
+        configured_step = _safe_float(os.getenv("GRID_STEP_PCT"), 0.0)
+        if configured_step > 0:
+            return configured_step
         if min_step is None:
             min_step = self.calibrated_min_step
 

@@ -11,6 +11,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import List
 
+from core.config import Config
 from kimi_grid_control import KimiGridControl
 
 log = logging.getLogger("quantum_brain")
@@ -40,7 +41,7 @@ class BrainState:
 
     regime: str = "SIDEWAYS"
     atr_pct: float = 3.5
-    optimal_step: float = 3.5
+    optimal_step: float = field(default_factory=lambda: float(Config.GRID.step_pct))
     risk_level: int = 0
     trap_detected: bool = False
     trap_confidence: float = 0.0
@@ -55,7 +56,7 @@ class BrainState:
     kimi_signal: str = "HOLD"
     kimi_confidence: float = 0.0
     kimi_action: str = "WAIT"
-    kimi_step_pct: float = 3.5
+    kimi_step_pct: float = field(default_factory=lambda: float(Config.GRID.step_pct))
     kimi_investment_ton: float = 0.0
     kimi_sell_levels: int = 20
     kimi_buy_levels: int = 20
@@ -106,6 +107,22 @@ class BrainState:
                 "action": self.unified_action,
             },
             "kimi": {
+                "enabled": self.kimi_enabled,
+                "ready": self.kimi_ready,
+                "signal": self.kimi_signal,
+                "confidence": round(self.kimi_confidence, 1),
+                "action": self.kimi_action,
+                "step_pct": round(self.kimi_step_pct, 2),
+                "investment_ton": round(self.kimi_investment_ton, 6),
+                "sell_levels": self.kimi_sell_levels,
+                "buy_levels": self.kimi_buy_levels,
+                "reason": self.kimi_reason,
+                "last_update": self.kimi_last_update,
+                "error": self.kimi_error,
+            },
+            # Keep the legacy kimi key for frontend compatibility while exposing
+            # the actual active provider under its current name.
+            "groq": {
                 "enabled": self.kimi_enabled,
                 "ready": self.kimi_ready,
                 "signal": self.kimi_signal,
@@ -365,14 +382,11 @@ class QuantumBrain:
             )
             self.state.atr_pct = (atr / current * 100) if current > 0 else 3.5
 
-        if self.state.atr_pct >= 8:
-            self.state.optimal_step = 7.0
-        elif self.state.atr_pct >= 5:
-            self.state.optimal_step = 5.0
-        elif self.state.atr_pct >= 3:
-            self.state.optimal_step = 4.0
-        else:
-            self.state.optimal_step = 3.5
+        # GRID_STEP_PCT is an operator-selected safety setting. AI may still
+        # analyze volatility, but it must not silently widen the live grid.
+        configured_step = float(Config.GRID.step_pct or 0.0)
+        if configured_step > 0:
+            self.state.optimal_step = configured_step
 
         # Trap detection
         if len(self._fill_history) >= 5:
@@ -446,8 +460,8 @@ class QuantumBrain:
                 "buy_levels": 20,
             },
             "limits": {
-                "min_step_pct": 3.0,
-                "max_step_pct": 8.0,
+                "min_step_pct": float(Config.GRID.min_step_pct),
+                "max_step_pct": float(Config.GRID.max_step_pct),
                 "max_total_levels": self._kimi.max_total_levels,
                 "gas_reserve_ton": 0.3,
                 "min_profitable_order_ton": 0.05,
@@ -476,10 +490,9 @@ class QuantumBrain:
             self.state.kimi_signal = decision.get("signal", "HOLD")
             self.state.kimi_confidence = float(decision.get("confidence", 0.0) or 0.0)
             self.state.kimi_action = decision.get("action", "WAIT")
-            self.state.kimi_step_pct = float(
-                decision.get("step_pct", self.state.optimal_step)
-                or self.state.optimal_step
-            )
+            # Keep the displayed and applied plan aligned with the fixed grid
+            # step; Groq/Kimi cannot widen it during an autonomous rebuild.
+            self.state.kimi_step_pct = float(Config.GRID.step_pct)
             self.state.kimi_investment_ton = float(
                 decision.get("investment_ton", 0.0) or 0.0
             )
@@ -525,7 +538,7 @@ class QuantumBrain:
             elif kimi_action == "PAUSE_BUY":
                 self.state.unified_action = "PAUSE_BUY"
             elif (
-                kimi_action in ("BUILD", "START")
+                kimi_action in ("BUILD", "START", "REBUILD")
                 and self.state.kimi_confidence >= self._kimi.min_confidence
             ):
                 self.state.unified_action = kimi_action

@@ -816,22 +816,22 @@ async function applyKimiGrid() {
     const button = document.getElementById('kimi-apply-btn');
     if (button) button.disabled = true;
     try {
-        addLog('Применяю план Kimi к сетке...', 'info');
-        const res = await fetch('/api/grid/ai/apply-kimi', {
+        addLog('Применяю план Groq к сетке...', 'info');
+        const res = await fetch('/api/grid/ai/apply-groq', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'}
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         if (data.ok) {
-            addLog(`Kimi: сетка обновлена — ${data.sell_levels} SELL / ${data.buy_levels} BUY, шаг ${Number(data.step_pct).toFixed(1)}%`, 'buy');
+            addLog(`Groq: сетка обновлена — ${data.sell_levels} SELL / ${data.buy_levels} BUY, шаг ${Number(data.step_pct).toFixed(1)}%`, 'buy');
             if (data.levels) {
                 updateGridVisual(data.levels, data.price || null, data.upper_price, data.lower_price);
             }
             await fetchAllData();
         }
     } catch (e) {
-        addLog('Kimi: не удалось применить план — ' + (e.message || 'ошибка'), 'sell');
+        addLog('Groq: не удалось применить план — ' + (e.message || 'ошибка'), 'sell');
     } finally {
         if (button) button.disabled = false;
         await fetchAiRecommendation();
@@ -882,11 +882,11 @@ function escapeAiHtml(value) {
 function ensureKimiPanel() {
     const buttons = document.querySelector('.ai-buttons');
     if (buttons && !document.getElementById('kimi-apply-btn')) {
-        buttons.insertAdjacentHTML('beforeend', '<button class="ai-btn ai-kimi-apply" id="kimi-apply-btn" onclick="applyKimiGrid()" disabled>✨ Применить план Kimi</button>');
+        buttons.insertAdjacentHTML('beforeend', '<button class="ai-btn ai-kimi-apply" id="kimi-apply-btn" onclick="applyKimiGrid()" disabled>✨ Применить план Groq</button>');
     }
     const status = document.querySelector('.ai-status-row');
     if (status && !document.getElementById('kimi-status')) {
-        status.insertAdjacentHTML('beforeend', '<div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">Kimi:</span><span class="ai-status-value" id="kimi-status">Ожидание данных</span></div><div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">Баланс TON:</span><span class="ai-status-value" id="kimi-wallet-ton">—</span></div><div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">План сетки:</span><span class="ai-status-value" id="kimi-plan">—</span></div>');
+        status.insertAdjacentHTML('beforeend', '<div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">Groq:</span><span class="ai-status-value" id="kimi-status">Ожидание данных</span></div><div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">Баланс TON:</span><span class="ai-status-value" id="kimi-wallet-ton">—</span></div><div class="ai-status-item ai-kimi-status-item"><span class="ai-status-label">План сетки:</span><span class="ai-status-value" id="kimi-plan">—</span></div>');
     }
 }
 
@@ -904,7 +904,7 @@ function updateAiDisplay(r) {
     const dd = Number(r.drawdown_pct) || 0;
     const trap = r.trap || {};
     const pause = r.pause_buying ? 'ДА' : 'Нет';
-    const kimi = r.kimi || {};
+    const kimi = r.groq || r.kimi || {};
     const wallet = kimi.wallet || {};
     const kimiReady = Boolean(kimi.ready);
     const kimiAction = kimi.action || 'WAIT';
@@ -916,7 +916,7 @@ function updateAiDisplay(r) {
     const buyLevels = Number(kimi.buy_levels) || 0;
     const walletTon = Number(wallet.ton);
     const walletToken = Number(wallet.token);
-    const reason = kimi.reason || (kimi.error ? 'Kimi временно недоступна' : 'Ожидание первого решения Kimi');
+    const reason = kimi.reason || (kimi.error ? 'Groq временно недоступен' : 'Ожидание первого решения Groq');
     const signalClass = 'ai-signal-' + signal.toLowerCase();
     const kimiSignalClass = 'ai-signal-' + kimiSignal.toLowerCase();
     const applyButton = document.getElementById('kimi-apply-btn');
@@ -924,7 +924,7 @@ function updateAiDisplay(r) {
 
     panel.innerHTML = `
         <div class="ai-kimi-card ${kimiReady ? 'is-ready' : 'is-waiting'}">
-          <div class="ai-kimi-heading"><span>✦ KIMI GRID PILOT</span><span class="ai-kimi-pill">${kimiReady ? 'ONLINE' : 'WAITING'}</span></div>
+          <div class="ai-kimi-heading"><span>✦ GROQ GRID PILOT</span><span class="ai-kimi-pill">${kimiReady ? 'ONLINE' : 'WAITING'}</span></div>
           <div class="ai-kimi-grid">
             <div><span>Решение</span><strong>${escapeAiHtml(kimiAction)}</strong></div>
             <div><span>Сигнал</span><strong class="${kimiSignalClass}">${escapeAiHtml(kimiSignal)} ${Math.round(kimiConf)}%</strong></div>
@@ -965,12 +965,12 @@ function updateAiStatus(data) {
     const aiPause = document.getElementById('ai-pause');
     if (aiPause) aiPause.textContent = data.ai_pause_reason || '—';
 
-    const kimi = data.kimi || {};
+    const kimi = data.groq || data.kimi || {};
     const wallet = kimi.wallet || {};
     const kimiStatus = document.getElementById('kimi-status');
     if (kimiStatus) {
         kimiStatus.textContent = kimi.ready
-            ? `${kimi.action || 'WAIT'} · ${kimi.model || 'Kimi'}`
+            ? `${kimi.action || 'WAIT'} · ${kimi.model || 'Groq'}`
             : (kimi.error ? 'Недоступна: ' + kimi.error : 'Ожидание ответа');
     }
     const walletTon = document.getElementById('kimi-wallet-ton');

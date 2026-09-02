@@ -1,6 +1,6 @@
-"""Kimi-powered control layer for the AI Grid.
+"""Groq-powered control layer for the AI Grid.
 
-Kimi may recommend a grid action and sizing, but it never receives wallet
+Groq may recommend a grid action and sizing, but it never receives wallet
 credentials and never has a tool that can place an order. GridTrader remains
 the only component allowed to call the exchange client.
 """
@@ -12,9 +12,9 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-log = logging.getLogger("kimi_grid_control")
+log = logging.getLogger("groq_grid_control")
 
-_ALLOWED_ACTIONS = {"WAIT", "BUILD", "START", "PAUSE_BUY", "STOP"}
+_ALLOWED_ACTIONS = {"WAIT", "BUILD", "START", "PAUSE_BUY", "STOP", "REBUILD"}
 _ALLOWED_SIGNALS = {"BUY", "SELL", "HOLD"}
 
 
@@ -33,23 +33,23 @@ def _float_env(name: str, default: float) -> float:
 
 
 class KimiGridControl:
-    """Rate-limited, fail-closed Kimi recommender for grid control."""
+    """Rate-limited, fail-closed Groq recommender for grid control."""
 
     def __init__(self):
-        self.api_key = os.getenv("MOONSHOT_API_KEY", "").strip()
-        self.enabled = bool(self.api_key) and _bool_env("KIMI_CONTROL_ENABLED", True)
-        self.required_for_auto_grid = _bool_env("KIMI_REQUIRE_FOR_AUTO_GRID", True)
-        self.model = os.getenv("KIMI_MODEL", "kimi-k2.6").strip() or "kimi-k2.6"
+        self.api_key = os.getenv("GROQ_API_KEY", "").strip()
+        self.enabled = bool(self.api_key) and _bool_env("GROQ_CONTROL_ENABLED", True)
+        self.required_for_auto_grid = _bool_env("GROQ_REQUIRE_FOR_AUTO_GRID", True)
+        self.model = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b").strip() or "qwen/qwen3.8-27b"
         self.base_url = (
-            os.getenv("KIMI_API_BASE", "https://api.moonshot.ai/v1").strip()
-            or "https://api.moonshot.ai/v1"
+            os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1").strip()
+            or "https://api.groq.com/openai/v1"
         )
         self.min_confidence = max(
-            0.0, min(100.0, _float_env("KIMI_MIN_CONFIDENCE", 60.0))
+            0.0, min(100.0, _float_env("GROQ_MIN_CONFIDENCE", 60.0))
         )
-        self.interval_sec = max(15.0, _float_env("KIMI_CALL_INTERVAL_SEC", 60.0))
-        self.timeout_sec = max(3.0, _float_env("KIMI_TIMEOUT_SEC", 12.0))
-        self.max_total_levels = max(2, int(_float_env("KIMI_MAX_TOTAL_LEVELS", 40)))
+        self.interval_sec = max(15.0, _float_env("GROQ_CALL_INTERVAL_SEC", 60.0))
+        self.timeout_sec = max(3.0, _float_env("GROQ_TIMEOUT_SEC", 12.0))
+        self.max_total_levels = max(2, int(_float_env("GROQ_MAX_TOTAL_LEVELS", 40)))
         self._client = None
         self._lock = threading.Lock()
         self._last_request_at = 0.0
@@ -82,7 +82,7 @@ class KimiGridControl:
                 text = text[4:].strip()
         parsed = json.loads(text)
         if not isinstance(parsed, dict):
-            raise ValueError("Kimi response is not an object")
+            raise ValueError("Groq response is not an object")
         return parsed
 
     def _validate(
@@ -106,7 +106,13 @@ class KimiGridControl:
             step = float(raw.get("step_pct", fallback_step))
         except (TypeError, ValueError):
             step = fallback_step
-        step = max(3.0, min(8.0, step))
+        try:
+            configured_min = float(os.getenv("GRID_MIN_STEP_PCT", "0.9"))
+            configured_max = float(os.getenv("GRID_MAX_STEP_PCT", "8.0"))
+            configured_step = float(os.getenv("GRID_STEP_PCT", fallback_step) or fallback_step)
+        except (TypeError, ValueError):
+            configured_min, configured_max, configured_step = 0.9, 8.0, fallback_step
+        step = max(configured_min, min(configured_max, configured_step))
 
         def int_value(name: str, fallback: int) -> int:
             try:
@@ -153,7 +159,7 @@ class KimiGridControl:
         }
 
     def decide(self, market: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Ask Kimi for a recommendation when the rate limit permits."""
+        """Ask Groq for a recommendation when the rate limit permits."""
         if not self.enabled:
             return None
         now = time.monotonic()
@@ -165,16 +171,17 @@ class KimiGridControl:
         local = market.get("local", {})
         defaults = market.get("defaults", {})
         wallet = market.get("wallet", {})
-        fallback_step = float(local.get("optimal_step", 3.5) or 3.5)
+        fallback_step = float(local.get("optimal_step", 0.9) or 0.9)
         system = (
             "You are the risk-aware controller for a spot cryptocurrency grid. "
             "You are advisory only: never invent balances, never place orders, "
             "and never recommend leverage or shorting. Use the wallet balances "
             "and limits supplied by the user context. Return JSON only with "
             "exactly these keys: signal (BUY, SELL, HOLD), confidence (0-100), "
-            "action (WAIT, BUILD, START, PAUSE_BUY, STOP), step_pct (3-8), "
+            "action (WAIT, BUILD, START, PAUSE_BUY, STOP, REBUILD), step_pct (use the configured grid step), "
             "investment_ton (non-negative), sell_levels (1-39), buy_levels (0-39), "
-            "reason (short string). The sum of levels must not exceed the supplied "
+            "reason (short string). Use REBUILD only when an active grid needs new "
+            "settings; otherwise use WAIT. The sum of levels must not exceed the supplied "
             "limit. Never set investment_ton above available TON. STOP is reserved "
             "for clear danger; PAUSE_BUY stops new buys but allows existing sells."
         )
@@ -210,14 +217,14 @@ class KimiGridControl:
             else:
                 safe_error = "request failed"
             self._last_error = f"{type(exc).__name__}: {safe_error}"
-            log.warning("[Kimi] recommendation unavailable: %s", self._last_error)
+            log.warning("[Groq] recommendation unavailable: %s", self._last_error)
             return self._last_decision
 
         with self._lock:
             self._last_decision = decision
             self._last_error = ""
         log.info(
-            "[Kimi] decision=%s signal=%s confidence=%.1f step=%.2f investment=%s levels=%s/%s",
+            "[Groq] decision=%s signal=%s confidence=%.1f step=%.2f investment=%s levels=%s/%s",
             decision["action"],
             decision["signal"],
             decision["confidence"],

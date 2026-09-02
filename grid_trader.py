@@ -247,6 +247,7 @@ class GridTrader:
         return "SIDEWAYS"
 
     def _update_ai(self, price_ton):
+        """Apply the Groq controller's safe grid-management actions."""
         from quantum_brain import get_brain
 
         brain = get_brain()
@@ -261,26 +262,29 @@ class GridTrader:
             "Pause buying" if state["grid_ai"]["pause_buying"] else ""
         )
         self._ai_recommendation = state
-        kimi = state.get("kimi", {})
+        groq = state.get("groq") or state.get("kimi", {})
         try:
             self._ai_recommended_step = (
-                float(kimi.get("step_pct", 0) or 0) if kimi.get("ready") else 0.0
+                float(groq.get("step_pct", 0) or 0) if groq.get("ready") else 0.0
             )
         except (TypeError, ValueError):
             self._ai_recommended_step = 0.0
+        configured_step = float(GridCfg.step_pct or 0.0)
+        if configured_step > 0:
+            self._ai_recommended_step = configured_step
         try:
             self._ai_recommended_investment_ton = (
-                float(kimi.get("investment_ton"))
-                if kimi.get("ready") and kimi.get("investment_ton") is not None
+                float(groq.get("investment_ton"))
+                if groq.get("ready") and groq.get("investment_ton") is not None
                 else None
             )
             # None delegates to configured defaults; zero would erase all levels
-            # when Kimi is unavailable or returns an empty recommendation.
+            # when Groq is unavailable or returns an empty recommendation.
             recommended_sell = (
-                int(kimi.get("sell_levels", 0) or 0) if kimi.get("ready") else 0
+                int(groq.get("sell_levels", 0) or 0) if groq.get("ready") else 0
             )
             recommended_buy = (
-                int(kimi.get("buy_levels", 0) or 0) if kimi.get("ready") else 0
+                int(groq.get("buy_levels", 0) or 0) if groq.get("ready") else 0
             )
             self._ai_recommended_sell_levels = (
                 recommended_sell if recommended_sell > 0 else None
@@ -293,23 +297,74 @@ class GridTrader:
             self._ai_recommended_sell_levels = None
             self._ai_recommended_buy_levels = None
 
-        if state["unified"]["action"] == "STOP" and self._state.active:
-            log.warning("[QuantumBrain] Auto-stop: unified action = STOP")
-            self._state.active = False
-            self._ai_pause_reason = "AI: Unified STOP"
+        action = state.get("unified", {}).get("action", "WAIT")
+        action_key = (action, groq.get("last_update", 0) or 0)
+
+        if action == "STOP":
+            if self._state.active:
+                log.warning("[QuantumBrain] Auto-stop: unified action = STOP")
+                self._state.active = False
+                self._ai_pause_reason = "AI: Unified STOP"
+                self._save_state()
             return
-        if state["unified"]["action"] == "PAUSE_BUY":
+
+        if action == "PAUSE_BUY":
             self._ai_pause_reason = "AI: Unified PAUSE_BUY"
             return
-        if state["unified"]["action"] in ("BUILD", "START") and not self._state.active:
-            log.info("[QuantumBrain] Auto-start: action=%s", state["unified"]["action"])
-            kimi_blocked = (
+
+        if action == "REBUILD" and self._state.active:
+            if os.getenv("GROQ_AUTO_REBUILD_ENABLED", "1").strip() != "1":
+                log.info("[Groq] REBUILD ignored: auto rebuild disabled by configuration")
+                return
+            # Never discard a pending paired rebuy or a filled level. Groq must
+            # wait for the current cycle to settle before replacing the grid.
+            if getattr(self, "_last_ai_management_key", None) == action_key:
+                return
+            self._last_ai_management_key = action_key
+            levels = list(self._state.sell_levels) + list(self._state.buy_levels)
+            if self._state.buy_levels or any(
+                level.status != "waiting" for level in levels
+            ):
+                log.info(
+                    "[Groq] REBUILD deferred: active cycle or paired rebuy is pending"
+                )
+                return
+            ton_bal, token_bal = self._get_balances()
+            if ton_bal is None:
+                log.info("[Groq] REBUILD deferred: wallet balance unavailable")
+                return
+            log.info(
+                "[Groq] REBUILD: step=%s investment=%s levels=%s/%s",
+                self._ai_recommended_step or "default",
+                self._ai_recommended_investment_ton,
+                self._ai_recommended_sell_levels or "default",
+                self._ai_recommended_buy_levels or "default",
+            )
+            self.ai_build_grid(
+                price_ton,
+                step_pct=self._ai_recommended_step or None,
+                investment_ton=self._ai_recommended_investment_ton,
+                sell_levels=self._ai_recommended_sell_levels,
+                buy_levels=self._ai_recommended_buy_levels,
+            )
+            return
+
+        if action == "START" and not self._state.active:
+            # START resumes an existing grid; it does not silently erase it.
+            if self._state.sell_levels or self._state.buy_levels:
+                log.info("[Groq] START: resuming existing grid")
+                self.start_grid()
+                return
+
+        if action in ("BUILD", "REBUILD") and not self._state.active:
+            log.info("[Groq] BUILD: action=%s", action)
+            groq_blocked = (
                 self._ai
                 and hasattr(self._ai, "kimi_required_for_auto_grid")
                 and self._ai.kimi_required_for_auto_grid()
                 and not self._ai.kimi_allows_initial_build()
             )
-            if not kimi_blocked:
+            if not groq_blocked:
                 self.ai_build_grid(
                     price_ton,
                     step_pct=self._ai_recommended_step or None,
