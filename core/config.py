@@ -68,9 +68,9 @@ class GridConfig:
         default_factory=lambda: _str_env("GRID_SYMBOL_DEDUST", "GRAM/USD")
     )
     count: int = field(default_factory=lambda: _int_env("GRID_COUNT", 40))
-    step_pct: float = field(default_factory=lambda: _float_env("GRID_STEP_PCT", 3.5))
+    step_pct: float = field(default_factory=lambda: _float_env("GRID_STEP_PCT", 0.9))
     min_step_pct: float = field(
-        default_factory=lambda: _float_env("GRID_MIN_STEP_PCT", 3.0)
+        default_factory=lambda: _float_env("GRID_MIN_STEP_PCT", 0.9)
     )
     max_step_pct: float = field(
         default_factory=lambda: _float_env("GRID_MAX_STEP_PCT", 8.0)

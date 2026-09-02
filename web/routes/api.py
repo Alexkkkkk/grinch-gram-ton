@@ -355,10 +355,12 @@ def _grid_request_settings(data, price):
         raise ValueError("lower must be below the current price")
 
     if os.getenv("GRID_SELL_AS_TON", "0").strip() == "1":
-        # TON/USDT cycle: all requested initial levels are SELL levels;
-        # BUY levels are created dynamically from settled SELL proceeds.
-        sell_levels = grid_count
-        buy_levels = 0
+        # TON/USDT cycle still honors the configured initial split.
+        # Later BUY levels may also be added dynamically from settled SELL proceeds.
+        configured_sell = max(1, int(getattr(Config.GRID, "sell_levels", grid_count)))
+        configured_buy = max(0, int(getattr(Config.GRID, "buy_levels", 0)))
+        sell_levels = min(grid_count, configured_sell)
+        buy_levels = min(max(0, grid_count - sell_levels), configured_buy)
     else:
         sell_levels = (grid_count + 1) // 2
         buy_levels = grid_count - sell_levels
@@ -377,7 +379,6 @@ def _ai_snapshot():
     grid_ai = state.get("grid_ai", {})
     unified = state.get("unified", {})
     kimi = dict(state.get("kimi", {}))
-    groq = dict(state.get("groq", kimi))
     wallet = {"available": False, "ton": None, "token": None}
     if _grid_trader and hasattr(_grid_trader, "_get_balances"):
         try:
@@ -390,7 +391,6 @@ def _ai_snapshot():
         except Exception:
             pass
     kimi["wallet"] = wallet
-    groq["wallet"] = wallet
     return {
         "quantum_signal": {
             "signal": unified.get("signal", "HOLD"),
@@ -409,7 +409,6 @@ def _ai_snapshot():
         },
         "pause_buying": grid_ai.get("pause_buying", False),
         "kimi": kimi,
-        "groq": groq,
     }
 
 
@@ -476,7 +475,6 @@ def api_grid_ai_status():
             "regime": snapshot["regime"],
             "optimal_step": snapshot["optimal_step"],
             "kimi": snapshot.get("kimi", {}),
-            "groq": snapshot.get("groq", snapshot.get("kimi", {})),
         }
     )
 
@@ -495,21 +493,20 @@ def api_grid_ai_recommendation():
 
 
 @api_bp.route("/grid/ai/apply-kimi", methods=["POST"])
-@api_bp.route("/grid/ai/apply-groq", methods=["POST"])
-def api_grid_ai_apply_groq():
-    """Apply the latest Groq sizing recommendation on explicit operator request."""
+def api_grid_ai_apply_kimi():
+    """Apply the latest Kimi sizing recommendation on explicit operator request."""
     if not _grid_trader:
         return jsonify({"ok": False, "error": "Grid trader not initialized"}), 503
     if not bool(getattr(_grid_trader, "_ai_enabled", False)):
         return jsonify({"ok": False, "error": "AI grid control is disabled"}), 409
 
-    groq = _ai_snapshot().get("groq", {})
-    if not groq.get("ready"):
+    kimi = _ai_snapshot().get("kimi", {})
+    if not kimi.get("ready"):
         return (
             jsonify(
                 {
                     "ok": False,
-                    "error": groq.get("error") or "Groq recommendation is not ready",
+                    "error": kimi.get("error") or "Kimi recommendation is not ready",
                 }
             ),
             409,
@@ -520,10 +517,10 @@ def api_grid_ai_apply_groq():
             return jsonify({"ok": False, "error": "Current price unavailable"}), 503
         result = _grid_trader.ai_build_grid(
             price,
-            step_pct=groq.get("step_pct"),
-            sell_levels=groq.get("sell_levels"),
-            buy_levels=groq.get("buy_levels"),
-            investment_ton=groq.get("investment_ton"),
+            step_pct=kimi.get("step_pct"),
+            sell_levels=kimi.get("sell_levels"),
+            buy_levels=kimi.get("buy_levels"),
+            investment_ton=kimi.get("investment_ton"),
         )
         state = (
             result.to_dict()
@@ -533,17 +530,17 @@ def api_grid_ai_apply_groq():
         return jsonify(
             {
                 "ok": True,
-                "source": "groq",
+                "source": "kimi",
                 "active": bool(state.get("active")),
                 "price": price,
-                "step_pct": state.get("step_pct", groq.get("step_pct")),
+                "step_pct": state.get("step_pct", kimi.get("step_pct")),
                 "sell_levels": len(state.get("sell_levels", []) or []),
                 "buy_levels": len(state.get("buy_levels", []) or []),
                 "levels": _grid_levels_payload(state),
                 "upper_price": state.get("upper_price", 0),
                 "lower_price": state.get("lower_price", 0),
-                "investment_ton": groq.get("investment_ton"),
-                "groq": groq,
+                "investment_ton": kimi.get("investment_ton"),
+                "kimi": kimi,
             }
         )
     except (TypeError, ValueError) as exc:

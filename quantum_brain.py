@@ -41,7 +41,7 @@ class BrainState:
 
     regime: str = "SIDEWAYS"
     atr_pct: float = 3.5
-    optimal_step: float = field(default_factory=lambda: float(Config.GRID.step_pct))
+    optimal_step: float = field(default_factory=lambda: Config.GRID.step_pct)
     risk_level: int = 0
     trap_detected: bool = False
     trap_confidence: float = 0.0
@@ -56,10 +56,10 @@ class BrainState:
     kimi_signal: str = "HOLD"
     kimi_confidence: float = 0.0
     kimi_action: str = "WAIT"
-    kimi_step_pct: float = field(default_factory=lambda: float(Config.GRID.step_pct))
+    kimi_step_pct: float = field(default_factory=lambda: Config.GRID.step_pct)
     kimi_investment_ton: float = 0.0
-    kimi_sell_levels: int = 20
-    kimi_buy_levels: int = 20
+    kimi_sell_levels: int = field(default_factory=lambda: Config.GRID.sell_levels)
+    kimi_buy_levels: int = field(default_factory=lambda: Config.GRID.buy_levels)
     kimi_reason: str = ""
     kimi_last_update: float = 0.0
     kimi_error: str = ""
@@ -107,22 +107,6 @@ class BrainState:
                 "action": self.unified_action,
             },
             "kimi": {
-                "enabled": self.kimi_enabled,
-                "ready": self.kimi_ready,
-                "signal": self.kimi_signal,
-                "confidence": round(self.kimi_confidence, 1),
-                "action": self.kimi_action,
-                "step_pct": round(self.kimi_step_pct, 2),
-                "investment_ton": round(self.kimi_investment_ton, 6),
-                "sell_levels": self.kimi_sell_levels,
-                "buy_levels": self.kimi_buy_levels,
-                "reason": self.kimi_reason,
-                "last_update": self.kimi_last_update,
-                "error": self.kimi_error,
-            },
-            # Keep the legacy kimi key for frontend compatibility while exposing
-            # the actual active provider under its current name.
-            "groq": {
                 "enabled": self.kimi_enabled,
                 "ready": self.kimi_ready,
                 "signal": self.kimi_signal,
@@ -382,11 +366,21 @@ class QuantumBrain:
             )
             self.state.atr_pct = (atr / current * 100) if current > 0 else 3.5
 
-        # GRID_STEP_PCT is an operator-selected safety setting. AI may still
-        # analyze volatility, but it must not silently widen the live grid.
-        configured_step = float(Config.GRID.step_pct or 0.0)
-        if configured_step > 0:
-            self.state.optimal_step = configured_step
+        if not Config.GRID.adaptive_step:
+            self.state.optimal_step = Config.GRID.step_pct
+        else:
+            if self.state.atr_pct >= 8:
+                self.state.optimal_step = 7.0
+            elif self.state.atr_pct >= 5:
+                self.state.optimal_step = 5.0
+            elif self.state.atr_pct >= 3:
+                self.state.optimal_step = 4.0
+            else:
+                self.state.optimal_step = Config.GRID.step_pct
+            self.state.optimal_step = max(
+                Config.GRID.min_step_pct,
+                min(Config.GRID.max_step_pct, self.state.optimal_step),
+            )
 
         # Trap detection
         if len(self._fill_history) >= 5:
@@ -456,12 +450,12 @@ class QuantumBrain:
             "current_grid": current_grid,
             "defaults": {
                 "investment_ton": wallet.get("ton"),
-                "sell_levels": 20,
-                "buy_levels": 20,
+                "sell_levels": Config.GRID.sell_levels,
+                "buy_levels": Config.GRID.buy_levels,
             },
             "limits": {
-                "min_step_pct": float(Config.GRID.min_step_pct),
-                "max_step_pct": float(Config.GRID.max_step_pct),
+                "min_step_pct": Config.GRID.min_step_pct,
+                "max_step_pct": Config.GRID.max_step_pct,
                 "max_total_levels": self._kimi.max_total_levels,
                 "gas_reserve_ton": 0.3,
                 "min_profitable_order_ton": 0.05,
@@ -490,14 +484,15 @@ class QuantumBrain:
             self.state.kimi_signal = decision.get("signal", "HOLD")
             self.state.kimi_confidence = float(decision.get("confidence", 0.0) or 0.0)
             self.state.kimi_action = decision.get("action", "WAIT")
-            # Keep the displayed and applied plan aligned with the fixed grid
-            # step; Groq/Kimi cannot widen it during an autonomous rebuild.
-            self.state.kimi_step_pct = float(Config.GRID.step_pct)
+            self.state.kimi_step_pct = float(
+                decision.get("step_pct", self.state.optimal_step)
+                or self.state.optimal_step
+            )
             self.state.kimi_investment_ton = float(
                 decision.get("investment_ton", 0.0) or 0.0
             )
-            self.state.kimi_sell_levels = int(decision.get("sell_levels", 20) or 20)
-            self.state.kimi_buy_levels = int(decision.get("buy_levels", 20) or 20)
+            self.state.kimi_sell_levels = int(decision.get("sell_levels", Config.GRID.sell_levels) or Config.GRID.sell_levels)
+            self.state.kimi_buy_levels = int(decision.get("buy_levels", Config.GRID.buy_levels) or Config.GRID.buy_levels)
             self.state.kimi_reason = decision.get("reason", "")
             self.state.kimi_last_update = float(decision.get("updated_at", 0.0) or 0.0)
 
@@ -538,7 +533,7 @@ class QuantumBrain:
             elif kimi_action == "PAUSE_BUY":
                 self.state.unified_action = "PAUSE_BUY"
             elif (
-                kimi_action in ("BUILD", "START", "REBUILD")
+                kimi_action in ("BUILD", "START")
                 and self.state.kimi_confidence >= self._kimi.min_confidence
             ):
                 self.state.unified_action = kimi_action
