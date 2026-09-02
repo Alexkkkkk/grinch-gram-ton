@@ -488,7 +488,7 @@ class DedustClient:
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={
                     "owner_address": owner_addr_str,
-                    "jetton_address": Config.TOKEN_ADDRESS,
+                    "jetton_address": getattr(Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS),
                     "limit": 1,
                 },
                 headers=_tc_headers(),
@@ -1285,8 +1285,8 @@ class DedustClient:
             # This matches a known successful legacy DeDust trace for this
             # pool: 0.25 TON to the jetton wallet and 0.18 TON forwarded to
             # the pool.  The unused remainder is returned as excesses.
-            gas_nano = int(0.25 * TON)
-            fwd_nano = int(0.18 * TON)
+            gas_nano = int(0.30 * TON)
+            fwd_nano = int(0.25 * TON)
 
             # ── Preflight: деплой кошелька если uninit ───────────────────────
             if not await self._ensure_wallet_deployed(wallet, provider):
