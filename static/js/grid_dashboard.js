@@ -19,8 +19,9 @@ function normalizeInvestmentLabel() {
 }
 
 // ── Step Profit Calculator ────────────────────────────────────────────────────
-let _cachedFee = 0.25; // default DeDust fee %
-let _cachedStep = 4.0;  // default grid step %
+// Keep the offline fallback conservative and aligned with backend defaults.
+let _cachedFee = 1.0; // DeDust fee %
+let _cachedStep = 4.0; // default grid step %
 let _cachedMinOrder = 0.05;
 let _cachedGasPerTx = 0.004;
 let _cachedGasReserve = 0.3;
@@ -76,43 +77,40 @@ function calculateStepProfit() {
         sellStep = (Math.pow(upper / centerPrice, 1 / nSell) - 1) * 100;
     }
 
-    // GridTrader removes buy levels that cannot cover fees and two gas spends.
-    // Iterate because an explicit lower bound changes buyStep when the count changes.
-    let effectiveBuy = requestedBuy;
-    for (let i = 0; i < 4; i += 1) {
+    // Mirror GridTrader: choose the largest buy count that can cover both
+    // swap fees and two estimated gas spends at the actual bounded step.
+    let effectiveBuy = 0;
+    for (let candidate = requestedBuy; candidate >= 1; candidate -= 1) {
         if (Number.isFinite(centerPrice) && centerPrice > 0 && Number.isFinite(lower) && lower > 0 && lower < centerPrice) {
-            buyStep = (Math.pow(centerPrice / lower, 1 / Math.max(1, effectiveBuy)) - 1) * 100;
+            buyStep = (Math.pow(centerPrice / lower, 1 / candidate) - 1) * 100;
         } else {
             buyStep = configuredStep;
         }
         const step = Math.max(0, sellStep, buyStep);
         const cycleFactor = (1 + step / 100) * Math.pow(1 - fee, 2) - 1;
-        if (cycleFactor <= 0) {
-            effectiveBuy = 0;
-            break;
-        }
+        if (cycleFactor <= 0) continue;
         const breakEvenOrder = Math.max(
             Number(_cachedMinOrder) || 0,
             (2 * (Number(_cachedGasPerTx) || 0)) / cycleFactor
         );
-        const affordableBuy = breakEvenOrder > 0
-            ? Math.floor((availableTon + 1e-9) / breakEvenOrder)
-            : requestedBuy;
-        const nextBuy = Math.min(requestedBuy, Math.max(0, affordableBuy));
-        if (nextBuy === effectiveBuy) break;
-        effectiveBuy = nextBuy;
+        const orderTon = availableTon / candidate;
+        if (orderTon + 1e-9 >= breakEvenOrder) {
+            effectiveBuy = candidate;
+            break;
+        }
     }
 
     const step = Math.max(0, sellStep, buyStep);
     const cycleFactor = (1 + step / 100) * Math.pow(1 - fee, 2) - 1;
     if (effectiveBuy <= 0 || cycleFactor <= 0) {
         profitEl.value = '—';
-        profitEl.style.color = '#848e9c';
-        profitEl.title = 'Недостаточно TON для прибыльного buy-уровня';
+        profitEl.style.color = '#f6465d';
+        profitEl.title = 'Неприбыльно: шаг меньше комиссии и двух gas-комиссий';
         return;
     }
 
-    const profitTon = (investment / effectiveBuy) * cycleFactor;
+    const orderTon = availableTon / effectiveBuy;
+    const profitTon = orderTon * cycleFactor - 2 * (Number(_cachedGasPerTx) || 0);
     const priceTon = Number.isFinite(centerPrice) && centerPrice > 0 ? centerPrice : 1.4;
     const profitUsdt = profitTon * priceTon;
     profitEl.value = '+' + profitTon.toFixed(4) + ' TON  (+$' + profitUsdt.toFixed(2) + ')';
