@@ -33,23 +33,6 @@ def set_grid_trader(trader):
     _grid_trader = trader
 
 
-def _grid_market_price():
-    """Return the TON/USDT pool price used by the live grid.
-
-    The generic dashboard feed may refer to a different legacy token market.
-    Grid controls and status must use the exact on-chain DeDust price so the
-    displayed levels and execution thresholds cannot disagree.
-    """
-    if _grid_trader and hasattr(_grid_trader, "_get_price"):
-        try:
-            price = float(_grid_trader._get_price())
-            if price > 0:
-                return price
-        except (TypeError, ValueError):
-            pass
-    return get_current_price()
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # v7: Quantum Intelligence — UNIFIED source (from QuantumBrain)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -102,7 +85,7 @@ def api_status():
             "grid_enabled": Config.GRID.enabled,
             "grid_active": grid_active,
             "demo": False,
-            "price": _grid_market_price(),
+            "price": get_current_price(),
             "market_data": get_feed_status(),
             "uptime_sec": int(time.time() - _start_time),
             "version": "7.2.0-real-market-data",
@@ -236,7 +219,7 @@ def api_balance():
         ton_bal = 0
         usdt_bal = 0
 
-    ton_price = _grid_market_price()
+    ton_price = get_current_price()
     usdt_price = 1.0
 
     return jsonify(
@@ -271,7 +254,7 @@ def api_grid_status():
             {
                 "active": state.get("active", False),
                 "center_price": state.get("center_price", 0),
-                "current_price": _grid_market_price(),
+                "current_price": get_current_price(),
                 "step_pct": state.get("step_pct", 0),
                 "upper_price": state.get("upper_price", 0),
                 "lower_price": state.get("lower_price", 0),
@@ -306,7 +289,7 @@ def api_grid_start():
     result = _grid_trader.start_grid()
     if not result.get("ok"):
         return jsonify(result), 409
-    return jsonify({"ok": True, "price": _grid_market_price()})
+    return jsonify({"ok": True, "price": get_current_price()})
 
 
 @api_bp.route("/grid/stop", methods=["POST"])
@@ -371,8 +354,14 @@ def _grid_request_settings(data, price):
     if lower is not None and lower >= price:
         raise ValueError("lower must be below the current price")
 
-    sell_levels = (grid_count + 1) // 2
-    buy_levels = grid_count - sell_levels
+    if os.getenv("GRID_SELL_AS_TON", "0").strip() == "1":
+        # TON/USDT cycle: all requested initial levels are SELL levels;
+        # BUY levels are created dynamically from settled SELL proceeds.
+        sell_levels = grid_count
+        buy_levels = 0
+    else:
+        sell_levels = (grid_count + 1) // 2
+        buy_levels = grid_count - sell_levels
     return {
         "sell_levels": sell_levels,
         "buy_levels": buy_levels,
@@ -429,7 +418,7 @@ def api_grid_build():
 
     data = request.get_json(silent=True) or {}
     try:
-        price = _grid_market_price()
+        price = get_current_price()
         if not price or price <= 0:
             return jsonify({"ok": False, "error": "Current price unavailable"}), 503
         settings = _grid_request_settings(data, price)
@@ -521,7 +510,7 @@ def api_grid_ai_apply_kimi():
             409,
         )
     try:
-        price = _grid_market_price()
+        price = get_current_price()
         if not price or price <= 0:
             return jsonify({"ok": False, "error": "Current price unavailable"}), 503
         result = _grid_trader.ai_build_grid(
@@ -565,7 +554,7 @@ def api_grid_ai_build():
 
     data = request.get_json(silent=True) or {}
     try:
-        price = _grid_market_price()
+        price = get_current_price()
         if not price or price <= 0:
             return jsonify({"ok": False, "error": "Current price unavailable"}), 503
         settings = _grid_request_settings(data, price)
