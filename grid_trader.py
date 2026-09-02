@@ -180,17 +180,14 @@ class GridTrader:
 
     def _get_price(self):
         try:
-            # The grid is TON/USDT and its levels are expressed as USDT per
-            # TON.  DeDust exposes the inverse quote (TON per USDT), so use
-            # the pool price and invert it.  Do not use the legacy GRAM feed:
-            # it is a different market and could place a grid at the wrong
-            # price.
-            if self._dc and hasattr(self._dc, "get_price_ton_per_usdt"):
-                ton_per_usdt = self._dc.get_price_ton_per_usdt()
-                if ton_per_usdt and ton_per_usdt > 0:
-                    return 1.0 / float(ton_per_usdt)
+            if self._dc and hasattr(self._dc, "get_grinch_ton_price"):
+                return self._dc.get_grinch_ton_price()
             if self._trader and hasattr(self._trader, "get_price"):
                 return self._trader.get_price()
+            if self._price_feed:
+                price = self._price_feed()
+                if price and price > 0:
+                    return price
         except Exception as e:
             log.debug("[Grid] price error: %s", e)
         return 0.0
@@ -341,15 +338,17 @@ class GridTrader:
             self._update_ai(price_ton)
 
             # A persisted grid can predate wallet initialization and contain
-            # zero TON sell inventory. Rebuild it once live TON inventory is
+            # zero sell inventory. Rebuild it once live token inventory is
             # available, otherwise the UI shows sell levels that can never fill.
+            sell_as_ton_mode = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
             if (
                 self._state.active
                 and self._state.sell_levels
-                and not any(level.amount_ton > 0 for level in self._state.sell_levels)
+                and not sell_as_ton_mode
+                and not any(level.amount_token > 0 for level in self._state.sell_levels)
             ):
-                ton_bal, _ = self._get_balances()
-                if ton_bal is not None and float(ton_bal) > 0:
+                _, token_bal = self._get_balances()
+                if token_bal is not None and float(token_bal) > 0:
                     self._maybe_build_grid(price_ton)
                     return
 
@@ -362,14 +361,14 @@ class GridTrader:
                 self._maybe_build_grid(price_ton)
                 return
 
-            # SELL TON at the upper levels (TON -> USDT).
+            # SELL
             for level in self._state.sell_levels:
                 if level.status == "waiting" and price_ton >= level.price_ton:
                     res = self._execute_sell(level, price_ton)
                     if res.get("ok"):
                         self._record_trade("SELL", level, price_ton)
                         self._state.last_action = (
-                            f"SELL L{level.id}: {level.amount_ton:.4f} TON @ {price_ton:.6f} "
+                            f"SELL L{level.id}: {level.amount_token:.0f} @ {price_ton:.6f} "
                             f"| profit {level.profit_ton:+.3f} TON"
                         )
                         log.info("[Grid] %s", self._state.last_action)
@@ -396,7 +395,7 @@ class GridTrader:
                     self._save_state()
                     return
 
-            # BUY TON at the lower levels (USDT -> TON).
+            # BUY
             for level in self._state.buy_levels:
                 if level.status == "waiting" and price_ton <= level.price_ton:
                     if (
@@ -408,10 +407,7 @@ class GridTrader:
                     res = self._execute_buy(level, price_ton)
                     if res.get("ok"):
                         self._record_trade("BUY", level, price_ton)
-                        self._state.last_action = (
-                            f"BUY L{level.id}: {level.amount_ton:.4f} TON "
-                            f"@ {price_ton:.6f}"
-                        )
+                        self._state.last_action = f"BUY L{level.id}: {level.amount_token:.0f} @ {price_ton:.6f}"
                         log.info("[Grid] %s", self._state.last_action)
                         self._place_resell(level)
                         if self._ai:
@@ -552,16 +548,15 @@ class GridTrader:
                 GridCfg.min_step_pct or 3.0, min(GridCfg.max_step_pct or 8.0, step)
             )
             n_sell = (
-                sell_levels if sell_levels is not None else (GridCfg.sell_levels or 20)
+                sell_levels if sell_levels is not None else GridCfg.sell_levels
             )
-            n_buy = buy_levels if buy_levels is not None else (GridCfg.buy_levels or 20)
+            n_buy = buy_levels if buy_levels is not None else GridCfg.buy_levels
 
-            # Reserve native TON for network fees before sizing sell orders.
-            # Levels use USDT per TON: sell levels consume TON inventory and
-            # buy levels consume the USDT token balance.
+            # Reserve gas before sizing orders. When explicit bounds are used,
+            # profitability must be calculated from the actual per-level price
+            # factors, not from the configured fallback step.
             gas_reserve = float(GridCfg.gas_reserve_ton or 0.0)
             avail_ton = max(0.0, float(ton_balance or 0.0) - gas_reserve)
-            avail_token = max(0.0, float(token_balance or 0.0))
             n_sell = max(0, int(n_sell or 0))
             n_buy = max(0, int(n_buy or 0))
 
@@ -581,30 +576,24 @@ class GridTrader:
                 return buy_factor, actual_step_pct
 
             # Select the largest affordable count whose actual price step can
-            # cover both swap fees and the estimated buy/sell gas.  A buy
-            # order is funded in USDT, so convert its quote amount to an
-            # estimated TON amount at the center price for this guard.
+            # cover both swap fees and the estimated buy/sell gas.
             if not self._allow_unprofitable_orders() and n_buy > 0:
                 requested_buy = n_buy
                 affordable_buy = 0
                 for candidate in range(requested_buy, 0, -1):
                     candidate_buy_factor, actual_step_pct = factors_for_buy(candidate)
                     candidate_min_order = self._min_profitable_order_ton(actual_step_pct)
-                    candidate_order_ton = (
-                        avail_token / candidate / center_price
-                        if center_price > 0
-                        else 0.0
-                    )
+                    candidate_order_ton = avail_ton / candidate
                     if candidate_order_ton + 1e-9 >= candidate_min_order:
                         affordable_buy = candidate
                         break
                 if affordable_buy < requested_buy:
                     log.warning(
                         "[Grid] Reducing buy levels from %d to %d: "
-                        "%.4f USDT per level is below the actual break-even size",
+                        "%.4f TON per level is below the actual break-even size",
                         requested_buy,
                         affordable_buy,
-                        (avail_token / requested_buy) if requested_buy else 0.0,
+                        (avail_ton / requested_buy) if requested_buy else 0.0,
                     )
                 n_buy = affordable_buy
 
@@ -627,7 +616,20 @@ class GridTrader:
                 (buy_factor - 1) * 100,
             )
 
-            ton_per_sell = avail_ton / n_sell if n_sell > 0 else 0
+            sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+            try:
+                fixed_sell_ton = max(
+                    0.0, float(os.getenv("GRID_SELL_AMOUNT_TON", "0") or 0)
+                )
+            except (TypeError, ValueError):
+                fixed_sell_ton = 0.0
+
+            # In TON/USDT mode, initial SELL levels are fixed TON amounts.
+            # There are no initial BUY levels: each BUY is created only from
+            # the USDT actually received by its paired SELL.
+            avail_token = 0.0 if sell_as_ton else max(0.0, float(token_balance or 0.0))
+            grin_per_sell = avail_token / n_sell if n_sell > 0 else 0
+            sell_amount_ton = fixed_sell_ton if sell_as_ton else 0.0
 
             for i in range(1, n_sell + 1):
                 price = center_price * sell_factor**i
@@ -636,49 +638,51 @@ class GridTrader:
                         id=i,
                         side="sell",
                         price_ton=round(price, 6),
-                        amount_token=0,
-                        amount_ton=round(ton_per_sell, 6),
+                        amount_token=0 if sell_as_ton else round(grin_per_sell, 2),
+                        amount_ton=round(sell_amount_ton, 6) if sell_as_ton else 0,
                     )
                 )
             s.grid_reserved_token = avail_token
 
-            token_per_buy = avail_token / n_buy if n_buy > 0 else 0
+            ton_per_buy = avail_ton / n_buy if n_buy > 0 else 0
 
             for i in range(1, n_buy + 1):
                 price = center_price / buy_factor**i
-                amount_ton = (
-                    token_per_buy / price
-                    if price > 0 and token_per_buy + 1e-9 >= min_order * price
-                    else 0
-                )
+                amount_ton = ton_per_buy if ton_per_buy + 1e-9 >= min_order else 0
                 s.buy_levels.append(
                     GridLevel(
                         id=-i,
                         side="buy",
                         price_ton=round(price, 6),
-                        amount_token=round(token_per_buy, 6) if amount_ton > 0 else 0,
-                        amount_ton=round(amount_ton, 6),
+                        amount_token=0,
+                        amount_ton=round(amount_ton, 2),
                     )
                 )
 
-            s.last_action = (
-                f"GRID_BUILT: {n_sell + n_buy} levels; "
-                f"sell {ton_per_sell:.4f} TON each; "
-                f"buy {token_per_buy:.4f} USDT each"
-            )
+            if sell_as_ton:
+                s.last_action = (
+                    f"GRID_BUILT: {n_sell} SELL levels; "
+                    f"sell {sell_amount_ton:.4f} TON each; "
+                    "BUY funded only after SELL settles USDT"
+                )
+            else:
+                s.last_action = (
+                    f"GRID_BUILT: {n_sell + n_buy} levels; "
+                    f"buy {ton_per_buy:.2f} TON each; sell {grin_per_sell:.2f} token each"
+                )
             self._state = s
             self._save_state()
             log.info(
                 "[Grid] Built: center=%.6f step=%.1f%% sell=%d buy=%d "
-                "upper=%.6f lower=%.6f sell_ton=%.4f buy_usdt=%.4f",
+                "upper=%.6f lower=%.6f grin=%.0f ton=%.1f",
                 center_price,
                 step,
                 n_sell,
                 n_buy,
                 s.upper_price,
                 s.lower_price,
-                avail_ton,
                 avail_token,
+                avail_ton,
             )
             return s
 
@@ -732,47 +736,67 @@ class GridTrader:
         )
 
     def _execute_sell(self, level, price_ton):
+        """Execute a grid SELL.
+
+        In TON/USDT sell-only mode, SELL means TON -> USDT.  The DeDust
+        client's buy() method performs that native-asset-to-USDT swap; the
+        naming is historical and is intentionally hidden behind this branch.
+        """
         try:
-            if level.amount_ton <= 0:
-                return {"ok": False, "error": "zero_amount"}
-            if self._dc and hasattr(self._dc, "buy"):
-                # The DEX client's buy() method is the TON -> USDT swap.
-                # Keep the grid's public side names in market terms: SELL
-                # means sell TON at a high USDT/TON price.
-                result = self._dc.buy(level.amount_ton)
-                if result.get("ok"):
-                    received_token = float(
-                        result.get(
-                            "usdt_received",
-                            result.get(
-                                "received_usdt",
-                                result.get("received_token", 0),
-                            ),
+            sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+            if sell_as_ton:
+                ton_amount = float(level.amount_ton or 0)
+                if ton_amount <= 0:
+                    return {"ok": False, "error": "zero_ton_amount"}
+                if self._dc and hasattr(self._dc, "buy"):
+                    result = self._dc.buy(ton_amount)
+                    if result.get("ok"):
+                        received_usdt = float(
+                            result.get("usdt_received", result.get("received_usdt", 0)) or 0
                         )
-                        or 0
+                        if received_usdt <= 0:
+                            return {"ok": False, "error": "missing_received_usdt"}
+                        level.status = "filled"
+                        level.filled_at = time.time()
+                        level.fill_price_ton = price_ton
+                        level.amount_token = round(received_usdt, 6)
+                        level.profit_ton = 0.0
+                        level.tx_hash = result.get("tx_hash", "")
+                        self._state.total_sell_cycles += 1
+                        return {
+                            "ok": True,
+                            "received": received_usdt,
+                            "received_usdt": received_usdt,
+                            "profit_ton": 0.0,
+                        }
+                return {"ok": False, "error": "no_dedust_client"}
+
+            if level.amount_token <= 0:
+                return {"ok": False, "error": "zero_amount"}
+            if self._dc and hasattr(self._dc, "sell"):
+                # Legacy mode: USDT -> TON.
+                entry_cost = level.entry_cost_ton or level.amount_ton
+                min_net_ton = entry_cost + self._gas_per_tx()
+                result = self._dc.sell(
+                    level.amount_token,
+                    min_net_ton=min_net_ton,
+                )
+                if result.get("ok"):
+                    received_ton = float(
+                        result.get("received_ton", result.get("expected_ton", 0)) or 0
                     )
-                    if received_token <= 0:
-                        return {"ok": False, "error": "missing_received_usdt"}
+                    if received_ton <= 0:
+                        return {"ok": False, "error": "missing_received_ton"}
                     level.status = "filled"
                     level.filled_at = time.time()
                     level.fill_price_ton = price_ton
-                    level.amount_token = received_token
+                    level.profit_ton = received_ton - entry_cost - self._gas_per_tx()
                     level.tx_hash = result.get("tx_hash", "")
-                    # A profit is finalized when the USDT proceeds buy back
-                    # more TON at a lower level.  For a resell created after
-                    # an initial buy, estimate the result in TON terms.
-                    if level.note.startswith("resell_after_buy:") and level.entry_cost_ton > 0:
-                        realized_ton = received_token / max(price_ton, 1e-9)
-                        level.profit_ton = (
-                            realized_ton
-                            - level.entry_cost_ton
-                            - self._gas_per_tx()
-                        )
-                        self._state.total_profit_ton += level.profit_ton
+                    self._state.total_profit_ton += level.profit_ton
                     self._state.total_sell_cycles += 1
                     return {
                         "ok": True,
-                        "received": received_token,
+                        "received": received_ton,
                         "profit_ton": level.profit_ton,
                     }
             return {"ok": False, "error": "no_dedust_client"}
@@ -781,53 +805,67 @@ class GridTrader:
             return {"ok": False, "error": str(e)}
 
     def _execute_buy(self, level, price_ton):
+        """Execute a grid BUY using USDT proceeds from a previous SELL."""
         try:
-            if level.amount_token <= 0:
+            sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+            if sell_as_ton:
+                usdt_amount = float(level.amount_token or 0)
+                if usdt_amount <= 0:
+                    return {"ok": False, "error": "zero_usdt_amount"}
+                if self._dc and hasattr(self._dc, "sell"):
+                    # DeDust sell() performs USDT -> TON. No upfront TON
+                    # budget is required; this level is funded by paired SELL.
+                    result = self._dc.sell(usdt_amount, min_net_ton=0.0)
+                    if result.get("ok"):
+                        received_ton = float(result.get("ton_received", 0) or 0)
+                        if received_ton <= 0:
+                            return {"ok": False, "error": "missing_received_ton"}
+                        level.status = "filled"
+                        level.filled_at = time.time()
+                        level.fill_price_ton = price_ton
+                        level.amount_ton = round(received_ton, 6)
+                        level.entry_cost_ton = round(
+                            usdt_amount / max(price_ton, 1e-9) + self._gas_per_tx(), 6
+                        )
+                        level.tx_hash = result.get("tx_hash", "")
+                        return {
+                            "ok": True,
+                            "received": received_ton,
+                            "received_ton": received_ton,
+                        }
+                return {"ok": False, "error": "no_dedust_client"}
+
+            if level.amount_ton <= 0:
                 return {"ok": False, "error": "zero_amount"}
-            if self._dc and hasattr(self._dc, "sell"):
-                # The DEX client's sell() method is the USDT -> TON swap.
-                # This is the lower-level BUY TON leg of the grid.
-                min_net_ton = None
-                if level.note.startswith("rebuy_after_sell:") and level.entry_cost_ton > 0:
-                    min_net_ton = level.entry_cost_ton + self._gas_per_tx()
-                result = self._dc.sell(level.amount_token, min_net_ton=min_net_ton)
+            if self._dc and hasattr(self._dc, "buy"):
+                result = self._dc.buy(level.amount_ton)
                 if result.get("ok"):
-                    received_ton = float(
+                    received_token = float(
                         result.get(
-                            "ton_received",
-                            result.get("received_ton", result.get("expected_ton", 0)),
+                            "received_usdt",
+                            result.get(
+                                "usdt_received",
+                                result.get("received_grinch", 0),
+                            ),
                         )
                         or 0
                     )
-                    if received_ton <= 0:
-                        return {"ok": False, "error": "missing_received_ton"}
+                    if received_token <= 0:
+                        return {"ok": False, "error": "missing_received_token"}
                     level.status = "filled"
                     level.filled_at = time.time()
                     level.fill_price_ton = price_ton
-                    level.amount_ton = received_ton
+                    level.amount_token = received_token
+                    level.entry_cost_ton = level.amount_ton + self._gas_per_tx()
                     level.tx_hash = result.get("tx_hash", "")
-                    if level.note.startswith("rebuy_after_sell:"):
-                        level.profit_ton = (
-                            received_ton
-                            - level.entry_cost_ton
-                            - self._gas_per_tx()
-                        )
-                        self._state.total_profit_ton += level.profit_ton
-                    else:
-                        # Store the TON-equivalent cost so a later resell can
-                        # report a meaningful cycle result.
-                        level.entry_cost_ton = (
-                            level.amount_token / max(price_ton, 1e-9)
-                            + self._gas_per_tx()
-                        )
-                    return {"ok": True, "received": received_ton}
+                    return {"ok": True, "received": received_token}
             return {"ok": False, "error": "no_dedust_client"}
         except Exception as e:
             log.error("[Grid] buy error: %s", e)
             return {"ok": False, "error": str(e)}
 
     def _place_rebuy(self, level):
-        """Buy TON one grid step below a filled TON sale."""
+        """Create a BUY one grid step below a filled SELL."""
         step_factor = 1.0 + (self._state.step_pct or GridCfg.step_pct) / 100.0
         anchor = level.fill_price_ton or level.price_ton
         if anchor <= 0 or step_factor <= 1:
@@ -840,18 +878,49 @@ class GridTrader:
             for item in self._state.buy_levels
         ):
             return
-        amount_token = level.amount_token
-        if amount_token <= 0:
+
+        sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+        if sell_as_ton:
+            # The exact USDT received by SELL is the only funding source for
+            # the paired BUY. Do not reserve or invent an upfront balance.
+            usdt_amount = float(level.amount_token or 0)
+            estimated_ton = usdt_amount / target_price if target_price > 0 else 0.0
+            min_order = self._min_profitable_order_ton(self._state.step_pct)
+            if usdt_amount <= 0 or (
+                not self._allow_unprofitable_orders()
+                and (not math.isfinite(min_order) or estimated_ton + 1e-9 < min_order)
+            ):
+                log.info(
+                    "[Grid] Skip rebuy at %.6f: %.4f estimated TON is below break-even %.4f TON",
+                    target_price,
+                    estimated_ton,
+                    min_order,
+                )
+                return
+            next_id = -(max([abs(item.id) for item in self._state.buy_levels] or [0]) + 1)
+            self._state.buy_levels.append(
+                GridLevel(
+                    id=next_id,
+                    side="buy",
+                    price_ton=target_price,
+                    amount_token=round(usdt_amount, 6),
+                    amount_ton=round(estimated_ton, 6),
+                    note=f"rebuy_after_sell:{level.id}; funded_by_usdt",
+                )
+            )
             return
-        estimated_ton = amount_token / target_price
+
+        amount_ton = level.amount_ton
+        if amount_ton <= 0 and level.amount_token > 0:
+            amount_ton = level.amount_token / target_price
         min_order = self._min_profitable_order_ton(self._state.step_pct)
         if not self._allow_unprofitable_orders() and (
-            not math.isfinite(min_order) or estimated_ton + 1e-9 < min_order
+            not math.isfinite(min_order) or amount_ton + 1e-9 < min_order
         ):
             log.info(
-                "[Grid] Skip rebuy at %.6f: estimated %.4f TON is below break-even %.4f TON",
+                "[Grid] Skip rebuy at %.6f: %.4f TON is below break-even %.4f TON",
                 target_price,
-                estimated_ton,
+                amount_ton,
                 min_order,
             )
             return
@@ -861,23 +930,16 @@ class GridTrader:
                 id=next_id,
                 side="buy",
                 price_ton=target_price,
-                amount_token=round(amount_token, 6),
-                amount_ton=round(estimated_ton, 6),
-                # The original TON amount plus the sell-side fee is the
-                # break-even target for this rebuy.
-                entry_cost_ton=round(
-                    level.amount_ton + self._gas_per_tx(),
-                    6,
-                ),
+                amount_ton=round(amount_ton, 6),
                 note=f"rebuy_after_sell:{level.id}",
             )
         )
 
     def _place_resell(self, level):
-        """Sell TON one grid step above a filled TON purchase."""
+        """Create the SELL one grid step above a filled BUY."""
         step_factor = 1.0 + (self._state.step_pct or GridCfg.step_pct) / 100.0
         anchor = level.fill_price_ton or level.price_ton
-        if anchor <= 0 or step_factor <= 1 or level.amount_ton <= 0:
+        if anchor <= 0 or step_factor <= 1:
             return
         target_price = round(anchor * step_factor, 6)
         if any(
@@ -888,13 +950,33 @@ class GridTrader:
         ):
             return
         next_id = max([item.id for item in self._state.sell_levels] or [0]) + 1
+        sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+        if sell_as_ton:
+            amount_ton = float(level.amount_ton or 0)
+            if amount_ton <= 0:
+                return
+            self._state.sell_levels.append(
+                GridLevel(
+                    id=next_id,
+                    side="sell",
+                    price_ton=target_price,
+                    amount_token=0,
+                    amount_ton=round(amount_ton, 6),
+                    entry_cost_ton=level.entry_cost_ton,
+                    note=f"resell_after_buy:{level.id}",
+                )
+            )
+            return
+
+        if level.amount_token <= 0:
+            return
         self._state.sell_levels.append(
             GridLevel(
                 id=next_id,
                 side="sell",
                 price_ton=target_price,
-                amount_token=0,
-                amount_ton=round(level.amount_ton, 6),
+                amount_token=round(level.amount_token, 6),
+                amount_ton=level.amount_ton,
                 entry_cost_ton=level.entry_cost_ton,
                 note=f"resell_after_buy:{level.id}",
             )
