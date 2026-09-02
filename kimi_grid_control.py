@@ -108,8 +108,8 @@ class KimiGridControl:
             step = fallback_step
         min_step = max(0.1, _float_env("GRID_MIN_STEP_PCT", 0.9))
         max_step = max(min_step, _float_env("GRID_MAX_STEP_PCT", 8.0))
-        if not _bool_env('GRID_ADAPTIVE_STEP', False):
-            step = _float_env('GRID_STEP_PCT', min_step)
+        if not _bool_env("GRID_ADAPTIVE_STEP", False):
+            step = _float_env("GRID_STEP_PCT", min_step)
         else:
             step = max(min_step, min(max_step, step))
 
@@ -119,8 +119,12 @@ class KimiGridControl:
             except (TypeError, ValueError):
                 return fallback
 
-        configured_sell = max(1, int(_float_env("GRID_SELL_LEVELS", defaults["sell_levels"])))
-        configured_buy = max(0, int(_float_env("GRID_BUY_LEVELS", defaults["buy_levels"])))
+        configured_sell = max(
+            1, int(_float_env("GRID_SELL_LEVELS", defaults["sell_levels"]))
+        )
+        configured_buy = max(
+            0, int(_float_env("GRID_BUY_LEVELS", defaults["buy_levels"]))
+        )
         sell_levels = max(
             1,
             min(
@@ -174,7 +178,10 @@ class KimiGridControl:
         local = market.get("local", {})
         defaults = market.get("defaults", {})
         wallet = market.get("wallet", {})
-        fallback_step = float(local.get("optimal_step", _float_env("GRID_STEP_PCT", 0.9)) or _float_env("GRID_STEP_PCT", 0.9))
+        fallback_step = float(
+            local.get("optimal_step", _float_env("GRID_STEP_PCT", 0.9))
+            or _float_env("GRID_STEP_PCT", 0.9)
+        )
         system = (
             "You are the risk-aware controller for a spot cryptocurrency grid. "
             "You are advisory only: never invent balances, never place orders, "
