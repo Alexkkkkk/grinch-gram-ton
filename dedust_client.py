@@ -1,375 +1,4 @@
-"""
-DeDust DEX клиент для реальной торговли TON/USDT в блокчейне TON.
-USDT = нативный TON (переименован в 2026).
-Все блокчейн-операции асинхронные — запускаются через _run().
-"""
-
-import asyncio
-import logging
-import os
-import secrets
-import threading
-import time
-from typing import Optional
-
-from dedust import (
-    Asset,
-    Factory,
-    JettonRoot,
-    Pool,
-    PoolType,
-    SwapParams,
-    VaultJetton,
-    VaultNative,
-)
-from pytoniq import Address, LiteBalancer, WalletV5R1
-from pytoniq_core import Address as CoreAddress
-from pytoniq_core import begin_cell
-
-from core.config import Config
-from http_client import SESSION as _HTTP
-from price_feed import price_feed
-
-
-def _tc_headers() -> dict:
-    """Возвращает заголовки для TonCenter API (X-API-Key, если задан)."""
-    key = os.getenv("TONCENTER_API_KEY", "")
-    return {"X-API-Key": key} if key else {}
-
-
-log = logging.getLogger(__name__)
-
-# 1 TON = 1_000_000_000 нанотонов
-TON = 1_000_000_000
-
-# Адрес мастер-контракта DeDust Factory в мейннете
-_FACTORY_ADDR = "EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tSvKBUIB6mmAR0096nr"
-
-# ── Глобальный кеш баланса (TTL 150 сек) — все модули читают отсюда ──────────
-# Предотвращает шторм 429 от TonCenter: трейдер, ликвидатор, deposit monitor
-# делают независимые запросы каждые 30–60 сек. Общий кеш сводит фактические
-# HTTP-вызовы к одному раз в 150 секунд, независимо от числа читателей.
-_BAL_CACHE: dict = {}  # {"TON": float, "USDT": float}
-_BAL_CACHE_TS: float = 0.0  # timestamp последнего успешного обновления
-_BAL_CACHE_TTL: float = 150.0  # секунды
-_BAL_CACHE_LOCK = threading.Lock()
-_BAL_BACKOFF_UNTIL: float = 0.0  # не стучать раньше этого timestamp при 429
-# C4-fix: сериализуем HTTP-запросы к API баланса — только один поток
-# одновременно делает fetch. Остальные ждут его результата (double-checked).
-_BAL_FETCH_LOCK = threading.Lock()
-
-
-def get_shared_balance(force: bool = False) -> dict:
-    """Возвращает кешированный баланс {TON, USDT} из глобального кеша.
-
-    force=True обновляет даже если TTL не истёк (используется после свопа).
-    При 429-backoff возвращает последний известный кеш не долбя API.
-    """
-    now = time.time()
-
-    # Если backoff ещё не истёк — возвращаем кеш без запроса
-    if not force and now < _BAL_BACKOFF_UNTIL:
-        with _BAL_CACHE_LOCK:
-            return dict(_BAL_CACHE) if _BAL_CACHE else {}
-
-    # Если кеш свежий — возвращаем без запроса (быстрый путь без fetch-lock)
-    with _BAL_CACHE_LOCK:
-        if not force and _BAL_CACHE and (now - _BAL_CACHE_TS) < _BAL_CACHE_TTL:
-            return dict(_BAL_CACHE)
-
-    # C4-fix: сериализуем fetch — только один поток стучит в API.
-    # Остальные блокируются на _BAL_FETCH_LOCK и после разблокировки
-    # находят свежий кеш во втором (double-checked) чтении.
-    with _BAL_FETCH_LOCK:
-        # Двойная проверка: пока мы ждали lock — другой поток уже обновил кеш
-        now = time.time()
-        with _BAL_CACHE_LOCK:
-            if not force and _BAL_CACHE and (now - _BAL_CACHE_TS) < _BAL_CACHE_TTL:
-                return dict(_BAL_CACHE)
-
-        # Нужно обновить — делаем HTTP запросы
-        return _fetch_balance_and_update(force, now)
-
-
-def _fetch_balance_and_update(force: bool, now: float) -> dict:
-    """Внутренняя функция: делает HTTP-запросы и обновляет кеш.
-    Вызывается только из get_shared_balance под _BAL_FETCH_LOCK.
-    """
-    global _BAL_CACHE, _BAL_CACHE_TS, _BAL_BACKOFF_UNTIL
-    wallet = Config.TON_WALLET
-    token = getattr(Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS)
-
-    ton_val: Optional[float] = None
-    usdt_val: float = 0.0
-    hit_429 = False
-
-    # TON balance: TonCenter v2 → TonAPI v2
-    try:
-        r = _HTTP.get(
-            "https://toncenter.com/api/v2/getAddressBalance",
-            params={"address": wallet},
-            headers=_tc_headers(),
-            timeout=8,
-        )
-        if r.status_code == 429:
-            hit_429 = True
-        elif r.status_code == 200:
-            result = r.json().get("result")
-            if result is not None:
-                ton_val = float(result) / TON
-    except Exception:
-        pass
-
-    if ton_val is None and not hit_429:
-        try:
-            r = _HTTP.get(
-                f"https://tonapi.io/v2/accounts/{wallet}",
-                headers={"Accept": "application/json"},
-                timeout=8,
-            )
-            if r.status_code == 429:
-                hit_429 = True
-            elif r.status_code == 200:
-                bal = r.json().get("balance")
-                if bal is not None:
-                    ton_val = float(bal) / TON
-        except Exception:
-            pass
-
-    # USDT balance: TonCenter v3 → TonAPI direct → TonAPI list
-    # USDT decimals = 6
-    if not hit_429:
-        try:
-            r = _HTTP.get(
-                "https://toncenter.com/api/v3/jetton/wallets",
-                params={"owner_address": wallet, "jetton_address": token, "limit": 1},
-                headers=_tc_headers(),
-                timeout=8,
-            )
-            if r.status_code == 429:
-                hit_429 = True
-            elif r.status_code == 200:
-                wallets = r.json().get("jetton_wallets", [])
-                if wallets:
-                    bal = wallets[0].get("balance")
-                    if bal is not None:
-                        usdt_val = float(bal) / (10**Config.USDT_DECIMALS)
-        except Exception:
-            pass
-
-    if usdt_val == 0.0 and not hit_429:
-        try:
-            r = _HTTP.get(
-                f"https://tonapi.io/v2/accounts/{wallet}/jettons/{token}",
-                headers={"Accept": "application/json"},
-                timeout=8,
-            )
-            if r.status_code == 429:
-                hit_429 = True
-            elif r.status_code == 200:
-                bal = r.json().get("balance")
-                if bal is not None:
-                    usdt_val = float(bal) / (10**Config.USDT_DECIMALS)
-        except Exception:
-            pass
-
-    if hit_429:
-        # Применяем backoff: не долбим API 90 секунд после 429
-        with _BAL_CACHE_LOCK:
-            _BAL_BACKOFF_UNTIL = now + 90.0
-            log.warning("[Balance] 429 от TonCenter/TonAPI — пауза 90с, возвращаем кеш")
-            return dict(_BAL_CACHE) if _BAL_CACHE else {}
-
-    # Защита от «битого» ответа API: TON=0 при ненулевом кеше = сбой API
-    with _BAL_CACHE_LOCK:
-        _prev_ton = _BAL_CACHE.get("TON")
-    if ton_val == 0.0 and _prev_ton and _prev_ton > 0.05:
-        log.warning(
-            f"[Balance] Подозрительный ответ TON=0 (был {_prev_ton}) — "
-            "игнорируем, используем предыдущее значение"
-        )
-        ton_val = None
-
-    # Обновляем кеш только если получили хотя бы одно реальное значение
-    if ton_val is not None or usdt_val > 0:
-        new_cache: dict = {
-            "TON": (
-                round(ton_val, 6) if ton_val is not None else _BAL_CACHE.get("TON", 0.0)
-            ),
-            "USDT": round(usdt_val, 4),
-        }
-        with _BAL_CACHE_LOCK:
-            _BAL_CACHE = new_cache
-            _BAL_CACHE_TS = now
-        return dict(new_cache)
-
-    # Ничего не получили — возвращаем старый кеш (или {} при холодном старте)
-    with _BAL_CACHE_LOCK:
-        return dict(_BAL_CACHE) if _BAL_CACHE else {}
-
-
-def _run(coro):
-    """Запускает async-корутину синхронно в новом event loop."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
-class DedustClient:
-    """
-    Синхронная обёртка над DeDust SDK для использования в Flask-приложении.
-
-    Поддерживает:
-    - Получение баланса TON и USDT
-    - Оценку выхода свопа (цена без исполнения)
-    - Своп TON → USDT (покупка)
-    - Своп USDT → TON (продажа)
-    """
-
-    def __init__(self, mnemonic_override: str = None):
-        self._lock = threading.Lock()
-        self._mnemonic: list[str] = []
-        self._ready = False
-        self._error: Optional[str] = None
-        self._last_price: Optional[float] = None
-
-        mnemonic_raw = mnemonic_override or os.getenv("TON_MNEMONIC", "")
-        if not mnemonic_raw:
-            self._error = "TON_MNEMONIC не задан — DeDust-режим недоступен"
-            log.warning(self._error)
-            return
-
-        words = mnemonic_raw.strip().split()
-        # C3 fix: сразу стираем raw-строку мнемоники из локальной переменной
-        mnemonic_raw = None  # noqa
-        if len(words) not in (24,):
-            self._error = f"Мнемоника должна содержать 24 слова, получено: {len(words)}"
-            log.error(self._error)
-            words = []  # scrub
-            return
-
-        self._mnemonic = words
-        self._ready = True
-        log.info("[DeDust] Клиент инициализирован ✓")
-
-        # Если TON_WALLET не задан явно — выводим адрес из мнемоники в фоне.
-        # Это нужно когда пользователь задал только TON_MNEMONIC (bothost.tech).
-        # Без этого баланс проверяется против захардкоженного дефолт-адреса → 0.
-        if not os.environ.get("TON_WALLET"):
-            t = threading.Thread(target=self._derive_and_set_wallet_addr, daemon=True)
-            t.start()
-
-    @property
-    def ready(self) -> bool:
-        return self._ready
-
-    @property
-    def error(self) -> Optional[str]:
-        return self._error
-
-    # ─────────────────────────────── helpers ───────────────────────────────
-
-    def _derive_and_set_wallet_addr(self):
-        """Выводит адрес кошелька из мнемоники и обновляет Config.TON_WALLET.
-
-        Запускается в фоновом потоке при старте, если TON_WALLET не задан
-        явно через переменную окружения. Без этого balance-check идёт против
-        захардкоженного дефолт-адреса и всегда показывает 0.
-        """
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                wallet, provider = loop.run_until_complete(self._wallet_and_provider())
-                raw = wallet.address.to_str(is_user_friendly=True, is_bounceable=False)
-                addr = self._clean_addr_str(raw)
-                loop.run_until_complete(provider.close_all())
-            finally:
-                loop.close()
-                asyncio.set_event_loop(None)
-
-            if addr and addr != Config.TON_WALLET:
-                log.info(f"[DeDust] ✅ Адрес кошелька выведен из мнемоники: {addr}")
-                Config.TON_WALLET = addr
-                # Сбросить кеш баланса — он считался против неправильного адреса
-                global _BAL_CACHE_TS, _BAL_CACHE
-                with _BAL_CACHE_LOCK:
-                    _BAL_CACHE = {}
-                    _BAL_CACHE_TS = 0.0
-            else:
-                log.info(f"[DeDust] Адрес кошелька совпадает с Config: {addr}")
-        except Exception as e:
-            log.warning(f"[DeDust] Не удалось вывести адрес из мнемоники: {e}")
-
-    async def _make_provider(self) -> LiteBalancer:
-        """Создаёт LiteBalancer с retry — pytoniq иногда падает с KeyError в listener."""
-        last_exc = None
-        for attempt in range(3):
-            provider = None
-            try:
-                provider = LiteBalancer.from_mainnet_config(trust_level=1, timeout=15)
-                await provider.start_up()
-                return provider
-            except Exception as e:
-                last_exc = e
-                if isinstance(e, KeyError):
-                    log.warning(
-                        f"[DeDust] LiteClient KeyError на попытке {attempt+1}/3 — "
-                        "перезапускаем провайдер"
-                    )
-                else:
-                    log.warning(
-                        f"[DeDust] _make_provider попытка {attempt+1}/3 провалилась: {e}"
-                    )
-                if provider is not None:
-                    try:
-                        await provider.close_all()
-                    except Exception:
-                        pass
-                import asyncio as _aio
-
-                await _aio.sleep(1)
-        raise last_exc
-
-    async def _wallet_and_provider(self):
-        provider = await self._make_provider()
-        # WalletV5R1 (W5) — версия кошелька TonKeeper пользователя; mainnet global_id = -239
-        wallet = await WalletV5R1.from_mnemonic(
-            provider=provider, mnemonics=self._mnemonic, network_global_id=-239
-        )
-        return wallet, provider
-
-    # ─────────────────────────── balance ───────────────────────────────────
-
-    def _get_ton_balance_http(self) -> Optional[float]:
-        """TON баланс через HTTP. Приоритет: TonCenter v2 → TonAPI v2.
-        НЕ использует liteserver — он даёт 'not provable' garbage значения.
-        """
-        wallet = Config.TON_WALLET
-        try:
-            r = _HTTP.get(
-                "https://toncenter.com/api/v2/getAddressBalance",
-                params={"address": wallet},
-                headers=_tc_headers(),
-                timeout=8,
-            )
-            result = r.json().get("result")
-            if result is not None:
-                return float(result) / TON
-        except Exception as e:
-            log.debug(f"[DeDust] TON balance TonCenter v2: {e}")
-        try:
-            r = _HTTP.get(
-                f"https://tonapi.io/v2/accounts/{wallet}",
-                headers={"Accept": "application/json"},
-                timeout=8,
-            )
-            bal = r.json().get("balance")
-            if bal is not None:
-                return float(bal) / TON
-        except Exception as e:
+except Exception as e:
             log.debug(f"[DeDust] TON balance TonAPI: {e}")
         return None
 
@@ -513,7 +142,9 @@ class DedustClient:
             )
             for b in r.json().get("balances", []):
                 jaddr = (b.get("jetton", {}) or {}).get("address", "")
-                if self._same_addr(jaddr, Config.TOKEN_ADDRESS):
+                if self._same_addr(
+                    jaddr, getattr(Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS)
+                ):
                     return (b.get("wallet_address") or {}).get("address")
         except Exception as e:
             log.debug(f"[DeDust] jetton wallet TonAPI: {e}")
@@ -535,7 +166,9 @@ class DedustClient:
                 "https://toncenter.com/api/v3/jetton/wallets",
                 params={
                     "owner_address": addr_str,
-                    "jetton_address": Config.TOKEN_ADDRESS,
+                    "jetton_address": getattr(
+                        Config, "USDT_TOKEN_ADDRESS", Config.TOKEN_ADDRESS
+                    ),
                     "limit": 1,
                 },
                 headers=_tc_headers(),
@@ -1038,18 +671,30 @@ class DedustClient:
     # CPMM-v2 PayJetton (0xcbc33949) is accepted by the jetton wallet but
     # aborts inside this pool with exit code 65535, leaving the input assets
     # in the pool.  Use the legacy VaultJetton/DedustSwap payload instead.
-    _JETTON_XFER_OP = 0x0F8A7EA5  # стандартный jetton transfer
+    _JETTON_XFER_OP = 0x0F8A7EA5  # стандартный TEP-74 jetton transfer
+    # Параметры подтверждённых legacy DeDust-транзакций:
+    # buy: 0.25 TON на swap + минимум 0.25 TON на Native Vault;
+    # sell: 0.30 TON на jetton-wallet, из них 0.25 TON forward в пул.
+    _BUY_MIN_GAS_TON = 0.25
+    _SELL_ATTACHED_TON = 0.30
+    _SELL_FORWARD_TON = 0.25
 
     def _build_sell_transfer_body(
         self,
         recipient,
         pool_addr,
+        vault_addr,
         usdt_nano: int,
         min_out_nano: int,
         deadline: int,
         fwd_nano: int,
     ):
-        """Build a TEP-74 transfer with the legacy DeDust swap payload."""
+        """Build a TEP-74 transfer to the DeDust Jetton Vault.
+
+        The pool address belongs in the forward swap payload, while the
+        Jetton Transfer destination must be the Vault's jetton-wallet owner.
+        This is the route used by the confirmed legacy DeDust transactions.
+        """
         forward_payload = VaultJetton.create_swap_payload(
             pool_address=pool_addr,
             limit=min_out_nano,
@@ -1063,7 +708,7 @@ class DedustClient:
             .store_uint(self._JETTON_XFER_OP, 32)
             .store_uint(secrets.randbits(64), 64)
             .store_coins(usdt_nano)
-            .store_address(pool_addr)  # destination = ПУЛ
+            .store_address(vault_addr)  # destination = Jetton Vault owner
             .store_address(recipient)  # response_destination
             .store_maybe_ref(None)  # custom_payload = нет
             .store_coins(fwd_nano)  # forward_ton_amount
@@ -1098,7 +743,7 @@ class DedustClient:
             # Native Vault принимает swap-payload и сам маршрутизирует TON в пул.
             # Для этого пула рабочая on-chain транзакция прикладывала 0.25 TON
             # сверх суммы swap (0.45 TON total для покупки 0.2 TON).
-            gas_nano = max(int(Config.BUY_GAS_TON * TON), int(0.25 * TON))
+            gas_nano = max(int(Config.BUY_GAS_TON * TON), int(self._BUY_MIN_GAS_TON * TON))
 
             # ── Preflight: деплой кошелька если uninit ───────────────────────
             # WalletV5R1 может быть uninit если на адрес уже пришли TON,
@@ -1282,13 +927,19 @@ class DedustClient:
         wallet, provider = await self._wallet_and_provider()
         try:
             pool, _, usdt_asset = await self._get_pool(provider)
+            # Legacy DeDust flow: transfer USDT to the jetton Vault; the Vault
+            # then forwards the swap message to the pool.
+            jetton_vault_addr = await Factory.get_vault_address(
+                Asset.jetton(self._usdt_address()), provider
+            )
 
             # ── Газ для sell ────────────────────────────────────────────────
-            # This matches a known successful legacy DeDust trace for this
-            # pool: 0.25 TON to the jetton wallet and 0.18 TON forwarded to
-            # the pool.  The unused remainder is returned as excesses.
-            gas_nano = int(0.30 * TON)
-            fwd_nano = int(0.25 * TON)
+            # This matches the successful legacy DeDust trace: 0.30 TON is
+            # attached to the jetton-wallet transfer and 0.25 TON is forwarded
+            # to the pool. Network fees consume the small difference; excesses
+            # are returned to the wallet.
+            gas_nano = int(self._SELL_ATTACHED_TON * TON)
+            fwd_nano = int(self._SELL_FORWARD_TON * TON)
 
             # ── Preflight: деплой кошелька если uninit ───────────────────────
             if not await self._ensure_wallet_deployed(wallet, provider):
@@ -1372,15 +1023,15 @@ class DedustClient:
             transfer_body = self._build_sell_transfer_body(
                 recipient=wallet.address,
                 pool_addr=pool.address,
+                vault_addr=jetton_vault_addr,
                 usdt_nano=amount_nano,
                 min_out_nano=min_out_nano,
                 deadline=deadline,
                 fwd_nano=fwd_nano,
             )
 
-            # USDT уходит jetton-transfer'ом В ПУЛ (destination=пул); своп
-            # исполняется внутри пула по forward-payload. Сообщение шлём на наш
-            # USDT jetton-кошелёк, он маршрутизирует жетоны в пул.
+            # USDT уходит стандартным jetton-transfer'ом в wallet DeDust
+            # Jetton Vault. Vault маршрутизирует токены в пул по forward-payload.
             await wallet.transfer(
                 destination=usdt_jw_address,
                 amount=gas_nano,
