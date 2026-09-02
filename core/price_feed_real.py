@@ -452,12 +452,14 @@ def start_background_updates(interval: float = 10.0) -> None:
 
 
 def get_current_price() -> float:
+    """Return the cached price without blocking request handlers.
+
+    Fresh values are populated by start_background_updates(). A synchronous
+    refresh here could occupy a Gunicorn worker for up to three provider
+    timeouts when an exchange API is slow or unavailable.
+    """
     with _lock:
-        stale = (time.time() - _last_fetch) > 30
-        price = _current_price
-    if stale or price == 0:
-        return update_price()
-    return price
+        return _current_price
 
 
 def get_price_change_24h() -> float:
