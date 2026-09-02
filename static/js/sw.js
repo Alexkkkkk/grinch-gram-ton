@@ -3,11 +3,11 @@
  * Features: Cache-first strategy, Background Sync, Push Notifications
  */
 
-const CACHE_NAME = 'quantumgrinch-v11-step-profit';
+const CACHE_NAME = 'quantumgrinch-v12-net-profit';
 const STATIC_ASSETS = [
   '/',
   '/static/css/grid_style.css',
-  '/static/js/grid_dashboard.js?v=20260901-step-profit-3',
+  '/static/js/grid_dashboard.js?v=20260902-net-profit-1',
   '/static/js/lightweight-charts.standalone.production.js',
   '/static/manifest.json',
 ];
