@@ -6,6 +6,11 @@ import time
 
 from flask import Flask, jsonify, request
 
+try:
+    from flask_compress import Compress
+except ImportError:
+    Compress = None
+
 from core.base_components import NpEncoder
 from core.config import Config
 
@@ -42,8 +47,15 @@ def create_app() -> Flask:
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["PERMANENT_SESSION_LIFETIME"] = 3600
 
-    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000  # 1 year for static files
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+    # Gzip compression for responses
+    if Compress is not None:
+        Compress(app)
+        logger.info("Gzip compression enabled")
+    else:
+        logger.warning("flask-compress not installed — gzip disabled")
 
     # Rate limiting
     try:
