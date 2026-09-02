@@ -550,40 +550,57 @@ class GridTrader:
             )
             n_buy = buy_levels if buy_levels is not None else (GridCfg.buy_levels or 20)
 
-            # Never allocate buy levels below the configured break-even size
-            # unless the operator explicitly opts into unprofitable orders.
+            # Reserve gas before sizing orders. When explicit bounds are used,
+            # profitability must be calculated from the actual per-level price
+            # factors, not from the configured fallback step.
             gas_reserve = float(GridCfg.gas_reserve_ton or 0.0)
             avail_ton = max(0.0, float(ton_balance or 0.0) - gas_reserve)
-            min_order = self._min_profitable_order_ton(step)
-            if (
-                not self._allow_unprofitable_orders()
-                and math.isfinite(min_order)
-                and min_order > 0
-            ):
-                affordable_buys = int((avail_ton + 1e-9) / min_order)
-                if affordable_buys < n_buy:
+            n_sell = max(0, int(n_sell or 0))
+            n_buy = max(0, int(n_buy or 0))
+
+            default_factor = 1 + step / 100
+            sell_factor = default_factor
+            if upper_price is not None and float(upper_price) > center_price and n_sell > 0:
+                sell_factor = (float(upper_price) / center_price) ** (1 / n_sell)
+
+            def factors_for_buy(count):
+                buy_factor = default_factor
+                if lower_price is not None and 0 < float(lower_price) < center_price and count > 0:
+                    buy_factor = (center_price / float(lower_price)) ** (1 / count)
+                actual_step_pct = max(
+                    (sell_factor - 1) * 100,
+                    (buy_factor - 1) * 100,
+                )
+                return buy_factor, actual_step_pct
+
+            # Select the largest affordable count whose actual price step can
+            # cover both swap fees and the estimated buy/sell gas.
+            if not self._allow_unprofitable_orders() and n_buy > 0:
+                requested_buy = n_buy
+                affordable_buy = 0
+                for candidate in range(requested_buy, 0, -1):
+                    candidate_buy_factor, actual_step_pct = factors_for_buy(candidate)
+                    candidate_min_order = self._min_profitable_order_ton(actual_step_pct)
+                    candidate_order_ton = avail_ton / candidate
+                    if candidate_order_ton + 1e-9 >= candidate_min_order:
+                        affordable_buy = candidate
+                        break
+                if affordable_buy < requested_buy:
                     log.warning(
                         "[Grid] Reducing buy levels from %d to %d: "
-                        "%.4f TON per level is below break-even %.4f TON",
-                        n_buy,
-                        max(0, affordable_buys),
-                        (avail_ton / n_buy) if n_buy else 0.0,
-                        min_order,
+                        "%.4f TON per level is below the actual break-even size",
+                        requested_buy,
+                        affordable_buy,
+                        (avail_ton / requested_buy) if requested_buy else 0.0,
                     )
-                    n_buy = max(0, affordable_buys)
+                n_buy = affordable_buy
+
+            buy_factor, actual_step_pct = factors_for_buy(n_buy)
 
             s = GridState()
             s.active = bool(active)
             s.center_price = center_price
             s.last_rebuild = time.time()
-
-            default_factor = 1 + step / 100
-            sell_factor = default_factor
-            buy_factor = default_factor
-            if upper_price is not None and float(upper_price) > center_price:
-                sell_factor = (float(upper_price) / center_price) ** (1 / n_sell)
-            if lower_price is not None and 0 < float(lower_price) < center_price:
-                buy_factor = (center_price / float(lower_price)) ** (1 / n_buy)
 
             s.upper_price = float(
                 (
