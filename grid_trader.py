@@ -263,15 +263,23 @@ class GridTrader:
         self._ai_recommendation = state
         kimi = state.get("kimi", {})
         try:
-            self._ai_recommended_step = float(kimi.get("step_pct", 0) or 0) if kimi.get("ready") else 0.0
+            self._ai_recommended_step = (
+                float(kimi.get("step_pct", 0) or 0) if kimi.get("ready") else 0.0
+            )
         except (TypeError, ValueError):
             self._ai_recommended_step = 0.0
         try:
             self._ai_recommended_investment_ton = (
-                float(kimi.get("investment_ton")) if kimi.get("ready") and kimi.get("investment_ton") is not None else None
+                float(kimi.get("investment_ton"))
+                if kimi.get("ready") and kimi.get("investment_ton") is not None
+                else None
             )
-            self._ai_recommended_sell_levels = int(kimi.get("sell_levels", 0) or 0) if kimi.get("ready") else 0
-            self._ai_recommended_buy_levels = int(kimi.get("buy_levels", 0) or 0) if kimi.get("ready") else 0
+            self._ai_recommended_sell_levels = (
+                int(kimi.get("sell_levels", 0) or 0) if kimi.get("ready") else 0
+            )
+            self._ai_recommended_buy_levels = (
+                int(kimi.get("buy_levels", 0) or 0) if kimi.get("ready") else 0
+            )
         except (TypeError, ValueError):
             self._ai_recommended_investment_ton = None
             self._ai_recommended_sell_levels = None
@@ -529,7 +537,9 @@ class GridTrader:
             step = max(
                 GridCfg.min_step_pct or 3.0, min(GridCfg.max_step_pct or 8.0, step)
             )
-            n_sell = sell_levels if sell_levels is not None else (GridCfg.sell_levels or 20)
+            n_sell = (
+                sell_levels if sell_levels is not None else (GridCfg.sell_levels or 20)
+            )
             n_buy = buy_levels if buy_levels is not None else (GridCfg.buy_levels or 20)
 
             # Never allocate buy levels below the configured break-even size
@@ -569,8 +579,7 @@ class GridTrader:
 
             s.upper_price = float(
                 (
-                    Decimal(str(center_price))
-                    * Decimal(str(sell_factor)) ** n_sell
+                    Decimal(str(center_price)) * Decimal(str(sell_factor)) ** n_sell
                 ).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
             )
             s.lower_price = round(center_price / buy_factor**n_buy, 6)
@@ -642,16 +651,16 @@ class GridTrader:
     ):
         """Public API for AI-triggered grid build."""
         ton_bal, token_bal = self._get_balances()
-        ton_budget = (
-            float(investment_ton)
-            if investment_ton is not None
-            else ton_bal
-        )
+        ton_budget = float(investment_ton) if investment_ton is not None else ton_bal
         if ton_bal is None:
             # Keep the dashboard useful when the wallet is not configured:
             # render a market-based preview, but do not mark it active and
             # never imply that live orders can be placed.
-            step = self._adaptive_step(self._calc_atr_pct()) if step_pct is None else float(step_pct)
+            step = (
+                self._adaptive_step(self._calc_atr_pct())
+                if step_pct is None
+                else float(step_pct)
+            )
             return self.build_grid(
                 center_price,
                 step_pct=step,
@@ -665,7 +674,11 @@ class GridTrader:
             )
         return self.build_grid(
             center_price,
-            step_pct=(self._adaptive_step(self._calc_atr_pct()) if step_pct is None else float(step_pct)),
+            step_pct=(
+                self._adaptive_step(self._calc_atr_pct())
+                if step_pct is None
+                else float(step_pct)
+            ),
             sell_levels=sell_levels,
             buy_levels=buy_levels,
             token_balance=token_bal,
@@ -703,9 +716,7 @@ class GridTrader:
                     level.fill_price_ton = price_ton
                     # Include the sell-side network estimate. A paired sell
                     # already carries the buy-side estimate in entry_cost_ton.
-                    level.profit_ton = (
-                        received_ton - entry_cost - self._gas_per_tx()
-                    )
+                    level.profit_ton = received_ton - entry_cost - self._gas_per_tx()
                     level.tx_hash = result.get("tx_hash", "")
                     self._state.total_profit_ton += level.profit_ton
                     self._state.total_sell_cycles += 1
@@ -768,9 +779,8 @@ class GridTrader:
         if amount_ton <= 0 and level.amount_token > 0:
             amount_ton = level.amount_token / target_price
         min_order = self._min_profitable_order_ton(self._state.step_pct)
-        if (
-            not self._allow_unprofitable_orders()
-            and (not math.isfinite(min_order) or amount_ton + 1e-9 < min_order)
+        if not self._allow_unprofitable_orders() and (
+            not math.isfinite(min_order) or amount_ton + 1e-9 < min_order
         ):
             log.info(
                 "[Grid] Skip rebuy at %.6f: %.4f TON is below break-even %.4f TON",

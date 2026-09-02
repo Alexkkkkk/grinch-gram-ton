@@ -91,7 +91,9 @@ class GridConfig:
         default_factory=lambda: _int_env("GRID_RECENTER_COOLDOWN", 1800)
     )
     min_order_ton: float = 15.0
-    gas_reserve_ton: float = field(default_factory=lambda: _float_env("GAS_RESERVE_TON", 0.3))
+    gas_reserve_ton: float = field(
+        default_factory=lambda: _float_env("GAS_RESERVE_TON", 0.3)
+    )
     db_path: str = field(
         default_factory=lambda: _str_env("DATABASE_URL", "sqlite:///data/bot.db")
     )
@@ -432,7 +434,9 @@ class Config(metaclass=_ConfigMeta):
         self.USDT_TOKEN_ADDRESS = _str_env(
             "USDT_TOKEN_ADDRESS", "EQCxE6mUtQJKFnGfaROTKOt1kCixRv7Nw2Id_sDs"
         )
-        self.USDT_POOL_ADDRESS = _str_env("USDT_POOL_ADDRESS", "EQA-X_yo3fzzbDbJ_0bzFWKqtRuZFIRa1sJsveZJ1YpViO3r")
+        self.USDT_POOL_ADDRESS = _str_env(
+            "USDT_POOL_ADDRESS", "EQA-X_yo3fzzbDbJ_0bzFWKqtRuZFIRa1sJsveZJ1YpViO3r"
+        )
         self.USDT_DECIMALS = _int_env("USDT_DECIMALS", 6)
         self.TOKEN_SYMBOL = _str_env("TOKEN_SYMBOL", "USDT")
         self.BINANCE_API_KEY = _str_env("BINANCE_API_KEY", "")

@@ -1,14 +1,13 @@
-from dedust_client import dedust_client
 from pytoniq_core import Address
+
+from dedust_client import dedust_client
 
 
 def test_sell_payload_uses_legacy_dedust_vault_format():
     recipient = Address(
         "0:99d74121f08279b050ba24a9fe62b6a5305e39064e5f90d4fa4aa4c7488446c5"
     )
-    pool = Address(
-        "0:3e5ffca8ddfcf36c36c9ff46f31562aab51b9914845ad6c26cbde649d58a5588"
-    )
+    pool = Address("0:3e5ffca8ddfcf36c36c9ff46f31562aab51b9914845ad6c26cbde649d58a5588")
     body = dedust_client._build_sell_transfer_body(
         recipient=recipient,
         pool_addr=pool,
