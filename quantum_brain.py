@@ -491,8 +491,14 @@ class QuantumBrain:
             self.state.kimi_investment_ton = float(
                 decision.get("investment_ton", 0.0) or 0.0
             )
-            self.state.kimi_sell_levels = int(decision.get("sell_levels", Config.GRID.sell_levels) or Config.GRID.sell_levels)
-            self.state.kimi_buy_levels = int(decision.get("buy_levels", Config.GRID.buy_levels) or Config.GRID.buy_levels)
+            self.state.kimi_sell_levels = int(
+                decision.get("sell_levels", Config.GRID.sell_levels)
+                or Config.GRID.sell_levels
+            )
+            self.state.kimi_buy_levels = int(
+                decision.get("buy_levels", Config.GRID.buy_levels)
+                or Config.GRID.buy_levels
+            )
             self.state.kimi_reason = decision.get("reason", "")
             self.state.kimi_last_update = float(decision.get("updated_at", 0.0) or 0.0)
 
