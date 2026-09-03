@@ -1,4 +1,4 @@
-"""Kimi-powered control layer for the AI Grid.
+"""Groq-powered control layer for the AI Grid.
 
 Kimi may recommend a grid action and sizing, but it never receives wallet
 credentials and never has a tool that can place an order. GridTrader remains
@@ -37,7 +37,8 @@ class KimiGridControl:
 
     The historical class name is kept for compatibility with the rest of the
     application. Groq is preferred when GROQ_API_KEY is configured; Moonshot
-    remains a backwards-compatible fallback. The model is advisory only.
+    remains a backwards-compatible fallback. The model manages grid
+    parameters, but never receives credentials or a tool that can place orders.
     """
 
     def __init__(self):
@@ -139,7 +140,10 @@ class KimiGridControl:
             step = fallback_step
         min_step = max(0.1, _float_env("GRID_MIN_STEP_PCT", 0.9))
         max_step = max(min_step, _float_env("GRID_MAX_STEP_PCT", 8.0))
-        if not _bool_env("GRID_ADAPTIVE_STEP", False):
+        groq_manages_grid = self.provider == "groq" and _bool_env(
+            "GROQ_MANAGES_GRID", True
+        )
+        if not groq_manages_grid and not _bool_env("GRID_ADAPTIVE_STEP", False):
             step = _float_env("GRID_STEP_PCT", min_step)
         else:
             step = max(min_step, min(max_step, step))
@@ -158,26 +162,21 @@ class KimiGridControl:
         )
         sell_levels = max(
             1,
-            min(
-                self.max_total_levels - 1,
-                configured_sell,
-                int_value("sell_levels", configured_sell),
-            ),
+            min(self.max_total_levels - 1, int_value("sell_levels", configured_sell)),
         )
         buy_levels = max(
             0,
             min(
                 self.max_total_levels - sell_levels,
-                configured_buy,
                 int_value("buy_levels", configured_buy),
             ),
         )
         investment = raw.get("investment_ton", defaults.get("investment_ton"))
+        available_ton = wallet.get("ton")
+        gas_reserve = max(0.0, _float_env("GAS_RESERVE_TON", 0.3))
         if investment is not None:
             try:
                 investment = max(0.0, float(investment))
-                available_ton = wallet.get("ton")
-                gas_reserve = max(0.0, _float_env("GAS_RESERVE_TON", 0.3))
                 if available_ton is not None:
                     # The model may plan only with capital that remains after
                     # the wallet's untouchable network-fee reserve.
@@ -188,6 +187,26 @@ class KimiGridControl:
                 investment = round(investment, 6)
             except (TypeError, ValueError):
                 investment = defaults.get("investment_ton")
+        sell_as_ton = _bool_env("GRID_SELL_AS_TON", False)
+        funded_levels = sell_levels if sell_as_ton else buy_levels
+        ton_per_step = raw.get("ton_per_step")
+        try:
+            ton_per_step = (
+                max(0.0, float(ton_per_step))
+                if ton_per_step is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            ton_per_step = None
+        if ton_per_step is None and investment is not None and funded_levels > 0:
+            ton_per_step = max(0.0, float(investment) / funded_levels)
+        if ton_per_step is not None and available_ton is not None and funded_levels > 0:
+            ton_per_step = min(
+                ton_per_step,
+                max(0.0, float(available_ton) - gas_reserve) / funded_levels,
+            )
+            ton_per_step = round(ton_per_step, 6)
+
         reason = str(raw.get("reason", "")).strip().replace("\n", " ")[:240]
         return {
             "signal": signal,
@@ -195,6 +214,7 @@ class KimiGridControl:
             "action": action,
             "step_pct": round(step, 2),
             "investment_ton": investment,
+            "ton_per_step": ton_per_step,
             "sell_levels": sell_levels,
             "buy_levels": buy_levels,
             "reason": reason,
@@ -203,7 +223,7 @@ class KimiGridControl:
         }
 
     def decide(self, market: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Ask Kimi for a recommendation when the rate limit permits."""
+        """Ask Groq/Kimi for a recommendation when the rate limit permits."""
         if not self.enabled:
             return None
         now = time.monotonic()
@@ -221,18 +241,21 @@ class KimiGridControl:
         )
         system = (
             "You are the risk-aware controller for a spot cryptocurrency grid. "
-            "You are advisory only: never invent balances, never place orders, "
+            "You manage grid parameters only; never invent balances, never place orders, "
             "and never recommend leverage or shorting. Use the wallet balances "
             "and limits supplied by the user context. Treat gas_reserve_ton as untouchable. "
             "Subtract fee_pct, slippage_pct, and estimated gas costs before sizing a grid; "
             "never spend the gas reserve. Use REBUILD when the active grid "
             "should be adapted to current market conditions or wallet balances; "
-            "otherwise use WAIT. Return JSON only with "
-            "exactly these keys: signal (BUY, SELL, HOLD), confidence (0-100), "
-            "action (WAIT, BUILD, START, REBUILD, PAUSE_BUY, STOP), step_pct (the configured grid range), "
-            "investment_ton (non-negative), sell_levels (1-39), buy_levels (0-39), "
-            "reason (short string). The sum of levels must not exceed the supplied "
-            "limit. Never set investment_ton above available TON. STOP is reserved "
+            "otherwise use WAIT. When the step, per-level amount, or level counts "
+            "should change, use REBUILD so the controller applies the new grid. "
+            "Return JSON only with exactly these keys: signal (BUY, SELL, HOLD), "
+            "confidence (0-100), action (WAIT, BUILD, START, REBUILD, PAUSE_BUY, STOP), "
+            "step_pct (the grid price step in percent), investment_ton (total TON budget), "
+            "ton_per_step (TON amount for each funded level), sell_levels (1-39), "
+            "buy_levels (0-39), reason (short string). The sum of levels must not exceed "
+            "the supplied limit. The controller will cap ton_per_step and investment_ton "
+            "to the wallet after the gas reserve. Never set investment_ton above available TON. STOP is reserved "
             "for clear danger; PAUSE_BUY stops new buys but allows existing sells."
         )
         user = json.dumps(market, ensure_ascii=False, separators=(",", ":"))

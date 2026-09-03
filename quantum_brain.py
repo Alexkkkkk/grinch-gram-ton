@@ -58,6 +58,7 @@ class BrainState:
     kimi_action: str = "WAIT"
     kimi_step_pct: float = field(default_factory=lambda: Config.GRID.step_pct)
     kimi_investment_ton: float = 0.0
+    kimi_ton_per_step: float = 0.0
     kimi_sell_levels: int = field(default_factory=lambda: Config.GRID.sell_levels)
     kimi_buy_levels: int = field(default_factory=lambda: Config.GRID.buy_levels)
     kimi_reason: str = ""
@@ -114,6 +115,7 @@ class BrainState:
                 "action": self.kimi_action,
                 "step_pct": round(self.kimi_step_pct, 2),
                 "investment_ton": round(self.kimi_investment_ton, 6),
+                "ton_per_step": round(self.kimi_ton_per_step, 6),
                 "sell_levels": self.kimi_sell_levels,
                 "buy_levels": self.kimi_buy_levels,
                 "reason": self.kimi_reason,
@@ -129,6 +131,7 @@ class BrainState:
                 "action": self.kimi_action,
                 "step_pct": round(self.kimi_step_pct, 2),
                 "investment_ton": round(self.kimi_investment_ton, 6),
+                "ton_per_step": round(self.kimi_ton_per_step, 6),
                 "sell_levels": self.kimi_sell_levels,
                 "buy_levels": self.kimi_buy_levels,
                 "reason": self.kimi_reason,
@@ -511,6 +514,9 @@ class QuantumBrain:
             )
             self.state.kimi_investment_ton = float(
                 decision.get("investment_ton", 0.0) or 0.0
+            )
+            self.state.kimi_ton_per_step = float(
+                decision.get("ton_per_step", 0.0) or 0.0
             )
             self.state.kimi_sell_levels = int(
                 decision.get("sell_levels", Config.GRID.sell_levels)

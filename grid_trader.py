@@ -124,6 +124,7 @@ class GridTrader:
         self._ai_recommendation = {}
         self._ai_recommended_step = 0.0
         self._ai_recommended_investment_ton = None
+        self._ai_recommended_ton_per_step = None
         self._ai_recommended_sell_levels = None
         self._ai_recommended_buy_levels = None
         self._last_ai_rebuild_at = 0.0
@@ -270,17 +271,20 @@ class GridTrader:
             )
         except (TypeError, ValueError):
             self._ai_recommended_step = 0.0
-        configured_step = float(GridCfg.step_pct or 0.0)
-        if configured_step > 0:
-            self._ai_recommended_step = configured_step
         try:
             self._ai_recommended_investment_ton = (
                 float(groq.get("investment_ton"))
                 if groq.get("ready") and groq.get("investment_ton") is not None
                 else None
             )
-            # None delegates to configured defaults; zero would erase all levels
-            # when Groq is unavailable or returns an empty recommendation.
+            self._ai_recommended_ton_per_step = (
+                float(groq.get("ton_per_step"))
+                if groq.get("ready") and groq.get("ton_per_step") is not None
+                else None
+            )
+            # None delegates to configured defaults only when Groq is
+            # unavailable or returns an empty recommendation. Zero buy levels
+            # is a valid explicit decision from a ready Groq controller.
             recommended_sell = (
                 int(groq.get("sell_levels", 0) or 0) if groq.get("ready") else 0
             )
@@ -288,18 +292,22 @@ class GridTrader:
                 int(groq.get("buy_levels", 0) or 0) if groq.get("ready") else 0
             )
             self._ai_recommended_sell_levels = (
-                recommended_sell if recommended_sell > 0 else None
+                recommended_sell if groq.get("ready") else None
             )
             self._ai_recommended_buy_levels = (
-                recommended_buy if recommended_buy > 0 else None
+                recommended_buy if groq.get("ready") else None
             )
         except (TypeError, ValueError):
             self._ai_recommended_investment_ton = None
+            self._ai_recommended_ton_per_step = None
             self._ai_recommended_sell_levels = None
             self._ai_recommended_buy_levels = None
 
         action = state.get("unified", {}).get("action", "WAIT")
-        action_key = (action, groq.get("last_update", 0) or 0)
+        action_key = (
+            action,
+            groq.get("last_update", 0) or state.get("last_update", 0) or 0,
+        )
 
         if action == "STOP":
             if self._state.active:
@@ -343,9 +351,10 @@ class GridTrader:
                 log.info("[Groq] REBUILD deferred: wallet balance unavailable")
                 return
             log.info(
-                "[Groq] REBUILD: step=%s investment=%s levels=%s/%s",
+                "[Groq] REBUILD: step=%s investment=%s ton_per_step=%s levels=%s/%s",
                 self._ai_recommended_step or "default",
                 self._ai_recommended_investment_ton,
+                self._ai_recommended_ton_per_step,
                 self._ai_recommended_sell_levels or "default",
                 self._ai_recommended_buy_levels or "default",
             )
@@ -353,6 +362,7 @@ class GridTrader:
                 price_ton,
                 step_pct=self._ai_recommended_step or None,
                 investment_ton=self._ai_recommended_investment_ton,
+                ton_per_step=self._ai_recommended_ton_per_step,
                 sell_levels=self._ai_recommended_sell_levels,
                 buy_levels=self._ai_recommended_buy_levels,
             )
@@ -379,6 +389,7 @@ class GridTrader:
                     price_ton,
                     step_pct=self._ai_recommended_step or None,
                     investment_ton=self._ai_recommended_investment_ton,
+                    ton_per_step=self._ai_recommended_ton_per_step,
                     sell_levels=self._ai_recommended_sell_levels,
                     buy_levels=self._ai_recommended_buy_levels,
                 )
@@ -549,6 +560,7 @@ class GridTrader:
             step_pct=step,
             sell_levels=self._ai_recommended_sell_levels,
             buy_levels=self._ai_recommended_buy_levels,
+            ton_per_step=self._ai_recommended_ton_per_step,
             token_balance=token_bal,
             ton_balance=(
                 min(ton_for_grid, self._ai_recommended_investment_ton)
@@ -613,6 +625,7 @@ class GridTrader:
         step_pct=None,
         sell_levels=None,
         buy_levels=None,
+        ton_per_step=None,
         token_balance=None,
         ton_balance=None,
         active=True,
@@ -671,7 +684,26 @@ class GridTrader:
                     candidate_min_order = self._min_profitable_order_ton(
                         actual_step_pct
                     )
-                    candidate_order_ton = (available_token / max(float(center_price), 1e-9) / candidate) if sell_as_ton else (avail_ton / candidate)
+                    candidate_order_ton = (
+                        (
+                            min(
+                                max(0.0, float(ton_per_step)),
+                                available_token
+                                / max(float(center_price), 1e-9)
+                                / candidate,
+                            )
+                            if ton_per_step is not None
+                            else available_token
+                            / max(float(center_price), 1e-9)
+                            / candidate
+                        )
+                        if sell_as_ton
+                        else (
+                            min(max(0.0, float(ton_per_step)), avail_ton / candidate)
+                            if ton_per_step is not None
+                            else avail_ton / candidate
+                        )
+                    )
                     if candidate_order_ton + 1e-9 >= candidate_min_order:
                         affordable_buy = candidate
                         break
@@ -724,10 +756,19 @@ class GridTrader:
             grin_per_sell = avail_token / n_sell if n_sell > 0 else 0
             sell_budget_ton = avail_ton * reinvest_ratio
             sell_amount_ton = (
-                fixed_sell_ton
-                if fixed_sell_ton > 0
-                else (sell_budget_ton / n_sell if n_sell > 0 else 0.0)
-            ) if sell_as_ton else 0.0
+                (
+                    min(
+                        max(0.0, float(ton_per_step)),
+                        sell_budget_ton / n_sell if n_sell > 0 else 0.0,
+                    )
+                    if ton_per_step is not None
+                    else fixed_sell_ton
+                    if fixed_sell_ton > 0
+                    else (sell_budget_ton / n_sell if n_sell > 0 else 0.0)
+                )
+                if sell_as_ton
+                else 0.0
+            )
 
             for i in range(1, n_sell + 1):
                 price = center_price * sell_factor**i
@@ -742,7 +783,11 @@ class GridTrader:
                 )
             s.grid_reserved_token = avail_token
 
-            ton_per_buy = avail_ton / n_buy if n_buy > 0 else 0
+            ton_per_buy = (
+                min(max(0.0, float(ton_per_step)), avail_ton / n_buy)
+                if ton_per_step is not None and n_buy > 0
+                else (avail_ton / n_buy if n_buy > 0 else 0)
+            )
             usdt_per_buy = avail_token / n_buy if n_buy > 0 else 0
 
             for i in range(1, n_buy + 1):
@@ -791,6 +836,7 @@ class GridTrader:
         sell_levels=None,
         buy_levels=None,
         investment_ton=None,
+        ton_per_step=None,
         upper_price=None,
         lower_price=None,
         step_pct=None,
@@ -807,6 +853,17 @@ class GridTrader:
             if investment_ton is not None and float(investment_ton) > 0
             else wallet_ton_budget
         )
+        requested_sell = (
+            int(sell_levels) if sell_levels is not None else GridCfg.sell_levels
+        )
+        requested_buy = (
+            int(buy_levels) if buy_levels is not None else GridCfg.buy_levels
+        )
+        if ton_per_step is not None:
+            sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+            funded_levels = requested_sell if sell_as_ton else requested_buy
+            if funded_levels > 0:
+                requested_ton = max(0.0, float(ton_per_step)) * funded_levels
         ton_budget = min(max(0.0, requested_ton), wallet_ton_budget)
         if ton_bal is None:
             # Keep the dashboard useful when the wallet is not configured:
@@ -822,6 +879,7 @@ class GridTrader:
                 step_pct=step,
                 sell_levels=sell_levels,
                 buy_levels=buy_levels,
+                ton_per_step=ton_per_step,
                 token_balance=0,
                 ton_balance=ton_budget or 0,
                 active=False,
@@ -837,6 +895,7 @@ class GridTrader:
             ),
             sell_levels=sell_levels,
             buy_levels=buy_levels,
+            ton_per_step=ton_per_step,
             token_balance=token_bal,
             ton_balance=ton_budget,
             active=True,
