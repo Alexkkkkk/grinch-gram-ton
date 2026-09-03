@@ -4,6 +4,7 @@ quantum_brain.py — Единый мозг QuantumGrinch v7.1
 """
 
 import logging
+import os
 import statistics
 import threading
 import time
