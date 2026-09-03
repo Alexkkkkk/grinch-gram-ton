@@ -1,1 +1,52 @@
-# ═══════════════════════════════════════════════════════════════════════════════# AI-Trading — Nginx + Gunicorn + Flask (production-grade)# ═══════════════════════════════════════════════════════════════════════════════# Quick start:  docker-compose up -d# Build:        docker-compose build --parallel# ═══════════════════════════════════════════════════════════════════════════════services:  nginx:    image: nginx:alpine    container_name: quantum-nginx    restart: unless-stopped    ports:      - 3000:80    volumes:      - ./nginx.conf:/etc/nginx/nginx.conf:ro      - ./static:/app/static:ro    depends_on:      - bot    networks:      - grinch-net    deploy:      resources:        limits:          cpus: '0.5'          memory: 128M  bot:    build:      context: .      dockerfile: Dockerfile      additional_contexts:        pip-cache: /tmp/pip-cache    container_name: quantum-bot    restart: unless-stopped    env_file: .env    environment:      - PYTHONUNBUFFERED=1      - WEB_CONCURRENCY=1    expose:      - 3000    volumes:      - ./data:/app/data:rw      - ./backups:/app/backups:rw      - ./logs:/app/logs:rw      - ./models:/app/models:ro    networks:      - grinch-net    deploy:      resources:        limits:          cpus: '2.0'          memory: 2G        reservations:          cpus: '0.5'          memory: 512M    logging:      driver: json-file      options:        max-size: 50m        max-file: 5    healthcheck:      test: [CMD, curl, -f, http://localhost:3000/api/health]      interval: 30s      timeout: 10s      retries: 3      start_period: 15snetworks:  grinch-net:    driver: bridge
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI-Trading — Standalone (single container, SQLite, no external deps)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Quick start:  docker-compose up -d
+# Build:        docker-compose build --parallel
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        pip-cache: /tmp/pip-cache
+    container_name: quantum-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WEB_CONCURRENCY=1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data:rw
+      - ./backups:/app/backups:rw
+      - ./logs:/app/logs:rw
+      - ./models:/app/models:ro
+    networks:
+      - grinch-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  grinch-net:
+    driver: bridge
