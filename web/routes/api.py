@@ -27,6 +27,7 @@ def _vps_uptime_seconds():
     except (OSError, ValueError, IndexError):
         return None
 
+
 # ── References to unified components (injected from main.py) ──────────────────
 _brain = None
 _grid_trader = None
