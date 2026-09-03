@@ -331,7 +331,9 @@ class GridTrader:
             # in-flight. Waiting/filled levels are safe: the wallet is the
             # source of truth and the new grid will be sized from live balances.
             try:
-                rebuild_cooldown = max(60.0, float(os.getenv("GROQ_REBUILD_COOLDOWN_SEC", "900")))
+                rebuild_cooldown = max(
+                    60.0, float(os.getenv("GROQ_REBUILD_COOLDOWN_SEC", "900"))
+                )
             except (TypeError, ValueError):
                 rebuild_cooldown = 900.0
             if time.time() - self._last_ai_rebuild_at < rebuild_cooldown:
@@ -342,9 +344,7 @@ class GridTrader:
             self._last_ai_management_key = action_key
             levels = list(self._state.sell_levels) + list(self._state.buy_levels)
             if any(level.status not in ("waiting", "filled") for level in levels):
-                log.info(
-                    "[Groq] REBUILD deferred: transaction is still in flight"
-                )
+                log.info("[Groq] REBUILD deferred: transaction is still in flight")
                 return
             ton_bal, token_bal = self._get_balances()
             if ton_bal is None:
@@ -405,7 +405,10 @@ class GridTrader:
         # Explicit safety gate: after a deployment/restart the grid must not
         # submit live swaps unless the operator enables it in the environment.
         if os.getenv("GRID_LIVE_ENABLED", "1").strip().lower() in (
-            "0", "false", "no", "off"
+            "0",
+            "false",
+            "no",
+            "off",
         ):
             return
         with self._lock:
@@ -584,7 +587,9 @@ class GridTrader:
     @staticmethod
     def _reinvest_balance_pct():
         try:
-            return max(0.0, min(100.0, float(os.getenv("GROQ_REINVEST_BALANCE_PCT", "100"))))
+            return max(
+                0.0, min(100.0, float(os.getenv("GROQ_REINVEST_BALANCE_PCT", "100")))
+            )
         except (TypeError, ValueError):
             return 100.0
 
@@ -752,7 +757,11 @@ class GridTrader:
             # In TON/USDT mode, initial SELL levels are fixed TON amounts.
             # There are no initial BUY levels: each BUY is created only from
             # the USDT actually received by its paired SELL.
-            avail_token = available_token if sell_as_ton else max(0.0, float(token_balance or 0.0))
+            avail_token = (
+                available_token
+                if sell_as_ton
+                else max(0.0, float(token_balance or 0.0))
+            )
             grin_per_sell = avail_token / n_sell if n_sell > 0 else 0
             sell_budget_ton = avail_ton * reinvest_ratio
             sell_amount_ton = (
@@ -762,9 +771,11 @@ class GridTrader:
                         sell_budget_ton / n_sell if n_sell > 0 else 0.0,
                     )
                     if ton_per_step is not None
-                    else fixed_sell_ton
-                    if fixed_sell_ton > 0
-                    else (sell_budget_ton / n_sell if n_sell > 0 else 0.0)
+                    else (
+                        fixed_sell_ton
+                        if fixed_sell_ton > 0
+                        else (sell_budget_ton / n_sell if n_sell > 0 else 0.0)
+                    )
                 )
                 if sell_as_ton
                 else 0.0
