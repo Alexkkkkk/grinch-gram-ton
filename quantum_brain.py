@@ -439,7 +439,11 @@ class QuantumBrain:
                     "available": ton is not None,
                     "ton": round(float(ton), 6) if ton is not None else None,
                     "token": round(float(token), 6) if token is not None else None,
-                    "token_symbol": "USDT" if os.getenv("GRID_SELL_AS_TON", "0").strip() == "1" else "token",
+                    "token_symbol": (
+                        "USDT"
+                        if os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+                        else "token"
+                    ),
                 }
             except Exception:
                 wallet = {"available": False, "ton": None, "token": None}
@@ -482,8 +486,24 @@ class QuantumBrain:
                 "slippage_pct": round(float(Config.FEES.slippage), 6),
                 "estimated_sell_gas_ton": round(float(Config.FEES.sell_gas_ton), 6),
                 "estimated_buy_gas_ton": round(float(Config.FEES.buy_gas_ton), 6),
-                "gas_per_tx_ton": round(float(self._grid_trader._gas_per_tx()), 6) if self._grid_trader and hasattr(self._grid_trader, "_gas_per_tx") else 0.004,
-                "min_profitable_order_ton": round(float(self._grid_trader._min_profitable_order_ton(self.state.optimal_step or Config.GRID.step_pct)), 6) if self._grid_trader and hasattr(self._grid_trader, "_min_profitable_order_ton") else 0.05,
+                "gas_per_tx_ton": (
+                    round(float(self._grid_trader._gas_per_tx()), 6)
+                    if self._grid_trader and hasattr(self._grid_trader, "_gas_per_tx")
+                    else 0.004
+                ),
+                "min_profitable_order_ton": (
+                    round(
+                        float(
+                            self._grid_trader._min_profitable_order_ton(
+                                self.state.optimal_step or Config.GRID.step_pct
+                            )
+                        ),
+                        6,
+                    )
+                    if self._grid_trader
+                    and hasattr(self._grid_trader, "_min_profitable_order_ton")
+                    else 0.05
+                ),
             },
             "local": {
                 "prophet_signal": self.state.prophet_signal,
