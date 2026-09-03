@@ -11,6 +11,15 @@ health_bp = Blueprint("health", __name__, url_prefix="/api/health")
 _start_time = time.time()
 
 
+def _vps_uptime_seconds():
+    """Return host/VPS uptime exposed by the shared kernel procfs."""
+    try:
+        with open("/proc/uptime", "r", encoding="utf-8") as handle:
+            return int(float(handle.read().split()[0]))
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 @health_bp.route("", methods=["GET"])
 def health_check():
     """Basic health check."""
@@ -19,6 +28,8 @@ def health_check():
             "status": "healthy",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "uptime_seconds": int(time.time() - _start_time),
+            "app_uptime_seconds": int(time.time() - _start_time),
+            "vps_uptime_seconds": _vps_uptime_seconds(),
         }
     )
 
@@ -59,6 +70,8 @@ def full_health():
             "status": overall_status,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "uptime_seconds": int(time.time() - _start_time),
+            "app_uptime_seconds": int(time.time() - _start_time),
+            "vps_uptime_seconds": _vps_uptime_seconds(),
             "system": {
                 "cpu_percent": cpu,
                 "memory": {
@@ -90,6 +103,8 @@ def metrics():
 
     metrics_text = f"""# AI-Trading Metrics
 bot_uptime_seconds {int(time.time() - _start_time)}
+app_uptime_seconds {int(time.time() - _start_time)}
+vps_uptime_seconds {_vps_uptime_seconds() or 0}
 bot_cpu_percent {cpu}
 bot_memory_used_bytes {mem.used}
 bot_memory_total_bytes {mem.total}

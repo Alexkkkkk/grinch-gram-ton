@@ -18,6 +18,15 @@ from core.price_feed_real import (
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 _start_time = time.time()
 
+
+def _vps_uptime_seconds():
+    """Return host/VPS uptime exposed by the shared kernel procfs."""
+    try:
+        with open("/proc/uptime", "r", encoding="utf-8") as handle:
+            return int(float(handle.read().split()[0]))
+    except (OSError, ValueError, IndexError):
+        return None
+
 # ── References to unified components (injected from main.py) ──────────────────
 _brain = None
 _grid_trader = None
@@ -88,6 +97,8 @@ def api_status():
             "price": get_current_price(),
             "market_data": get_feed_status(),
             "uptime_sec": int(time.time() - _start_time),
+            "app_uptime_sec": int(time.time() - _start_time),
+            "vps_uptime_sec": _vps_uptime_seconds(),
             "version": "7.2.0-real-market-data",
         }
     )
@@ -122,6 +133,8 @@ def api_metrics():
     return jsonify(
         {
             "uptime_sec": int(time.time() - _start_time),
+            "app_uptime_sec": int(time.time() - _start_time),
+            "vps_uptime_sec": _vps_uptime_seconds(),
             "version": "7.1.4-sync",
             "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
         }
@@ -409,6 +422,7 @@ def _ai_snapshot():
         },
         "pause_buying": grid_ai.get("pause_buying", False),
         "kimi": kimi,
+        "groq": kimi,
     }
 
 
@@ -475,6 +489,7 @@ def api_grid_ai_status():
             "regime": snapshot["regime"],
             "optimal_step": snapshot["optimal_step"],
             "kimi": snapshot.get("kimi", {}),
+            "groq": snapshot.get("groq", snapshot.get("kimi", {})),
         }
     )
 
@@ -493,8 +508,9 @@ def api_grid_ai_recommendation():
 
 
 @api_bp.route("/grid/ai/apply-kimi", methods=["POST"])
+@api_bp.route("/grid/ai/apply-groq", methods=["POST"])
 def api_grid_ai_apply_kimi():
-    """Apply the latest Kimi sizing recommendation on explicit operator request."""
+    """Apply the latest Groq sizing recommendation on explicit operator request."""
     if not _grid_trader:
         return jsonify({"ok": False, "error": "Grid trader not initialized"}), 503
     if not bool(getattr(_grid_trader, "_ai_enabled", False)):
@@ -530,7 +546,7 @@ def api_grid_ai_apply_kimi():
         return jsonify(
             {
                 "ok": True,
-                "source": "kimi",
+                "source": "groq",
                 "active": bool(state.get("active")),
                 "price": price,
                 "step_pct": state.get("step_pct", kimi.get("step_pct")),

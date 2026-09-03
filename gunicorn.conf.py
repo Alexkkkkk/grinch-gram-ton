@@ -25,8 +25,11 @@ enable_stdio_inheritance = True
 # Performance
 # Background pollers must share state with the HTTP worker.
 preload_app = False
-max_requests = 500
-max_requests_jitter = 50
+# Worker recycling used to reset the displayed uptime every ~500 requests
+# and could hang because the app owns long-lived background threads. Keep it
+# opt-in so uptime is stable; operators can set a bounded value explicitly.
+max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "0"))
+max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "0"))
 
 # Security
 limit_request_line = 4096

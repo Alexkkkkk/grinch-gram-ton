@@ -120,6 +120,21 @@ class BrainState:
                 "last_update": self.kimi_last_update,
                 "error": self.kimi_error,
             },
+            # Public Groq alias; keep the historical kimi key for compatibility.
+            "groq": {
+                "enabled": self.kimi_enabled,
+                "ready": self.kimi_ready,
+                "signal": self.kimi_signal,
+                "confidence": round(self.kimi_confidence, 1),
+                "action": self.kimi_action,
+                "step_pct": round(self.kimi_step_pct, 2),
+                "investment_ton": round(self.kimi_investment_ton, 6),
+                "sell_levels": self.kimi_sell_levels,
+                "buy_levels": self.kimi_buy_levels,
+                "reason": self.kimi_reason,
+                "last_update": self.kimi_last_update,
+                "error": self.kimi_error,
+            },
             "last_update": self.last_update,
         }
 
@@ -420,6 +435,7 @@ class QuantumBrain:
                     "available": ton is not None,
                     "ton": round(float(ton), 6) if ton is not None else None,
                     "token": round(float(token), 6) if token is not None else None,
+                    "token_symbol": "USDT" if os.getenv("GRID_SELL_AS_TON", "0").strip() == "1" else "token",
                 }
             except Exception:
                 wallet = {"available": False, "ton": None, "token": None}
@@ -457,8 +473,13 @@ class QuantumBrain:
                 "min_step_pct": Config.GRID.min_step_pct,
                 "max_step_pct": Config.GRID.max_step_pct,
                 "max_total_levels": self._kimi.max_total_levels,
-                "gas_reserve_ton": 0.3,
-                "min_profitable_order_ton": 0.05,
+                "gas_reserve_ton": round(float(Config.GRID.gas_reserve_ton), 6),
+                "fee_pct": round(float(Config.FEES.pct), 6),
+                "slippage_pct": round(float(Config.FEES.slippage), 6),
+                "estimated_sell_gas_ton": round(float(Config.FEES.sell_gas_ton), 6),
+                "estimated_buy_gas_ton": round(float(Config.FEES.buy_gas_ton), 6),
+                "gas_per_tx_ton": round(float(self._grid_trader._gas_per_tx()), 6) if self._grid_trader and hasattr(self._grid_trader, "_gas_per_tx") else 0.004,
+                "min_profitable_order_ton": round(float(self._grid_trader._min_profitable_order_ton(self.state.optimal_step or Config.GRID.step_pct)), 6) if self._grid_trader and hasattr(self._grid_trader, "_min_profitable_order_ton") else 0.05,
             },
             "local": {
                 "prophet_signal": self.state.prophet_signal,
@@ -539,7 +560,7 @@ class QuantumBrain:
             elif kimi_action == "PAUSE_BUY":
                 self.state.unified_action = "PAUSE_BUY"
             elif (
-                kimi_action in ("BUILD", "START")
+                kimi_action in ("BUILD", "START", "REBUILD")
                 and self.state.kimi_confidence >= self._kimi.min_confidence
             ):
                 self.state.unified_action = kimi_action

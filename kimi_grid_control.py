@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 
 log = logging.getLogger("kimi_grid_control")
 
-_ALLOWED_ACTIONS = {"WAIT", "BUILD", "START", "PAUSE_BUY", "STOP"}
+_ALLOWED_ACTIONS = {"WAIT", "BUILD", "START", "REBUILD", "PAUSE_BUY", "STOP"}
 _ALLOWED_SIGNALS = {"BUY", "SELL", "HOLD"}
 
 
@@ -33,23 +33,54 @@ def _float_env(name: str, default: float) -> float:
 
 
 class KimiGridControl:
-    """Rate-limited, fail-closed Kimi recommender for grid control."""
+    """Rate-limited, fail-closed AI recommender for grid control.
+
+    The historical class name is kept for compatibility with the rest of the
+    application. Groq is preferred when GROQ_API_KEY is configured; Moonshot
+    remains a backwards-compatible fallback. The model is advisory only.
+    """
 
     def __init__(self):
-        self.api_key = os.getenv("MOONSHOT_API_KEY", "").strip()
-        self.enabled = bool(self.api_key) and _bool_env("KIMI_CONTROL_ENABLED", True)
-        self.required_for_auto_grid = _bool_env("KIMI_REQUIRE_FOR_AUTO_GRID", True)
-        self.model = os.getenv("KIMI_MODEL", "kimi-k2.6").strip() or "kimi-k2.6"
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        kimi_key = os.getenv("MOONSHOT_API_KEY", "").strip()
+        self.provider = "groq" if groq_key else ("kimi" if kimi_key else "none")
+        prefix = self.provider.upper() if self.provider != "none" else "GROQ"
+        self.api_key = groq_key or kimi_key
+        self.enabled = bool(self.api_key) and _bool_env(
+            f"{prefix}_CONTROL_ENABLED", True
+        )
+        self.required_for_auto_grid = _bool_env(
+            f"{prefix}_REQUIRE_FOR_AUTO_GRID", True
+        )
+        self.model = (
+            os.getenv(f"{prefix}_MODEL", "")
+            or ("qwen/qwen3.8-27b" if self.provider == "groq" else "kimi-k2.6")
+        ).strip()
         self.base_url = (
-            os.getenv("KIMI_API_BASE", "https://api.moonshot.ai/v1").strip()
-            or "https://api.moonshot.ai/v1"
+            os.getenv(
+                f"{prefix}_API_BASE",
+                "https://api.groq.com/openai/v1"
+                if self.provider == "groq"
+                else "https://api.moonshot.ai/v1",
+            ).strip()
+            or (
+                "https://api.groq.com/openai/v1"
+                if self.provider == "groq"
+                else "https://api.moonshot.ai/v1"
+            )
         )
         self.min_confidence = max(
-            0.0, min(100.0, _float_env("KIMI_MIN_CONFIDENCE", 60.0))
+            0.0, min(100.0, _float_env(f"{prefix}_MIN_CONFIDENCE", 60.0))
         )
-        self.interval_sec = max(15.0, _float_env("KIMI_CALL_INTERVAL_SEC", 60.0))
-        self.timeout_sec = max(3.0, _float_env("KIMI_TIMEOUT_SEC", 12.0))
-        self.max_total_levels = max(2, int(_float_env("KIMI_MAX_TOTAL_LEVELS", 40)))
+        self.interval_sec = max(
+            15.0, _float_env(f"{prefix}_CALL_INTERVAL_SEC", 60.0)
+        )
+        self.timeout_sec = max(
+            3.0, _float_env(f"{prefix}_TIMEOUT_SEC", 12.0)
+        )
+        self.max_total_levels = max(
+            2, int(_float_env(f"{prefix}_MAX_TOTAL_LEVELS", 40))
+        )
         self._client = None
         self._lock = threading.Lock()
         self._last_request_at = 0.0
@@ -82,7 +113,7 @@ class KimiGridControl:
                 text = text[4:].strip()
         parsed = json.loads(text)
         if not isinstance(parsed, dict):
-            raise ValueError("Kimi response is not an object")
+            raise ValueError("AI response is not an object")
         return parsed
 
     def _validate(
@@ -146,8 +177,14 @@ class KimiGridControl:
             try:
                 investment = max(0.0, float(investment))
                 available_ton = wallet.get("ton")
+                gas_reserve = max(0.0, _float_env("GAS_RESERVE_TON", 0.3))
                 if available_ton is not None:
-                    investment = min(investment, max(0.0, float(available_ton)))
+                    # The model may plan only with capital that remains after
+                    # the wallet's untouchable network-fee reserve.
+                    investment = min(
+                        investment,
+                        max(0.0, float(available_ton) - gas_reserve),
+                    )
                 investment = round(investment, 6)
             except (TypeError, ValueError):
                 investment = defaults.get("investment_ton")
@@ -186,9 +223,13 @@ class KimiGridControl:
             "You are the risk-aware controller for a spot cryptocurrency grid. "
             "You are advisory only: never invent balances, never place orders, "
             "and never recommend leverage or shorting. Use the wallet balances "
-            "and limits supplied by the user context. Return JSON only with "
+            "and limits supplied by the user context. Treat gas_reserve_ton as untouchable. "
+            "Subtract fee_pct, slippage_pct, and estimated gas costs before sizing a grid; "
+            "never spend the gas reserve. Use REBUILD when the active grid "
+            "should be adapted to current market conditions or wallet balances; "
+            "otherwise use WAIT. Return JSON only with "
             "exactly these keys: signal (BUY, SELL, HOLD), confidence (0-100), "
-            "action (WAIT, BUILD, START, PAUSE_BUY, STOP), step_pct (the configured grid range), "
+            "action (WAIT, BUILD, START, REBUILD, PAUSE_BUY, STOP), step_pct (the configured grid range), "
             "investment_ton (non-negative), sell_levels (1-39), buy_levels (0-39), "
             "reason (short string). The sum of levels must not exceed the supplied "
             "limit. Never set investment_ton above available TON. STOP is reserved "
@@ -226,14 +267,15 @@ class KimiGridControl:
             else:
                 safe_error = "request failed"
             self._last_error = f"{type(exc).__name__}: {safe_error}"
-            log.warning("[Kimi] recommendation unavailable: %s", self._last_error)
+            log.warning("[%s] recommendation unavailable: %s", self.provider.upper(), self._last_error)
             return self._last_decision
 
         with self._lock:
             self._last_decision = decision
             self._last_error = ""
         log.info(
-            "[Kimi] decision=%s signal=%s confidence=%.1f step=%.2f investment=%s levels=%s/%s",
+            "[%s] decision=%s signal=%s confidence=%.1f step=%.2f investment=%s levels=%s/%s",
+            self.provider.upper(),
             decision["action"],
             decision["signal"],
             decision["confidence"],
@@ -249,6 +291,7 @@ class KimiGridControl:
             decision = dict(self._last_decision) if self._last_decision else None
             return {
                 "enabled": self.enabled,
+                "provider": self.provider,
                 "required_for_auto_grid": self.required_for_auto_grid,
                 "ready": decision is not None,
                 "model": self.model,

@@ -71,13 +71,6 @@ class GridState:
     last_tick: float = 0.0
     win_streak: int = 0
     loss_streak: int = 0
-    # Persistent strategy telemetry used by the self-tuning controller.
-    completed_cycles: int = 0
-    profitable_cycles: int = 0
-    losing_cycles: int = 0
-    learned_step_pct: float = 0.0
-    reinvest_ratio: float = 1.0
-    last_learning_at: float = 0.0
 
     def to_dict(self):
         d = asdict(self)
@@ -133,6 +126,7 @@ class GridTrader:
         self._ai_recommended_investment_ton = None
         self._ai_recommended_sell_levels = None
         self._ai_recommended_buy_levels = None
+        self._last_ai_rebuild_at = 0.0
 
     def inject(
         self, dedust_client=None, ai_engine=None, trader_ref=None, price_feed=None
@@ -277,10 +271,7 @@ class GridTrader:
         except (TypeError, ValueError):
             self._ai_recommended_step = 0.0
         configured_step = float(GridCfg.step_pct or 0.0)
-        # In adaptive mode, keep the AI/market step recommendation. A fixed
-        # GRID_STEP_PCT remains an explicit operator override when adaptive
-        # stepping is disabled.
-        if configured_step > 0 and not GridCfg.adaptive_step:
+        if configured_step > 0:
             self._ai_recommended_step = configured_step
         try:
             self._ai_recommended_investment_ton = (
@@ -328,17 +319,23 @@ class GridTrader:
                     "[Groq] REBUILD ignored: auto rebuild disabled by configuration"
                 )
                 return
-            # Never discard a pending paired rebuy or a filled level. Groq must
-            # wait for the current cycle to settle before replacing the grid.
+            # Rebuild only after a cooldown and never while a transaction is
+            # in-flight. Waiting/filled levels are safe: the wallet is the
+            # source of truth and the new grid will be sized from live balances.
+            try:
+                rebuild_cooldown = max(60.0, float(os.getenv("GROQ_REBUILD_COOLDOWN_SEC", "900")))
+            except (TypeError, ValueError):
+                rebuild_cooldown = 900.0
+            if time.time() - self._last_ai_rebuild_at < rebuild_cooldown:
+                log.info("[Groq] REBUILD deferred: cooldown active")
+                return
             if getattr(self, "_last_ai_management_key", None) == action_key:
                 return
             self._last_ai_management_key = action_key
             levels = list(self._state.sell_levels) + list(self._state.buy_levels)
-            if self._state.buy_levels or any(
-                level.status != "waiting" for level in levels
-            ):
+            if any(level.status not in ("waiting", "filled") for level in levels):
                 log.info(
-                    "[Groq] REBUILD deferred: active cycle or paired rebuy is pending"
+                    "[Groq] REBUILD deferred: transaction is still in flight"
                 )
                 return
             ton_bal, token_bal = self._get_balances()
@@ -359,6 +356,7 @@ class GridTrader:
                 sell_levels=self._ai_recommended_sell_levels,
                 buy_levels=self._ai_recommended_buy_levels,
             )
+            self._last_ai_rebuild_at = time.time()
             return
 
         if action == "START" and not self._state.active:
@@ -393,6 +391,12 @@ class GridTrader:
         )
 
     def _tick(self):
+        # Explicit safety gate: after a deployment/restart the grid must not
+        # submit live swaps unless the operator enables it in the environment.
+        if os.getenv("GRID_LIVE_ENABLED", "1").strip().lower() in (
+            "0", "false", "no", "off"
+        ):
+            return
         with self._lock:
             price_ton = self._get_price()
             if not price_ton:
@@ -459,13 +463,6 @@ class GridTrader:
                                 )
                             except Exception:
                                 pass
-                    else:
-                        log.warning(
-                            "[Grid] SELL skipped: level=%s price=%.6f error=%s",
-                            level.id,
-                            level.price_ton,
-                            res.get("error", "unknown"),
-                        )
                     self._save_state()
                     return
 
@@ -496,13 +493,6 @@ class GridTrader:
                                 )
                             except Exception:
                                 pass
-                    else:
-                        log.warning(
-                            "[Grid] BUY skipped: level=%s price=%.6f error=%s",
-                            level.id,
-                            level.price_ton,
-                            res.get("error", "unknown"),
-                        )
                     self._save_state()
                     return
 
@@ -544,12 +534,6 @@ class GridTrader:
             return
         atr_pct = self._calc_atr_pct()
         step = self._ai_recommended_step or self._adaptive_step(atr_pct)
-        if (
-            not self._ai_recommended_step
-            and self._state.completed_cycles >= 3
-            and self._state.learned_step_pct > 0
-        ):
-            step = self._state.learned_step_pct
         # GRID_INVESTMENT is the working TON budget; build_grid adds the
         # configured gas reserve back when splitting buy levels.
         try:
@@ -575,72 +559,23 @@ class GridTrader:
 
     @staticmethod
     def _adaptive_step(atr_pct):
-        """Choose a super-aggressive, fee-aware spacing from volatility."""
         if not GridCfg.adaptive_step:
             return GridCfg.step_pct
-        super_aggressive = os.getenv("GRID_SUPER_AGGRESSIVE", "0").strip() == "1"
-        configured_floor = max(float(GridCfg.min_step_pct or 1.2), 1.2)
-        configured_ceiling = max(
-            configured_floor, float(GridCfg.max_step_pct or (4.0 if super_aggressive else 2.5))
-        )
-        if super_aggressive:
-            floor = max(configured_floor, 2.0)
-            targets = (2.5, 3.0, 3.5, 4.0)
-        else:
-            floor = configured_floor
-            targets = (1.8, 2.0, 2.2, 2.5)
         if atr_pct >= 8.0:
-            target = targets[3]
+            return min(GridCfg.max_step_pct or 8.0, 7.0)
         elif atr_pct >= 5.0:
-            target = targets[2]
+            return min(GridCfg.max_step_pct or 8.0, 5.0)
         elif atr_pct >= 3.0:
-            target = targets[1]
-        else:
-            target = targets[0]
-        return min(configured_ceiling, max(floor, target))
-
-    def _learn_from_cycle(self, profit_ton):
-        """Persist cycle outcomes and tune the next grid without code changes."""
-        self._state.completed_cycles += 1
-        if profit_ton > 0:
-            self._state.profitable_cycles += 1
-            self._state.win_streak += 1
-            self._state.loss_streak = 0
-        else:
-            self._state.losing_cycles += 1
-            self._state.loss_streak += 1
-            self._state.win_streak = 0
-
-        current_step = float(self._state.step_pct or GridCfg.step_pct or 2.0)
-        min_step = max(float(GridCfg.min_step_pct or 1.2), 1.2)
-        max_step = max(min_step, float(GridCfg.max_step_pct or 4.0))
-        learned = current_step
-        reinvest = 1.0
-        if self._state.loss_streak >= 2:
-            # Give the next grid more room and de-risk compounding after
-            # repeated losses, while remaining aggressive.
-            learned = min(max_step, current_step * 1.15)
-            reinvest = 0.85
-        elif self._state.win_streak >= 3:
-            # Tighten slightly after a proven profitable run to harvest more
-            # cycles; keep the step above the configured fee-aware floor.
-            learned = max(min_step, current_step * 0.95)
-
-        self._state.learned_step_pct = round(learned, 6)
-        self._state.reinvest_ratio = reinvest
-        self._state.last_learning_at = time.time()
-        log.info(
-            "[Grid AI] Learned cycle=%d profit=%.6f TON wins=%d losses=%d "
-            "next_step=%.3f%% reinvest=%.0f%%",
-            self._state.completed_cycles,
-            profit_ton,
-            self._state.win_streak,
-            self._state.loss_streak,
-            self._state.learned_step_pct,
-            self._state.reinvest_ratio * 100,
-        )
+            return 4.0
+        return max(GridCfg.min_step_pct or 3.0, 3.0)
 
     @staticmethod
+    def _reinvest_balance_pct():
+        try:
+            return max(0.0, min(100.0, float(os.getenv("GROQ_REINVEST_BALANCE_PCT", "100"))))
+        except (TypeError, ValueError):
+            return 100.0
+
     @staticmethod
     def _allow_unprofitable_orders():
         return os.getenv("GRID_ALLOW_UNPROFITABLE_ORDERS", "0").strip() == "1"
@@ -691,25 +626,17 @@ class GridTrader:
             )
             n_sell = sell_levels if sell_levels is not None else GridCfg.sell_levels
             n_buy = buy_levels if buy_levels is not None else GridCfg.buy_levels
-            sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
-            # TON-first mode never invents BUY liquidity. Initial BUY levels
-            # are allowed only when real USDT is present in token_balance;
-            # later BUY levels are funded by completed SELLs.
 
             # Reserve gas before sizing orders. When explicit bounds are used,
             # profitability must be calculated from the actual per-level price
             # factors, not from the configured fallback step.
             gas_reserve = float(GridCfg.gas_reserve_ton or 0.0)
             avail_ton = max(0.0, float(ton_balance or 0.0) - gas_reserve)
-            avail_token = max(0.0, float(token_balance or 0.0))
             n_sell = max(0, int(n_sell or 0))
             n_buy = max(0, int(n_buy or 0))
-            try:
-                fixed_sell_ton = max(
-                    0.0, float(os.getenv("GRID_SELL_AMOUNT_TON", "0") or 0)
-                )
-            except (TypeError, ValueError):
-                fixed_sell_ton = 0.0
+            sell_as_ton = os.getenv("GRID_SELL_AS_TON", "0").strip() == "1"
+            reinvest_ratio = self._reinvest_balance_pct() / 100.0
+            available_token = max(0.0, float(token_balance or 0.0)) * reinvest_ratio
 
             default_factor = 1 + step / 100
             sell_factor = default_factor
@@ -735,8 +662,7 @@ class GridTrader:
                 return buy_factor, actual_step_pct
 
             # Select the largest affordable count whose actual price step can
-            # cover both swap fees and the estimated buy/sell gas. In TON-first
-            # mode the initial BUY budget is real USDT, not TON.
+            # cover both swap fees and the estimated buy/sell gas.
             if not self._allow_unprofitable_orders() and n_buy > 0:
                 requested_buy = n_buy
                 affordable_buy = 0
@@ -745,92 +671,33 @@ class GridTrader:
                     candidate_min_order = self._min_profitable_order_ton(
                         actual_step_pct
                     )
-                    if sell_as_ton:
-                        first_buy_price = center_price / candidate_buy_factor
-                        candidate_order_ton = (
-                            avail_token / candidate / max(first_buy_price, 1e-9)
-                        ) * (1.0 - Config.FEES.pct / 100.0)
-                    else:
-                        candidate_order_ton = avail_ton / candidate
+                    candidate_order_ton = (available_token / max(float(center_price), 1e-9) / candidate) if sell_as_ton else (avail_ton / candidate)
                     if candidate_order_ton + 1e-9 >= candidate_min_order:
                         affordable_buy = candidate
                         break
                 if affordable_buy < requested_buy:
                     log.warning(
                         "[Grid] Reducing buy levels from %d to %d: "
-                        "initial budget is below the actual break-even size",
+                        "%.4f TON per level is below the actual break-even size",
                         requested_buy,
                         affordable_buy,
+                        (avail_ton / requested_buy) if requested_buy else 0.0,
                     )
                 n_buy = affordable_buy
 
             buy_factor, actual_step_pct = factors_for_buy(n_buy)
             min_order = self._min_profitable_order_ton(actual_step_pct)
 
-            # In TON-first mode each initial SELL must be large enough for the
-            # later SELL->BUY round trip to cover swap fees and two gas charges.
-            # Older builds allowed 19 x 0.935 TON orders at a 0.9% step, while
-            # the real break-even size is about 2.02 TON; every rebuy was then
-            # rejected. Reduce the level count and use the available budget so
-            # the generated grid can actually complete cycles.
-            effective_sell_amount_ton = 0.0
-            if sell_as_ton and n_sell > 0:
-                if not self._allow_unprofitable_orders():
-                    affordable_sell = int(avail_ton / min_order) if min_order > 0 else 0
-                    if affordable_sell < n_sell:
-                        log.warning(
-                            "[Grid] Reducing SELL levels from %d to %d: "
-                            "%.4f TON per level is below the actual break-even size %.4f TON",
-                            n_sell,
-                            affordable_sell,
-                            (avail_ton / n_sell) if n_sell else 0.0,
-                            min_order,
-                        )
-                        n_sell = max(0, affordable_sell)
-                        if (
-                            upper_price is not None
-                            and float(upper_price) > center_price
-                            and n_sell > 0
-                        ):
-                            sell_factor = (float(upper_price) / center_price) ** (1 / n_sell)
-                        buy_factor, actual_step_pct = factors_for_buy(n_buy)
-                        min_order = self._min_profitable_order_ton(actual_step_pct)
-
-                if n_sell > 0:
-                    per_level_budget = avail_ton / n_sell
-                    requested = fixed_sell_ton or per_level_budget
-                    if self._allow_unprofitable_orders():
-                        effective_sell_amount_ton = min(requested, per_level_budget)
-                    else:
-                        effective_sell_amount_ton = min(
-                            max(requested, min_order), per_level_budget
-                        )
-
-                if n_sell == 0 or effective_sell_amount_ton <= 0:
-                    log.error(
-                        "[Grid] No affordable profitable SELL levels: available=%.4f TON minimum=%.4f TON",
-                        avail_ton,
-                        min_order,
-                    )
-                    active = False
-
             previous = self._state
             s = GridState()
+            s.completed_fills = list(previous.completed_fills)
+            s.total_profit_ton = previous.total_profit_ton
+            s.total_sell_cycles = previous.total_sell_cycles
+            s.win_streak = previous.win_streak
+            s.loss_streak = previous.loss_streak
             s.active = bool(active)
             s.center_price = center_price
             s.last_rebuild = time.time()
-            # Keep learning telemetry across grid rebuilds so the strategy
-            # evolves from real outcomes instead of resetting every time.
-            s.total_profit_ton = previous.total_profit_ton
-            s.total_sell_cycles = previous.total_sell_cycles
-            s.completed_cycles = previous.completed_cycles
-            s.profitable_cycles = previous.profitable_cycles
-            s.losing_cycles = previous.losing_cycles
-            s.win_streak = previous.win_streak
-            s.loss_streak = previous.loss_streak
-            s.learned_step_pct = previous.learned_step_pct or step
-            s.reinvest_ratio = previous.reinvest_ratio or 1.0
-            s.last_learning_at = previous.last_learning_at
 
             s.upper_price = float(
                 (
@@ -843,11 +710,24 @@ class GridTrader:
                 (buy_factor - 1) * 100,
             )
 
+            try:
+                fixed_sell_ton = max(
+                    0.0, float(os.getenv("GRID_SELL_AMOUNT_TON", "0") or 0)
+                )
+            except (TypeError, ValueError):
+                fixed_sell_ton = 0.0
+
             # In TON/USDT mode, initial SELL levels are fixed TON amounts.
-            # Any initial BUY levels below are backed by the real USDT balance;
-            # subsequent BUYs are created from completed SELL proceeds.
+            # There are no initial BUY levels: each BUY is created only from
+            # the USDT actually received by its paired SELL.
+            avail_token = available_token if sell_as_ton else max(0.0, float(token_balance or 0.0))
             grin_per_sell = avail_token / n_sell if n_sell > 0 else 0
-            sell_amount_ton = effective_sell_amount_ton if sell_as_ton else 0.0
+            sell_budget_ton = avail_ton * reinvest_ratio
+            sell_amount_ton = (
+                fixed_sell_ton
+                if fixed_sell_ton > 0
+                else (sell_budget_ton / n_sell if n_sell > 0 else 0.0)
+            ) if sell_as_ton else 0.0
 
             for i in range(1, n_sell + 1):
                 price = center_price * sell_factor**i
@@ -863,43 +743,26 @@ class GridTrader:
             s.grid_reserved_token = avail_token
 
             ton_per_buy = avail_ton / n_buy if n_buy > 0 else 0
+            usdt_per_buy = avail_token / n_buy if n_buy > 0 else 0
 
-            if sell_as_ton:
-                usdt_per_buy = avail_token / n_buy if n_buy > 0 else 0.0
-                for i in range(1, n_buy + 1):
-                    price = center_price / buy_factor**i
-                    estimated_ton = (
-                        usdt_per_buy / max(price, 1e-9)
-                    ) * (1.0 - Config.FEES.pct / 100.0)
-                    s.buy_levels.append(
-                        GridLevel(
-                            id=-i,
-                            side="buy",
-                            price_ton=round(price, 6),
-                            amount_token=round(usdt_per_buy, 6),
-                            amount_ton=round(estimated_ton, 6),
-                            note="initial_wallet_usdt",
-                        )
+            for i in range(1, n_buy + 1):
+                price = center_price / buy_factor**i
+                amount_ton = ton_per_buy if ton_per_buy + 1e-9 >= min_order else 0
+                s.buy_levels.append(
+                    GridLevel(
+                        id=-i,
+                        side="buy",
+                        price_ton=round(price, 6),
+                        amount_token=round(usdt_per_buy, 6) if sell_as_ton else 0,
+                        amount_ton=0.0 if sell_as_ton else round(amount_ton, 2),
                     )
-            else:
-                for i in range(1, n_buy + 1):
-                    price = center_price / buy_factor**i
-                    amount_ton = ton_per_buy if ton_per_buy + 1e-9 >= min_order else 0
-                    s.buy_levels.append(
-                        GridLevel(
-                            id=-i,
-                            side="buy",
-                            price_ton=round(price, 6),
-                            amount_token=0,
-                            amount_ton=round(amount_ton, 2),
-                        )
-                    )
+                )
 
             if sell_as_ton:
                 s.last_action = (
-                    f"GRID_BUILT: {n_sell} SELL + {n_buy} funded BUY levels; "
+                    f"GRID_BUILT: {n_sell} SELL levels; "
                     f"sell {sell_amount_ton:.4f} TON each; "
-                    f"reinvest {self._reinvest_ratio():.0%} of SELL proceeds"
+                    "BUY funded from wallet/proceeds USDT"
                 )
             else:
                 s.last_action = (
@@ -934,7 +797,17 @@ class GridTrader:
     ):
         """Public API for AI-triggered grid build."""
         ton_bal, token_bal = self._get_balances()
-        ton_budget = float(investment_ton) if investment_ton is not None else ton_bal
+        try:
+            reinvest_ratio = self._reinvest_balance_pct() / 100.0
+        except (TypeError, ValueError):
+            reinvest_ratio = 1.0
+        wallet_ton_budget = max(0.0, float(ton_bal or 0.0)) * reinvest_ratio
+        requested_ton = (
+            float(investment_ton)
+            if investment_ton is not None and float(investment_ton) > 0
+            else wallet_ton_budget
+        )
+        ton_budget = min(max(0.0, requested_ton), wallet_ton_budget)
         if ton_bal is None:
             # Keep the dashboard useful when the wallet is not configured:
             # render a market-based preview, but do not mark it active and
@@ -997,28 +870,14 @@ class GridTrader:
                         level.filled_at = time.time()
                         level.fill_price_ton = price_ton
                         level.amount_token = round(received_usdt, 6)
-                        # Initial TON inventory conversion is not a profit.
-                        # A resell_after_buy is a completed compounded cycle;
-                        # mark its realised USDT result back into TON value and
-                        # include both swap legs plus network gas.
-                        if level.note.startswith("resell_after_buy:") and level.entry_cost_ton > 0:
-                            level.profit_ton = round(
-                                received_usdt / max(price_ton, 1e-9)
-                                - level.entry_cost_ton
-                                - self._gas_per_tx(),
-                                6,
-                            )
-                            self._state.total_profit_ton += level.profit_ton
-                            self._learn_from_cycle(level.profit_ton)
-                        else:
-                            level.profit_ton = 0.0
+                        level.profit_ton = 0.0
                         level.tx_hash = result.get("tx_hash", "")
                         self._state.total_sell_cycles += 1
                         return {
                             "ok": True,
                             "received": received_usdt,
                             "received_usdt": received_usdt,
-                            "profit_ton": level.profit_ton,
+                            "profit_ton": 0.0,
                         }
                 return {"ok": False, "error": "no_dedust_client"}
 
@@ -1115,15 +974,6 @@ class GridTrader:
             log.error("[Grid] buy error: %s", e)
             return {"ok": False, "error": str(e)}
 
-    def _reinvest_ratio(self):
-        try:
-            pct = float(os.getenv("GRID_REINVEST_PROFIT_PCT", "100"))
-        except (TypeError, ValueError):
-            pct = 100.0
-        configured = min(1.0, max(0.0, pct / 100.0))
-        learned = min(1.0, max(0.0, float(self._state.reinvest_ratio or 1.0)))
-        return min(configured, learned)
-
     def _place_rebuy(self, level):
         """Create a BUY one grid step below a filled SELL."""
         step_factor = 1.0 + (self._state.step_pct or GridCfg.step_pct) / 100.0
@@ -1143,9 +993,7 @@ class GridTrader:
         if sell_as_ton:
             # The exact USDT received by SELL is the only funding source for
             # the paired BUY. Do not reserve or invent an upfront balance.
-            received_usdt = float(level.amount_token or 0)
-            reinvest_ratio = self._reinvest_ratio()
-            usdt_amount = round(received_usdt * reinvest_ratio, 6)
+            usdt_amount = float(level.amount_token or 0)
             estimated_ton = usdt_amount / target_price if target_price > 0 else 0.0
             min_order = self._min_profitable_order_ton(self._state.step_pct)
             if usdt_amount <= 0 or (
@@ -1169,14 +1017,8 @@ class GridTrader:
                     price_ton=target_price,
                     amount_token=round(usdt_amount, 6),
                     amount_ton=round(estimated_ton, 6),
-                    note=(
-                        f"rebuy_after_sell:{level.id}; funded_by_usdt; "
-                        f"reinvest={reinvest_ratio:.0%}"
-                    ),
+                    note=f"rebuy_after_sell:{level.id}; funded_by_usdt",
                 )
-            )
-            self._state.lower_price = min(
-                item.price_ton for item in self._state.buy_levels
             )
             return
 
@@ -1251,9 +1093,6 @@ class GridTrader:
                 note=f"resell_after_buy:{level.id}",
             )
         )
-        self._state.upper_price = max(
-            item.price_ton for item in self._state.sell_levels
-        )
 
     def _record_trade(self, side, level, price):
         trade = {
@@ -1279,69 +1118,28 @@ class GridTrader:
             return self._state.to_dict()
 
     def _save_state(self):
-        tmp_path = STATE_FILE + ".tmp"
         try:
             os.makedirs(DATA_DIR, exist_ok=True)
-            payload = self._state.to_dict()
-            with open(tmp_path, "w") as f:
-                json.dump(payload, f, separators=(",", ":"))
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, STATE_FILE)
+            with open(STATE_FILE, "w") as f:
+                json.dump(self._state.to_dict(), f)
         except Exception as e:
             log.warning("[Grid] save state error: %s", e)
-            try:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-            except OSError:
-                pass
-
-    def _sanitize_loaded_state(self):
-        # Older TON-first builds incorrectly persisted unfunded BUY levels.
-        # They can never execute because no USDT exists before the first SELL.
-        if os.getenv("GRID_SELL_AS_TON", "0").strip() != "1":
-            return
-        valid_buys = [
-            level
-            for level in self._state.buy_levels
-            if level.status != "waiting" or level.amount_token > 0
-        ]
-        removed = len(self._state.buy_levels) - len(valid_buys)
-        if not removed:
-            return
-        self._state.buy_levels = valid_buys
-        self._state.lower_price = min(
-            (level.price_ton for level in valid_buys),
-            default=self._state.center_price,
-        )
-        log.warning("[Grid] removed %d unfunded BUY levels from legacy state", removed)
-        self._save_state()
 
     def _load_state(self):
         try:
             if os.path.exists(STATE_FILE):
                 with open(STATE_FILE, "r") as f:
                     self._state = GridState.from_dict(json.load(f))
-                self._sanitize_loaded_state()
         except Exception as e:
             log.warning("[Grid] load state error: %s", e)
 
     def _save_trade_history(self):
-        tmp_path = TRADE_HISTORY_FILE + ".tmp"
         try:
             os.makedirs(DATA_DIR, exist_ok=True)
-            with open(tmp_path, "w") as f:
-                json.dump(self._trade_history, f, separators=(",", ":"))
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, TRADE_HISTORY_FILE)
+            with open(TRADE_HISTORY_FILE, "w") as f:
+                json.dump(self._trade_history, f)
         except Exception as e:
             log.warning("[Grid] save history error: %s", e)
-            try:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-            except OSError:
-                pass
 
     def _load_trade_history(self):
         try:
