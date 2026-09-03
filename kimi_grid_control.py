@@ -50,35 +50,28 @@ class KimiGridControl:
         self.enabled = bool(self.api_key) and _bool_env(
             f"{prefix}_CONTROL_ENABLED", True
         )
-        self.required_for_auto_grid = _bool_env(
-            f"{prefix}_REQUIRE_FOR_AUTO_GRID", True
-        )
+        self.required_for_auto_grid = _bool_env(f"{prefix}_REQUIRE_FOR_AUTO_GRID", True)
         self.model = (
             os.getenv(f"{prefix}_MODEL", "")
             or ("qwen/qwen3.8-27b" if self.provider == "groq" else "kimi-k2.6")
         ).strip()
-        self.base_url = (
-            os.getenv(
-                f"{prefix}_API_BASE",
-                "https://api.groq.com/openai/v1"
-                if self.provider == "groq"
-                else "https://api.moonshot.ai/v1",
-            ).strip()
-            or (
+        self.base_url = os.getenv(
+            f"{prefix}_API_BASE",
+            (
                 "https://api.groq.com/openai/v1"
                 if self.provider == "groq"
                 else "https://api.moonshot.ai/v1"
-            )
+            ),
+        ).strip() or (
+            "https://api.groq.com/openai/v1"
+            if self.provider == "groq"
+            else "https://api.moonshot.ai/v1"
         )
         self.min_confidence = max(
             0.0, min(100.0, _float_env(f"{prefix}_MIN_CONFIDENCE", 60.0))
         )
-        self.interval_sec = max(
-            15.0, _float_env(f"{prefix}_CALL_INTERVAL_SEC", 60.0)
-        )
-        self.timeout_sec = max(
-            3.0, _float_env(f"{prefix}_TIMEOUT_SEC", 12.0)
-        )
+        self.interval_sec = max(15.0, _float_env(f"{prefix}_CALL_INTERVAL_SEC", 60.0))
+        self.timeout_sec = max(3.0, _float_env(f"{prefix}_TIMEOUT_SEC", 12.0))
         self.max_total_levels = max(
             2, int(_float_env(f"{prefix}_MAX_TOTAL_LEVELS", 40))
         )
@@ -192,9 +185,7 @@ class KimiGridControl:
         ton_per_step = raw.get("ton_per_step")
         try:
             ton_per_step = (
-                max(0.0, float(ton_per_step))
-                if ton_per_step is not None
-                else None
+                max(0.0, float(ton_per_step)) if ton_per_step is not None else None
             )
         except (TypeError, ValueError):
             ton_per_step = None
@@ -290,7 +281,11 @@ class KimiGridControl:
             else:
                 safe_error = "request failed"
             self._last_error = f"{type(exc).__name__}: {safe_error}"
-            log.warning("[%s] recommendation unavailable: %s", self.provider.upper(), self._last_error)
+            log.warning(
+                "[%s] recommendation unavailable: %s",
+                self.provider.upper(),
+                self._last_error,
+            )
             return self._last_decision
 
         with self._lock:
