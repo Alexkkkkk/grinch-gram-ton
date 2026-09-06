@@ -1,0 +1,88 @@
+# Standard labels for the repository
+- name: bug
+  color: d73a4a
+  description: Something isn't working
+
+- name: duplicate
+  color: cfd3d7
+  description: This issue or pull request already exists
+
+- name: enhancement
+  color: a2eeef
+  description: New feature or request
+
+- name: help wanted
+  color: 008672
+  description: Extra attention is needed
+
+- name: invalid
+  color: e4e669
+  description: This doesn't seem right
+
+- name: question
+  color: d876e3
+  description: Further information is requested
+
+- name: wontfix
+  color: ffffff
+  description: This won't be worked on
+
+- name: breaking
+  color: b60205
+  description: Breaking change
+
+- name: chore
+  color: fef2c0
+  description: Maintenance task
+
+- name: docs
+  color: 0075ca
+  description: Documentation
+
+- name: feature
+  color: 84b6eb
+  description: New feature
+
+- name: fix
+  color: d73a4a
+  description: Bug fix
+
+- name: refactor
+  color: c5def5
+  description: Code refactoring
+
+- name: security
+  color: fbca04
+  description: Security related
+
+- name: test
+  color: bfe5bf
+  description: Testing
+
+- name: dependencies
+  color: 0366d6
+  description: Dependency updates
+
+- name: stale
+  color: ffffff
+  description: Stale issue or PR
+
+- name: size/xs
+  color: 5d9801
+  description: Extra small PR
+
+- name: size/s
+  color: 7f9801
+  description: Small PR
+
+- name: size/m
+  color: a99801
+  description: Medium PR
+
+- name: size/l
+  color: cf8b01
+  description: Large PR
+
+- name: size/xl
+  color: e66001
+  description: Extra large PR

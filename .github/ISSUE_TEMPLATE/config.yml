@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discord Community
+    url: https://discord.gg/grinch-gram
+    about: Ask questions and discuss with the community
+  - name: Documentation
+    url: https://github.com/Alexkkkkk/grinch-gram-ton#readme
+    about: Check the README for quick answers

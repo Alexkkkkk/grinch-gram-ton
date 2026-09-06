@@ -1,0 +1,101 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI-Trading — Standalone (single container, SQLite, no external deps)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Quick start:  docker-compose up -d
+# Build:        docker-compose build --parallel
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        pip-cache: /tmp/pip-cache
+    container_name: quantum-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WEB_CONCURRENCY=1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data:rw
+      - ./backups:/app/backups:rw
+      - ./logs:/app/logs:rw
+      - ./models:/app/models:ro
+    networks:
+      - grinch-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  # ── Local LLM (Ollama) — опционально ──────────────────────────────────────
+  # Поднимает локальную модель для KimiGridControl и LLM-новостного сентимента.
+  # Бот обращается к ней по имени сервиса: OLLAMA_BASE_URL=http://ollama:11434/v1
+  # Модель скачивается автоматически при первом старте (см. entrypoint).
+  # CPU-only по умолчанию; для GPU добавьте: deploy.resources.reservations.devices
+  # (см. https://docs.docker.com/compose/gpu-support/).
+  ollama:
+    image: ollama/ollama:latest
+    container_name: grinch-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama:rw
+    networks:
+      - grinch-net
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      # Список моделей, которые докачать при старте (через запятую):
+      - OLLAMA_MODELS_PULL=${OLLAMA_MODELS_PULL:-llama3.1:8b}
+    entrypoint: >
+      sh -c "ollama serve & sleep 5;
+      for m in $$(echo $$OLLAMA_MODELS_PULL | tr ',' ' '); do ollama pull $$m; done;
+      wait"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+volumes:
+  ollama-models:
+    driver: local
+
+networks:
+  grinch-net:
+    driver: bridge

@@ -1,0 +1,62 @@
+name: Auto-Rollback
+
+on:
+  workflow_run:
+    workflows: ["Auto-Deploy to VPS"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    steps:
+      - name: Rollback on VPS
+        uses: appleboy/ssh-action@v1.2.5
+        continue-on-error: true
+        with:
+          host: 2.27.25.126
+          username: root
+          password: ${{ secrets.VPS_SSH_PASSWORD }}
+          port: 22
+          script: |
+            echo "=== Auto-Rollback Triggered ==="
+            cd /opt/bot
+            
+            # Find latest backup created by the deploy workflow.
+            LATEST_BACKUP=$(ls -td /opt/backups/bot-* 2>/dev/null | head -1 || true)
+            if [ -z "$LATEST_BACKUP" ] || [ ! -f "$LATEST_BACKUP/commit.sha" ]; then
+              echo "No deploy backup found; rollback cannot be completed."
+              exit 1
+            fi
+
+            PREVIOUS_SHA=$(cat "$LATEST_BACKUP/commit.sha")
+            cd /opt/bot
+            git reset --hard "$PREVIOUS_SHA"
+
+            for directory in data backups logs; do
+              if [ -d "$LATEST_BACKUP/$directory" ]; then
+                rm -rf "/opt/bot/$directory"
+                cp -a "$LATEST_BACKUP/$directory" "/opt/bot/$directory"
+              fi
+            done
+
+            docker compose build bot
+            docker compose up -d --force-recreate --remove-orphans bot
+            curl -fsS http://127.0.0.1:3000/api/health >/dev/null
+            echo "Rollback complete: $PREVIOUS_SHA"
+
+      - name: Notify failure
+        if: always()
+        uses: appleboy/telegram-action@v1.1.1
+        continue-on-error: true
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            🚨 AI-Trading Auto-Rollback
+            Deploy failed! Rollback executed.
+            Check: https://github.com/${{ github.repository }}/actions

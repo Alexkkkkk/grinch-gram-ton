@@ -1,0 +1,57 @@
+{
+  "name": "QuantumGrinch v7 — AI Trading",
+  "short_name": "QuantumGrinch",
+  "description": "AI-powered crypto trading dashboard with real-time candlestick charts, Quantum Intelligence Suite and WebSocket streaming",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0e11",
+  "theme_color": "#f0b90b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity", "utilities"],
+  "lang": "ru",
+  "dir": "ltr",
+  "screenshots": [
+    {
+      "src": "/static/img/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/static/img/screenshot-narrow.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Запустить бота",
+      "short_name": "Старт",
+      "description": "Запустить торгового бота",
+      "url": "/?action=start",
+      "icons": [{"src": "/static/img/icon-play.png", "sizes": "96x96"}]
+    },
+    {
+      "name": "Остановить бота",
+      "short_name": "Стоп",
+      "description": "Остановить торгового бота",
+      "url": "/?action=stop",
+      "icons": [{"src": "/static/img/icon-stop.png", "sizes": "96x96"}]
+    }
+  ]
+}

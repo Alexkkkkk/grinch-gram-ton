@@ -1,0 +1,22 @@
+# Global owners
+* @Alexkkkkk
+
+# Core infrastructure
+/core/ @Alexkkkkk
+
+# Trading logic
+/trading/ @Alexkkkkk
+
+# AI/ML
+/ai/ @Alexkkkkk
+
+# Web/API
+/web/ @Alexkkkkk
+
+# Database
+/db/ @Alexkkkkk
+
+# DevOps
+/Dockerfile @Alexkkkkk
+/docker-compose.yml @Alexkkkkk
+/.github/workflows/ @Alexkkkkk

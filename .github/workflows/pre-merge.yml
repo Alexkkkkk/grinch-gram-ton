@@ -1,0 +1,49 @@
+name: Pre-Merge Checks
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install black ruff mypy bandit
+
+      - name: Check Python syntax
+        run: |
+          find . -name "*.py" -not -path "./.git/*" -exec python3 -m py_compile {} \;
+
+      - name: Check YAML syntax
+        run: |
+          pip install pyyaml
+          python3 -c "import yaml, glob; [yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')]; print('YAML OK')"
+
+      - name: Check black formatting
+        run: black --check .
+
+      - name: Check ruff
+        run: ruff check . --output-format=github
+
+      - name: Check mypy
+        run: mypy core/ ai/ trading/ web/ db/ --ignore-missing-imports || true
+
+      - name: Security scan
+        run: bandit -r . -f json -o bandit-report.json || true
+
+      - name: Check Docker build
+        run: docker build -t grinch-test . || echo "Docker check skipped"

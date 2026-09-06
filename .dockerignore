@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+
+# Virtual envs
+venv/
+env/
+.venv/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Data (mount as volume)
+data/
+logs/
+backups/
+*.db
+*.sqlite3
+
+# Tests (not needed in production image)
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# CI/CD
+.github/
+
+# Documentation
+*.md
+!README.md
+
+# OS
+.DS_Store
+Thumbs.db
