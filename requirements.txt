@@ -21,7 +21,7 @@ sqlalchemy==2.0.52
 numpy==1.26.4
 pandas==2.3.3
 scikit-learn==1.5.2
-joblib==1.5.3
+joblib==1.6.0
 
 # ── TON Blockchain ────────────────────────────────────────────────────────────
 pytoniq==0.1.43
