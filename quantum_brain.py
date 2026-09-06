@@ -594,7 +594,10 @@ class QuantumBrain:
                 {
                     "ai_signal": self.state.prophet_signal,
                     "confidence": self.state.prophet_confidence,
-                    "regime": {"name": self.state.regime, "atr_pct": self.state.atr_pct},
+                    "regime": {
+                        "name": self.state.regime,
+                        "atr_pct": self.state.atr_pct,
+                    },
                 }
             )
             bf.update_ta(
