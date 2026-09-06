@@ -383,8 +383,8 @@ class LLMNewsSentiment:
             "You are a crypto market sentiment analyst. Based ONLY on the "
             "news headlines provided, estimate the short-term market mood "
             "for TON (Toncoin). Reply with JSON only, exactly these keys: "
-            'score (float -1.0 very bearish .. +1.0 very bullish), '
-            'confidence (float 0..1), summary (short string, max 12 words). '
+            "score (float -1.0 very bearish .. +1.0 very bullish), "
+            "confidence (float 0..1), summary (short string, max 12 words). "
             "No markdown, no extra keys."
         )
         user = "Headlines:\n" + "\n".join(f"- {h}" for h in headlines)
@@ -569,7 +569,9 @@ class QuantumSentiment:
             # LLM-новостной сентимент (опционально, fail-closed)
             llm_news = self._llm_news.get()
             llm_fresh = bool(
-                llm_news and (time.time() - getattr(self._llm_news, "_fetched_at", 0)) < _LLM_NEWS_TTL
+                llm_news
+                and (time.time() - getattr(self._llm_news, "_fetched_at", 0))
+                < _LLM_NEWS_TTL
             )
 
             # Итоговый сентимент
@@ -580,7 +582,9 @@ class QuantumSentiment:
                 if not llm_fresh:
                     w *= 0.5  # устаревший кэш вдвое менее значим
                 sentiment = sentiment * (1 - w) + llm_news["score"] * w
-                conviction = min(1.0, conviction + 0.1 * llm_news.get("confidence", 0.0))
+                conviction = min(
+                    1.0, conviction + 0.1 * llm_news.get("confidence", 0.0)
+                )
             conviction = min(1.0, conviction)
 
             # Сигнал
