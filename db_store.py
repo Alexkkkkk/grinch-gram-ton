@@ -278,7 +278,9 @@ def _init_pool():
                     f"[DB] ⚠️ Попытка {attempt}/{len(_timeouts)} не удалась ({e}) — повтор через {wait}с"
                 )
                 time.sleep(wait)
-    print(f"[DB] ⚠️ Ошибка подключения к PostgreSQL: {last_err} — используем JSON-файлы")
+    print(
+        f"[DB] ⚠️ Ошибка подключения к PostgreSQL: {last_err} — используем JSON-файлы"
+    )
     _available = False
 
 
@@ -990,12 +992,10 @@ def ai_examples_export_all():
                 name="export_cur", cursor_factory=psycopg2.extras.RealDictCursor
             ) as cur:
                 cur.itersize = 1000
-                cur.execute(
-                    """
+                cur.execute("""
                     SELECT id, created_at, label, weight, features
                     FROM bot_ai_examples ORDER BY id
-                """
-                )
+                """)
                 for row in cur:
                     yield {
                         "id": row["id"],
@@ -1287,16 +1287,14 @@ def wallet_snapshot_get_latest() -> dict:
     try:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    """
+                cur.execute("""
                     SELECT ts, ton_balance, grinch_balance, grinch_price_ton, grinch_price_usd,
                            ton_price_usd, grinch_value_ton, grinch_value_usd,
                            total_equity_ton, total_equity_usd,
                            entry_price_ton, entry_price_usd, pnl_ton, pnl_pct, pnl_usd,
                            tracked_amount, tracked_entries, tracked_stake
                     FROM bot_wallet_snapshots ORDER BY id DESC LIMIT 1
-                """
-                )
+                """)
                 row = cur.fetchone()
                 if not row:
                     return {}
@@ -1438,12 +1436,10 @@ def deep_models_meta() -> list:
     try:
         with _conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    """
+                cur.execute("""
                     SELECT model_name, accuracy, n_examples, trained_at
                     FROM bot_ai_deep_models ORDER BY model_name
-                """
-                )
+                """)
                 return [dict(row) for row in cur.fetchall()]
     except Exception as e:
         logger.warning(f"[DB] deep_models_meta error: {e}")
