@@ -287,14 +287,38 @@ class KimiGridControl:
         if self.provider in ("groq", "kimi"):
             request_kwargs["response_format"] = {"type": "json_object"}
         try:
-            response = self._get_client().chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                **request_kwargs,
-            )
+            try:
+                response = self._get_client().chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    **request_kwargs,
+                )
+            except Exception as exc:
+                # Some Groq models reject response_format={"type": "json_object"}
+                # with a BadRequest/400. Retry once without it: the system prompt
+                # already demands JSON-only and _parse_content strips ```json.
+                if request_kwargs and (
+                    "badrequest" in type(exc).__name__.lower()
+                    or "400" in str(exc)
+                ):
+                    log.warning(
+                        "[%s] json_object rejected (%s) — retrying without "
+                        "response_format",
+                        self.provider.upper(),
+                        type(exc).__name__,
+                    )
+                    response = self._get_client().chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": user},
+                        ],
+                    )
+                else:
+                    raise
             content = response.choices[0].message.content
             decision = self._validate(
                 content and self._parse_content(content),

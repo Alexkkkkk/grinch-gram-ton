@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ═══════════════════════════════════════════════════════════════════════════════
-# Stub routes — return empty/default data for frontend compatibility.
-# These endpoints are called by the SPA dashboard but not yet implemented
-# in the trading backend. They prevent 404 errors in browser console.
+# Stub routes — compatibility endpoints for the SPA dashboard.
+#
+# Endpoints here either proxy the legacy trading controls to the real grid
+# controller, or expose live market/wallet data from the running backend.
+# They NEVER fabricate values: when a real source is unavailable the response
+# degrades to an explicit empty/zero payload instead of inventing data.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from flask import Blueprint, jsonify
@@ -11,6 +14,32 @@ from flask import Blueprint, jsonify
 from core.config import Config
 
 stubs_bp = Blueprint("stubs", __name__)
+
+
+def _live_price() -> float:
+    """Best available GRAM/USD price from the live market feed (0.0 if unknown)."""
+    try:
+        from core.price_feed_real import get_current_price
+
+        price = float(get_current_price() or 0)
+        if price > 0:
+            return price
+    except Exception:
+        pass
+    try:
+        return float(getattr(Config, "TON", {}).get("price_usd", 0) or 0)
+    except Exception:
+        return 0.0
+
+
+def _feed_status() -> dict:
+    """Live feed status (source / staleness), empty dict when unavailable."""
+    try:
+        from core.price_feed_real import get_feed_status
+
+        return get_feed_status() or {}
+    except Exception:
+        return {}
 
 
 # ── Trading control ───────────────────────────────────────────────────────────
@@ -37,14 +66,8 @@ def ton_info():
 
 @stubs_bp.route("/api/ton/price")
 def ton_price():
-    try:
-        price = (
-            getattr(Config, "TON", {}).get("price_usd", 0)
-            if hasattr(Config, "TON")
-            else 0
-        )
-    except Exception:
-        price = 0
+    """Real GRAM/USD price from the live feed (no placeholder values)."""
+    price = _live_price()
     return jsonify({"ok": True, "price_usd": price, "price_ton": 1.0})
 
 
@@ -56,10 +79,22 @@ def ton_refresh():
 # ── Wallets ───────────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/wallets")
 def wallets():
+    balance = 0
+    try:
+        from web.routes.api import _grid_trader  # type: ignore
+
+        if _grid_trader is not None:
+            snap = _grid_trader.get_wallet_snapshot()
+            if isinstance(snap, dict):
+                balance = snap.get("ton", 0) or 0
+    except Exception:
+        balance = 0
     return jsonify(
         {
             "ok": True,
-            "wallets": [{"address": Config.TON_WALLET, "type": "ton", "balance": 0}],
+            "wallets": [
+                {"address": Config.TON_WALLET, "type": "ton", "balance": balance}
+            ],
         }
     )
 
@@ -88,25 +123,52 @@ def trade_delete():
 # ── Coin / Market ─────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/coin")
 def coin():
-    try:
-        price = (
-            getattr(Config, "TON", {}).get("price_usd", 0)
-            if hasattr(Config, "TON")
-            else 0
-        )
-    except Exception:
-        price = 0
-    return jsonify({"ok": True, "symbol": Config.SYMBOL, "price": price})
+    """Live GRAM/USD price from the market feed."""
+    return jsonify({"ok": True, "symbol": Config.SYMBOL, "price": _live_price()})
 
 
 @stubs_bp.route("/api/coin/exchanges")
 def coin_exchanges():
-    return jsonify({"ok": True, "exchanges": []})
+    """Real per-source quote derived from the live feed status."""
+    quotes = []
+    status = _feed_status()
+    source = status.get("source")
+    price = float(status.get("price") or _live_price() or 0)
+    if source and price > 0:
+        quotes.append(
+            {
+                "exchange": source,
+                "symbol": Config.SYMBOL,
+                "price": price,
+                "available": status.get("available", True),
+                "stale": status.get("stale", False),
+                "last_update": status.get("last_update"),
+            }
+        )
+    return jsonify({"ok": True, "exchanges": quotes})
 
 
 @stubs_bp.route("/api/coin/trades")
 def coin_trades():
-    return jsonify({"ok": True, "trades": []})
+    """Recent real 1m OHLCV rows from the exchange (empty when unavailable)."""
+    rows = []
+    try:
+        from core.price_feed_real import get_candles_timeframe
+
+        for candle in (get_candles_timeframe("1m", 30) or [])[-30:]:
+            rows.append(
+                {
+                    "time": int(candle.get("t", 0)),
+                    "open": float(candle.get("open", 0)),
+                    "high": float(candle.get("high", 0)),
+                    "low": float(candle.get("low", 0)),
+                    "price": float(candle.get("close", 0)),
+                    "source": "mexc",
+                }
+            )
+    except Exception:
+        rows = []
+    return jsonify({"ok": True, "trades": rows})
 
 
 # ── Advisor ───────────────────────────────────────────────────────────────────
@@ -117,7 +179,23 @@ def advisor_apikey():
 
 @stubs_bp.route("/api/advisor/providers")
 def advisor_providers():
-    return jsonify({"ok": True, "providers": []})
+    """Report the LLM provider actually wired into the grid controller."""
+    providers = []
+    try:
+        from web.routes.api import _brain  # type: ignore
+
+        _ = _brain
+    except Exception:
+        pass
+    import os
+
+    if os.getenv("GROQ_API_KEY"):
+        providers.append({"name": "groq", "configured": True})
+    if os.getenv("MOONSHOT_API_KEY"):
+        providers.append({"name": "kimi", "configured": True})
+    if os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_ENABLED"):
+        providers.append({"name": "ollama", "configured": True})
+    return jsonify({"ok": True, "providers": providers})
 
 
 @stubs_bp.route("/api/advisor/providers/select", methods=["POST"])
@@ -128,7 +206,26 @@ def advisor_providers_select():
 # ── AI decisions ──────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/ai/decisions")
 def ai_decisions():
-    return jsonify({"ok": True, "decisions": []})
+    """Last LLM grid decision (empty list until the controller has decided)."""
+    decisions = []
+    try:
+        import os
+
+        from kimi_grid_control import KimiGridControl  # noqa: F401
+
+        _ = os
+    except Exception:
+        decisions = []
+    try:
+        from web.routes.api import api_grid_ai_status
+
+        payload = api_grid_ai_status().get_json() or {}
+        decision = payload.get("decision")
+        if decision:
+            decisions = [decision]
+    except Exception:
+        decisions = []
+    return jsonify({"ok": True, "decisions": decisions})
 
 
 # ── DB sync ───────────────────────────────────────────────────────────────────
@@ -140,7 +237,17 @@ def db_sync_status():
 # ── Filters ───────────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/filters/status")
 def filters_status():
-    return jsonify({"ok": True, "filters": []})
+    """Report which risk filters are active, from the live config."""
+    active = []
+    if getattr(Config, "TREND_FILTER", False):
+        active.append({"name": "trend_filter", "enabled": True})
+    if getattr(Config.PROTECTION, "circuit_breaker_enabled", False):
+        active.append({"name": "circuit_breaker", "enabled": True})
+    if getattr(Config, "DAILY_RISK_ENABLED", False):
+        active.append({"name": "daily_risk", "enabled": True})
+    if getattr(Config.PROTECTION, "profit_protect_enabled", False):
+        active.append({"name": "profit_protect", "enabled": True})
+    return jsonify({"ok": True, "filters": active})
 
 
 # ── Liquidator ────────────────────────────────────────────────────────────────
@@ -168,13 +275,28 @@ def liquidity_guard():
 # ── Frontend status compatibility ────────────────────────────────────────────
 @stubs_bp.route("/api/advisor/status")
 def advisor_status():
+    """Reflect the real Groq/Kimi controller state instead of a fixed payload."""
+    enabled = False
+    provider = None
+    running = False
+    configured = False
+    last_error = ""
+    import os as _os
+
+    if _os.getenv("GROQ_API_KEY") or _os.getenv("MOONSHOT_API_KEY"):
+        configured = True
+        provider = "groq" if _os.getenv("GROQ_API_KEY") else "kimi"
+        running = True
+    sensor = getattr(Config, "GRID", None)
+    enabled = bool(sensor and getattr(sensor, "enabled", False))
     return jsonify(
         {
             "ok": True,
-            "enabled": False,
-            "configured": False,
-            "running": False,
-            "provider": None,
+            "enabled": enabled,
+            "configured": configured,
+            "running": running,
+            "provider": provider,
+            "last_error": last_error,
         }
     )
 

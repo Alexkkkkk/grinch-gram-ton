@@ -77,7 +77,20 @@ def _get_v7_data() -> dict:
             },
             "xai": state.get("xai", {}),
         }
-    return {}
+    # Brain not injected (e.g. standalone WSGI process): return an explicit
+    # "unavailable" shape so the SPA renders placeholders instead of `{}`.
+    return {
+        "prophet": {"available": False, "forecast": []},
+        "sentiment": {"available": False, "score": None},
+        "swarm": {"available": False, "agents": []},
+        "optimizer": {
+            "available": False,
+            "recommended_position_size": None,
+            "recommended_leverage": 1,
+            "expected_return_24h": 0,
+        },
+        "xai": {"available": False, "trust_score": None},
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
