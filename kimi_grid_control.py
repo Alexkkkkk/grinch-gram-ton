@@ -58,15 +58,19 @@ class KimiGridControl:
             self.provider = "none"
         # URL из *_BASE_URL имеет приоритет; иначе берём prefix-based env или дефолт.
         self.base_url = (llamafile_url or ollama_url or "").rstrip("/")
-        if not self.base_url and self.provider == "ollama" and _bool_env("OLLAMA_ENABLED", False):
+        if (
+            not self.base_url
+            and self.provider == "ollama"
+            and _bool_env("OLLAMA_ENABLED", False)
+        ):
             self.base_url = "http://127.0.0.1:11434/v1"
         prefix = self.provider.upper() if self.provider != "none" else "GROQ"
         # Local providers (Ollama/llamafile) don't need a real key, but the
         # OpenAI client requires a non-empty one.
         self.api_key = groq_key or kimi_key or "local-not-needed"
-        self.enabled = (bool(groq_key or kimi_key) or self.provider in ("ollama", "llamafile")) and _bool_env(
-            f"{prefix}_CONTROL_ENABLED", True
-        )
+        self.enabled = (
+            bool(groq_key or kimi_key) or self.provider in ("ollama", "llamafile")
+        ) and _bool_env(f"{prefix}_CONTROL_ENABLED", True)
         self.required_for_auto_grid = _bool_env(f"{prefix}_REQUIRE_FOR_AUTO_GRID", True)
         _model_defaults = {
             "groq": "qwen/qwen3.8-27b",
@@ -85,9 +89,9 @@ class KimiGridControl:
             "llamafile": "http://127.0.0.1:8080/v1",
         }
         if not self.base_url:
-            self.base_url = os.getenv(f"{prefix}_API_BASE", "").strip() or _base_defaults.get(
-                self.provider, "https://api.moonshot.ai/v1"
-            )
+            self.base_url = os.getenv(
+                f"{prefix}_API_BASE", ""
+            ).strip() or _base_defaults.get(self.provider, "https://api.moonshot.ai/v1")
         self.min_confidence = max(
             0.0, min(100.0, _float_env(f"{prefix}_MIN_CONFIDENCE", 60.0))
         )
@@ -154,7 +158,11 @@ class KimiGridControl:
             step = fallback_step
         min_step = max(0.1, _float_env("GRID_MIN_STEP_PCT", 0.9))
         max_step = max(min_step, _float_env("GRID_MAX_STEP_PCT", 8.0))
-        ai_manages_grid = self.provider in ("groq", "ollama", "llamafile") and _bool_env(
+        ai_manages_grid = self.provider in (
+            "groq",
+            "ollama",
+            "llamafile",
+        ) and _bool_env(
             f"{self.provider.upper()}_MANAGES_GRID",
             _bool_env("GROQ_MANAGES_GRID", True),
         )
