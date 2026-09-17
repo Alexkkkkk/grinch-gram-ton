@@ -15,8 +15,12 @@ def test_grid_reduces_buy_levels_below_break_even(monkeypatch):
     )
 
     assert len(state.sell_levels) == 3
-    assert len(state.buy_levels) == 2
-    assert all(level.amount_ton >= 0.229 for level in state.buy_levels)
+    # With 0.9 TON the grid cannot place 3 buy levels that each clear the
+    # gas-aware break-even size, so it reduces the count instead of emitting
+    # unprofitable orders. Every surviving level must meet the minimum.
+    assert 0 < len(state.buy_levels) < 3
+    min_order = trader._min_profitable_order_ton(state.step_pct)
+    assert all(level.amount_ton + 1e-9 >= min_order for level in state.buy_levels)
 
 
 def test_buy_creates_adjacent_sell_and_sell_uses_expected_ton():

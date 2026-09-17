@@ -8,9 +8,13 @@ def test_sell_payload_uses_legacy_dedust_vault_format():
         "0:99d74121f08279b050ba24a9fe62b6a5305e39064e5f90d4fa4aa4c7488446c5"
     )
     pool = Address("0:3e5ffca8ddfcf36c36c9ff46f31562aab51b9914845ad6c26cbde649d58a5588")
+    # The Jetton Transfer destination must be the Vault's jetton-wallet owner;
+    # the pool address travels inside the forward swap payload.
+    vault = Address("0:" + "ab" * 32)
     body = dedust_client._build_sell_transfer_body(
         recipient=recipient,
         pool_addr=pool,
+        vault_addr=vault,
         usdt_nano=332002,
         min_out_nano=237043000,
         deadline=1788295800,
@@ -21,7 +25,7 @@ def test_sell_payload_uses_legacy_dedust_vault_format():
     assert transfer.load_uint(32) == 0x0F8A7EA5
     transfer.load_uint(64)
     assert transfer.load_coins() == 332002
-    assert transfer.load_address() == pool
+    assert transfer.load_address() == vault
     assert transfer.load_address() == recipient
     assert transfer.load_maybe_ref() is None
     assert transfer.load_coins() == 180000000
