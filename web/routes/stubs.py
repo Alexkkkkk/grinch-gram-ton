@@ -26,6 +26,17 @@ def _live_price() -> float:
             return price
     except Exception:
         pass
+    # Fallback: latest real 1m candle close straight from the exchange.
+    try:
+        from core.price_feed_real import get_candles_timeframe
+
+        candles = get_candles_timeframe("1m", 2) or []
+        if candles:
+            close = float(candles[-1].get("close", 0) or 0)
+            if close > 0:
+                return close
+    except Exception:
+        pass
     try:
         return float(getattr(Config, "TON", {}).get("price_usd", 0) or 0)
     except Exception:
@@ -270,6 +281,28 @@ def liquidator_threshold():
 @stubs_bp.route("/api/liquidity_guard")
 def liquidity_guard():
     return jsonify({"ok": True, "guards": []})
+
+
+# ── Health aliases (public, no redirect) ─────────────────────────────────────
+@stubs_bp.route("/health")
+def health_alias():
+    from web.routes.health import health_check
+
+    return health_check()
+
+
+@stubs_bp.route("/health/full")
+def health_full_alias():
+    from web.routes.health import full_health
+
+    return full_health()
+
+
+@stubs_bp.route("/health/metrics")
+def health_metrics_alias():
+    from web.routes.health import metrics
+
+    return metrics()
 
 
 # ── Frontend status compatibility ────────────────────────────────────────────
