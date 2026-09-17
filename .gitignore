@@ -133,3 +133,5 @@ docker-compose.*.yml
 node_modules/
 *.min.js.map
 *.min.css.map
+credentials.json
+*.p12
