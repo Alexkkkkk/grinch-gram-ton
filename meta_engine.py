@@ -10,8 +10,14 @@ What it actually is:
 What it is NOT: no fine-tuning, no GPU, and it does NOT guarantee profit.
 The "learning" is online reward-driven re-ranking of decisions (Li et al. 2010, LinUCB).
 """
+
 from __future__ import annotations
-import json, math, os, sqlite3, time
+
+import json
+import math
+import os
+import sqlite3
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 
@@ -32,6 +38,7 @@ class Decision:
 
 class OutcomeStore:
     """Durable experience memory: every decision and its realised reward."""
+
     def __init__(self, path: str = "meta_memory.sqlite"):
         self.path = path
         self._init_db()
@@ -46,13 +53,27 @@ class OutcomeStore:
                 ts REAL, action TEXT, reward REAL,
                 confidence REAL, features TEXT, meta TEXT)""")
 
-    def log(self, action: str, reward: float, features: Sequence[float],
-            confidence: float = 0.0, meta: Optional[dict] = None):
+    def log(
+        self,
+        action: str,
+        reward: float,
+        features: Sequence[float],
+        confidence: float = 0.0,
+        meta: Optional[dict] = None,
+    ):
         with self._conn() as c:
-            c.execute("INSERT INTO outcomes(ts,action,reward,confidence,features,meta)"
-                      " VALUES(?,?,?,?,?,?)",
-                      (time.time(), action, float(reward), float(confidence),
-                       json.dumps([float(x) for x in features]), json.dumps(meta or {})))
+            c.execute(
+                "INSERT INTO outcomes(ts,action,reward,confidence,features,meta)"
+                " VALUES(?,?,?,?,?,?)",
+                (
+                    time.time(),
+                    action,
+                    float(reward),
+                    float(confidence),
+                    json.dumps([float(x) for x in features]),
+                    json.dumps(meta or {}),
+                ),
+            )
 
     def count(self) -> int:
         with self._conn() as c:
@@ -60,12 +81,14 @@ class OutcomeStore:
 
     def recent(self, n: int = 50):
         with self._conn() as c:
-            return c.execute("SELECT ts,action,reward FROM outcomes ORDER BY id DESC LIMIT ?",
-                             (n,)).fetchall()
+            return c.execute(
+                "SELECT ts,action,reward FROM outcomes ORDER BY id DESC LIMIT ?", (n,)
+            ).fetchall()
 
 
 class LinUCB:
     """Disjoint linear UCB contextual bandit."""
+
     def __init__(self, n_arms: int, dim: int, alpha: float = 0.6):
         self.alpha, self.dim = alpha, dim
         self.A = [np.identity(dim) for _ in range(n_arms)]
@@ -88,9 +111,12 @@ class LinUCB:
 
 class LLMReasoner:
     """OpenAI-compatible client — OpenAI, DeepSeek, Gemini(compat), Groq or local Ollama."""
+
     def __init__(self, model=None, base_url=None, api_key=None, timeout=20):
         self.model = model or os.getenv("META_LLM_MODEL", "deepseek-flash")
-        self.base_url = base_url or os.getenv("META_LLM_BASE_URL", "https://api.deepseek.com/v1")
+        self.base_url = base_url or os.getenv(
+            "META_LLM_BASE_URL", "https://api.deepseek.com/v1"
+        )
         self.api_key = api_key or os.getenv("META_LLM_API_KEY", "")
         self.timeout = timeout
 
@@ -99,17 +125,22 @@ class LLMReasoner:
             return Decision("HOLD", 0.0, 0.0, "llm:disabled", "no META_LLM_API_KEY")
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
+
+            client = OpenAI(
+                api_key=self.api_key, base_url=self.base_url, timeout=self.timeout
+            )
             prompt = (
                 "You are a quantitative decision module for a TON/USDT grid bot. "
                 "Given the market context JSON, reply ONLY with compact JSON: "
                 '{"action":"BUY|SELL|HOLD","confidence":0-100,"rationale":"<=140 chars"}. '
-                "Be conservative; HOLD is always valid.\nContext: " + json.dumps(context)
+                "Be conservative; HOLD is always valid.\nContext: "
+                + json.dumps(context)
             )
             r = client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.2, max_tokens=200,
+                temperature=0.2,
+                max_tokens=200,
                 response_format={"type": "json_object"},
             )
             data = json.loads(r.choices[0].message.content)
@@ -117,15 +148,22 @@ class LLMReasoner:
             if action not in ACTIONS:
                 action = "HOLD"
             conf = float(data.get("confidence", 0) or 0)
-            return Decision(action, conf, conf / 100.0, "llm",
-                            str(data.get("rationale", ""))[:200])
+            return Decision(
+                action, conf, conf / 100.0, "llm", str(data.get("rationale", ""))[:200]
+            )
         except Exception as e:
             return Decision("HOLD", 0.0, 0.0, "llm:error", str(e)[:200])
 
 
 class MetaEngine:
-    def __init__(self, dim: int = 6, alpha: float = 0.6, llm_weight: float = 0.35,
-                 store_path: str = "meta_memory.sqlite", reasoner: Optional[LLMReasoner] = None):
+    def __init__(
+        self,
+        dim: int = 6,
+        alpha: float = 0.6,
+        llm_weight: float = 0.35,
+        store_path: str = "meta_memory.sqlite",
+        reasoner: Optional[LLMReasoner] = None,
+    ):
         self.dim = dim
         self.bandit = LinUCB(len(ACTIONS), dim, alpha)
         self.store = OutcomeStore(store_path)
@@ -133,36 +171,63 @@ class MetaEngine:
         self.llm_weight = llm_weight
         self._last: Optional[Decision] = None
 
-    def decide(self, features: Sequence[float], context: Optional[Dict] = None,
-               use_llm: bool = True) -> Decision:
+    def decide(
+        self,
+        features: Sequence[float],
+        context: Optional[Dict] = None,
+        use_llm: bool = True,
+    ) -> Decision:
         x = np.asarray(features, dtype=float)[: self.dim]
         if x.shape[0] < self.dim:
             x = np.pad(x, (0, self.dim - x.shape[0]))
         blend = self.bandit.scores(x)
-        llm_d = self.llm.propose(context or {}) if use_llm else Decision("HOLD", 0, 0, "llm:off")
+        llm_d = (
+            self.llm.propose(context or {})
+            if use_llm
+            else Decision("HOLD", 0, 0, "llm:off")
+        )
         if llm_d.action in ACTIONS:
             blend[ACTIONS.index(llm_d.action)] += self.llm_weight * llm_d.score
         arm = int(np.argmax(blend))
-        d = Decision(ACTIONS[arm], llm_d.confidence, float(blend[arm]), "meta",
-                     llm_d.rationale, [float(v) for v in x])
+        d = Decision(
+            ACTIONS[arm],
+            llm_d.confidence,
+            float(blend[arm]),
+            "meta",
+            llm_d.rationale,
+            [float(v) for v in x],
+        )
         self._last = d
         return d
 
-    def record_outcome(self, reward: float, features: Optional[Sequence[float]] = None,
-                       action: Optional[str] = None, meta: Optional[dict] = None):
+    def record_outcome(
+        self,
+        reward: float,
+        features: Optional[Sequence[float]] = None,
+        action: Optional[str] = None,
+        meta: Optional[dict] = None,
+    ):
         """Call when a decision's realised reward is known (e.g. a closed grid trade's PnL)."""
         d = self._last
         feats = features if features is not None else (d.features if d else None)
         act = (action or (d.action if d else "HOLD")).upper()
         if feats is None:
             raise ValueError("no features available; pass them explicitly")
-        self.bandit.update(ACTIONS.index(act), np.asarray(feats, dtype=float), float(reward))
+        self.bandit.update(
+            ACTIONS.index(act), np.asarray(feats, dtype=float), float(reward)
+        )
         self.store.log(act, reward, feats, (d.confidence if d else 0.0), meta)
 
     def stats(self) -> Dict:
-        return {"experiences": self.store.count(),
-                "theta": {a: (np.linalg.inv(self.bandit.A[i]) @ self.bandit.b[i]).round(4).tolist()
-                          for i, a in enumerate(ACTIONS)}}
+        return {
+            "experiences": self.store.count(),
+            "theta": {
+                a: (np.linalg.inv(self.bandit.A[i]) @ self.bandit.b[i])
+                .round(4)
+                .tolist()
+                for i, a in enumerate(ACTIONS)
+            },
+        }
 
 
 if __name__ == "__main__":
