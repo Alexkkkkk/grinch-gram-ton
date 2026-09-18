@@ -15,6 +15,7 @@ from typing import List, Optional
 import brain_fusion as bf
 from core.config import Config
 from kimi_grid_control import KimiGridControl
+from meta_bridge import MetaBridge
 
 log = logging.getLogger("quantum_brain")
 
@@ -171,6 +172,7 @@ class QuantumBrain:
         self._thread = None
         self._fill_history: deque = deque(maxlen=200)
         self._kimi = KimiGridControl()
+        self._meta = MetaBridge()
 
     def inject(self, grid_trader=None, price_feed=None):
         self._grid_trader = grid_trader
@@ -206,6 +208,7 @@ class QuantumBrain:
         self._run_grid_ai()
         self._run_kimi_control()
         self._unify_decision()
+        self._meta.apply(self.state)
         self._execute_action()
         self.state.last_update = time.time()
         self.state.update_count += 1
@@ -640,6 +643,7 @@ class QuantumBrain:
         try:
             self.state.last_trade_pnl_ton = round(float(pnl_ton), 6)
             bf.on_trade_closed(float(pnl_ton), was_scalp)
+            self._meta.record_trade(float(pnl_ton), {"was_scalp": bool(was_scalp)})
         except Exception as e:
             log.warning("[QuantumBrain] notify_trade_closed error: %s", e)
 
