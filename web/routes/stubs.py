@@ -1,3 +1,5 @@
+import time
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -8,8 +10,7 @@
 # They NEVER fabricate values: when a real source is unavailable the response
 # degrades to an explicit empty/zero payload instead of inventing data.
 # ═══════════════════════════════════════════════════════════════════════════════
-
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from core.config import Config
 
@@ -84,20 +85,27 @@ def ton_price():
 
 @stubs_bp.route("/api/ton/refresh", methods=["POST"])
 def ton_refresh():
-    return jsonify({"ok": True, "message": "Price refresh requested"})
+    """Force a real price update from the market feed."""
+    try:
+        from core.price_feed_real import update_price
+
+        price = update_price()
+        return jsonify({"ok": True, "price": price})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
 
 
 # ── Wallets ───────────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/wallets")
 def wallets():
+    # Real wallet balance from the shared DeDust balance cache - the same
+    # source /api/balance uses, so the dashboard shows consistent numbers.
     balance = 0
     try:
-        from web.routes.api import _grid_trader  # type: ignore
+        from dedust_client import get_shared_balance
 
-        if _grid_trader is not None:
-            snap = _grid_trader.get_wallet_snapshot()
-            if isinstance(snap, dict):
-                balance = snap.get("ton", 0) or 0
+        bal = get_shared_balance() or {}
+        balance = float(bal.get("TON", 0) or 0)
     except Exception:
         balance = 0
     return jsonify(
@@ -113,22 +121,45 @@ def wallets():
 # ── Trade manual ──────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/trade/manual_buy", methods=["POST"])
 def manual_buy():
-    return jsonify({"ok": False, "error": "Manual trading not enabled in stub mode"})
+    """Manual BUY via the live GridTrader/DeDust client."""
+    from web.routes.api import _grid_trader
+
+    if _grid_trader is None:
+        return jsonify({"ok": False, "error": "trader_not_ready"}), 503
+    data = request.get_json(silent=True) or {}
+    return jsonify(_grid_trader.manual_buy(data.get("amount")))
 
 
 @stubs_bp.route("/api/trade/manual_sell_all", methods=["POST"])
 def manual_sell_all():
-    return jsonify({"ok": False, "error": "Manual trading not enabled in stub mode"})
+    """Sell every filled BUY position via the live GridTrader."""
+    from web.routes.api import _grid_trader
+
+    if _grid_trader is None:
+        return jsonify({"ok": False, "error": "trader_not_ready"}), 503
+    return jsonify(_grid_trader.manual_sell_all())
 
 
 @stubs_bp.route("/api/trade/close", methods=["POST"])
 def trade_close():
-    return jsonify({"ok": False, "error": "Trade close not implemented"})
+    """Close a tracked position by selling it on DeDust."""
+    from web.routes.api import _grid_trader
+
+    if _grid_trader is None:
+        return jsonify({"ok": False, "error": "trader_not_ready"}), 503
+    data = request.get_json(silent=True) or {}
+    return jsonify(_grid_trader.close_trade(str(data.get("id"))))
 
 
 @stubs_bp.route("/api/trade/delete", methods=["POST"])
 def trade_delete():
-    return jsonify({"ok": False, "error": "Trade delete not implemented"})
+    """Remove a position from the tracker WITHOUT selling."""
+    from web.routes.api import _grid_trader
+
+    if _grid_trader is None:
+        return jsonify({"ok": False, "error": "trader_not_ready"}), 503
+    data = request.get_json(silent=True) or {}
+    return jsonify(_grid_trader.delete_trade(str(data.get("id"))))
 
 
 # ── Coin / Market ─────────────────────────────────────────────────────────────
@@ -211,7 +242,18 @@ def advisor_providers():
 
 @stubs_bp.route("/api/advisor/providers/select", methods=["POST"])
 def advisor_providers_select():
-    return jsonify({"ok": True})
+    """Persist the selected LLM provider in the real settings store."""
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("provider") or data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "provider_required"}), 400
+    try:
+        from db_store import settings_update_section
+
+        settings_update_section("advisor", {"selected_provider": name})
+        return jsonify({"ok": True, "selected": name})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
 
 
 # ── AI decisions ──────────────────────────────────────────────────────────────
@@ -242,7 +284,14 @@ def ai_decisions():
 # ── DB sync ───────────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/db/sync_status")
 def db_sync_status():
-    return jsonify({"ok": True, "synced": True, "pending": 0})
+    """Real DB availability from the store layer."""
+    try:
+        from db_store import _check_available
+
+        synced = bool(_check_available())
+    except Exception:
+        synced = False
+    return jsonify({"ok": True, "synced": synced, "pending": 0 if synced else 1})
 
 
 # ── Filters ───────────────────────────────────────────────────────────────────
@@ -264,17 +313,42 @@ def filters_status():
 # ── Liquidator ────────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/liquidator")
 def liquidator():
-    return jsonify({"ok": True, "enabled": False, "threshold": 0})
+    """Real liquidator state: threshold persisted in the settings store."""
+    threshold = 0
+    try:
+        from db_store import settings_get_section
+
+        threshold = int(
+            (settings_get_section("liquidator") or {}).get("threshold") or 0
+        )
+    except Exception:
+        threshold = 0
+    return jsonify({"ok": True, "enabled": False, "threshold": threshold})
 
 
 @stubs_bp.route("/api/liquidator/sell", methods=["POST"])
 def liquidator_sell():
-    return jsonify({"ok": False, "error": "Liquidator not configured"})
+    # The liquidator module is not part of the codebase: the button stays
+    # explicitly disabled instead of pretending to sell.
+    return (
+        jsonify({"ok": False, "error": "Liquidator disabled: module not configured"}),
+        503,
+    )
 
 
 @stubs_bp.route("/api/liquidator/threshold", methods=["POST"])
 def liquidator_threshold():
-    return jsonify({"ok": True})
+    """Persist the threshold in the real settings store."""
+    data = request.get_json(silent=True) or {}
+    try:
+        from db_store import settings_update_section
+
+        settings_update_section(
+            "liquidator", {"threshold": int(data.get("threshold") or 0)}
+        )
+        return jsonify({"ok": True, "threshold": int(data.get("threshold") or 0)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
 
 
 # ── Liquidity Guard ───────────────────────────────────────────────────────────
@@ -337,3 +411,24 @@ def advisor_status():
 @stubs_bp.route("/api/ai/deep-retrain/status")
 def deep_retrain_status():
     return jsonify({"ok": True, "status": "idle", "running": False, "progress": 0})
+
+
+# ── AI Performance monitor (frontend beacon target) ──────────────────────
+_perf_last: dict = {}
+
+
+@stubs_bp.route("/api/perf", methods=["POST"])
+def perf_ingest():
+    """Accept Core Web Vitals beacons sent by static/js/ai-perf.js."""
+    data = request.get_json(silent=True, force=True) or {}
+    if isinstance(data, dict) and data:
+        _perf_last.clear()
+        _perf_last.update(data)
+        _perf_last["received_at"] = time.time()
+    return jsonify({"ok": True})
+
+
+@stubs_bp.route("/api/perf")
+def perf_last():
+    """Latest performance metrics received from the browser."""
+    return jsonify({"ok": True, "metrics": _perf_last})
