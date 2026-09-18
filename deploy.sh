@@ -24,13 +24,13 @@ git fetch origin main --depth 1
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse origin/main)
 
-if [ "${LOCAL}" = "${REMOTE}" ]; then
-    echo "$(date '+%F %T') Up to date ${LOCAL}"
+if git merge-base --is-ancestor "${REMOTE}" "${LOCAL}"; then
+    echo "$(date '+%F %T') Up to date (remote ${REMOTE} already in ${LOCAL})"
     exit 0
 fi
 
 echo "$(date '+%F %T') Deploying ${LOCAL} -> ${REMOTE} ..."
 git pull origin main
-docker-compose build --no-cache bot
-docker-compose up -d --force-recreate bot
+docker compose build --no-cache bot
+docker compose up -d --force-recreate bot
 echo "$(date '+%F %T') Deployed to ${REMOTE}"
