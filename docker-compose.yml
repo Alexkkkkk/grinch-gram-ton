@@ -19,12 +19,15 @@ services:
       - PYTHONUNBUFFERED=1
       - WEB_CONCURRENCY=1
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./data:/app/data:rw
       - ./backups:/app/backups:rw
       - ./logs:/app/logs:rw
       - ./models:/app/models:ro
+      - ./meta_engine.py:/app/meta_engine.py:ro
+      - ./meta_bridge.py:/app/meta_bridge.py:ro
+      - ./quantum_brain.py:/app/quantum_brain.py:ro
     networks:
       - grinch-net
     deploy:

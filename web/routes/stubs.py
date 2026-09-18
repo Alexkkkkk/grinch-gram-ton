@@ -432,3 +432,11 @@ def perf_ingest():
 def perf_last():
     """Latest performance metrics received from the browser."""
     return jsonify({"ok": True, "metrics": _perf_last})
+
+
+@stubs_bp.route("/api/risk")
+def risk_status():
+    """Live hard-risk-limit state: trades, realized PnL, gas share."""
+    from grid_trader import _grid_trader
+
+    return jsonify(_grid_trader._risk.snapshot())
