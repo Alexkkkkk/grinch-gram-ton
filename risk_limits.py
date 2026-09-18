@@ -44,6 +44,7 @@ class RiskLimits:
                 if hasattr(self, k):
                     setattr(self, k, v)
         except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
+            # Keep safe defaults when state is missing/corrupt/unreadable.
             pass
 
     def _save(self):
