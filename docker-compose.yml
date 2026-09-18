@@ -25,6 +25,9 @@ services:
       - ./backups:/app/backups:rw
       - ./logs:/app/logs:rw
       - ./models:/app/models:ro
+      - ./meta_engine.py:/app/meta_engine.py:ro
+      - ./meta_bridge.py:/app/meta_bridge.py:ro
+      - ./quantum_brain.py:/app/quantum_brain.py:ro
     networks:
       - grinch-net
     deploy:

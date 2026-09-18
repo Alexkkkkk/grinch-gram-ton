@@ -13,7 +13,6 @@ Safety contract
 Every decision and its realised PnL is persisted to META_DB_PATH (SQLite) and used
 to update the LinUCB policy, so the brain learns from real closed trades.
 """
-
 from __future__ import annotations
 
 import logging
@@ -22,14 +21,7 @@ from typing import Optional
 
 log = logging.getLogger("meta_bridge")
 
-FEATURES = (
-    "momentum",
-    "prophet_confidence",
-    "sentiment_bias",
-    "xai_trust",
-    "atr_pct",
-    "bias",
-)
+FEATURES = ("momentum", "prophet_confidence", "sentiment_bias", "xai_trust", "atr_pct", "bias")
 
 
 def _flag(name: str, default: str = "off") -> bool:
@@ -75,13 +67,12 @@ class MetaBridge:
         if len(p) >= 7 and p[-7] > 0:
             momentum = (p[-1] - p[-7]) / p[-7]
         return [
-            max(-1.0, min(1.0, momentum * 100.0)),  # 1 momentum
-            float(getattr(state, "prophet_confidence", 0.0)) / 100.0,  # 2 prophet conf
-            (float(getattr(state, "sentiment_fg", 50.0)) - 50.0)
-            / 50.0,  # 3 sentiment bias
-            float(getattr(state, "xai_trust", 50.0)) / 100.0,  # 4 xai trust
-            float(getattr(state, "atr_pct", 0.0)),  # 5 volatility
-            1.0,  # 6 bias term
+            max(-1.0, min(1.0, momentum * 100.0)),                      # 1 momentum
+            float(getattr(state, "prophet_confidence", 0.0)) / 100.0,   # 2 prophet conf
+            (float(getattr(state, "sentiment_fg", 50.0)) - 50.0) / 50.0,  # 3 sentiment bias
+            float(getattr(state, "xai_trust", 50.0)) / 100.0,           # 4 xai trust
+            float(getattr(state, "atr_pct", 0.0)),                      # 5 volatility
+            1.0,                                                        # 6 bias term
         ]
 
     def context(self, state):
@@ -109,10 +100,7 @@ class MetaBridge:
             self.last, self.last_features = d, feats
             log.info(
                 "[MetaEngine] decision=%s conf=%.1f score=%.3f src=%s | brain=%s",
-                d.action,
-                d.confidence,
-                d.score,
-                d.source,
+                d.action, d.confidence, d.score, d.source,
                 getattr(state, "unified_action", "?"),
             )
             return d
@@ -125,9 +113,7 @@ class MetaBridge:
         d = self.decide(state, getattr(state, "price_history", []))
         if d is None or not self.influence:
             return
-        if getattr(state, "trap_detected", False) or getattr(
-            state, "pause_buying", False
-        ):
+        if getattr(state, "trap_detected", False) or getattr(state, "pause_buying", False):
             return  # local safety always wins
         if d.confidence >= self.min_conf and d.source == "meta":
             mapping = {"BUY": "BUILD", "SELL": "WAIT", "HOLD": "WAIT"}
@@ -135,9 +121,7 @@ class MetaBridge:
             if getattr(state, "unified_action", None) != target:
                 log.info(
                     "[MetaEngine] INFLUENCE override: %s -> %s (conf %.1f)",
-                    state.unified_action,
-                    target,
-                    d.confidence,
+                    state.unified_action, target, d.confidence,
                 )
                 state.unified_action = target
 
@@ -154,9 +138,7 @@ class MetaBridge:
             )
             log.info(
                 "[MetaEngine] learned from trade pnl=%.6f TON -> reward=%+.3f (n=%d)",
-                pnl_ton,
-                reward,
-                self.engine.store.count(),
+                pnl_ton, reward, self.engine.store.count(),
             )
         except Exception as e:
             log.warning("[MetaEngine] record_trade failed: %s", e)

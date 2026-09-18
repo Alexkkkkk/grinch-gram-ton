@@ -8,15 +8,8 @@ Layers:
   * MetaEngine   : blends the LLM prior with the learned policy and updates ONLINE.
 Not fine-tuning, no GPU, no profit guarantee.
 """
-
 from __future__ import annotations
-
-import json
-import math
-import os
-import re
-import sqlite3
-import time
+import json, math, os, re, sqlite3, time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 
@@ -37,7 +30,6 @@ class Decision:
 
 class OutcomeStore:
     """Durable experience memory: every decision and its realised reward."""
-
     def __init__(self, path: str = "meta_memory.sqlite"):
         self.path = path
         self._init_db()
@@ -52,27 +44,13 @@ class OutcomeStore:
                 ts REAL, action TEXT, reward REAL,
                 confidence REAL, features TEXT, meta TEXT)""")
 
-    def log(
-        self,
-        action: str,
-        reward: float,
-        features: Sequence[float],
-        confidence: float = 0.0,
-        meta: Optional[dict] = None,
-    ):
+    def log(self, action: str, reward: float, features: Sequence[float],
+            confidence: float = 0.0, meta: Optional[dict] = None):
         with self._conn() as c:
-            c.execute(
-                "INSERT INTO outcomes(ts,action,reward,confidence,features,meta)"
-                " VALUES(?,?,?,?,?,?)",
-                (
-                    time.time(),
-                    action,
-                    float(reward),
-                    float(confidence),
-                    json.dumps([float(x) for x in features]),
-                    json.dumps(meta or {}),
-                ),
-            )
+            c.execute("INSERT INTO outcomes(ts,action,reward,confidence,features,meta)"
+                      " VALUES(?,?,?,?,?,?)",
+                      (time.time(), action, float(reward), float(confidence),
+                       json.dumps([float(x) for x in features]), json.dumps(meta or {})))
 
     def count(self) -> int:
         with self._conn() as c:
@@ -80,14 +58,12 @@ class OutcomeStore:
 
     def recent(self, n: int = 50):
         with self._conn() as c:
-            return c.execute(
-                "SELECT ts,action,reward FROM outcomes ORDER BY id DESC LIMIT ?", (n,)
-            ).fetchall()
+            return c.execute("SELECT ts,action,reward FROM outcomes ORDER BY id DESC LIMIT ?",
+                             (n,)).fetchall()
 
 
 class LinUCB:
     """Disjoint linear UCB contextual bandit."""
-
     def __init__(self, n_arms: int, dim: int, alpha: float = 0.6):
         self.alpha, self.dim = alpha, dim
         self.A = [np.identity(dim) for _ in range(n_arms)]
@@ -110,12 +86,9 @@ class LinUCB:
 
 class LLMReasoner:
     """OpenAI-compatible client — Groq, OpenAI, DeepSeek, Ollama. Robust JSON parsing."""
-
     def __init__(self, model=None, base_url=None, api_key=None, timeout=25):
         self.model = model or os.getenv("META_LLM_MODEL", "")
-        self.base_url = base_url or os.getenv(
-            "META_LLM_BASE_URL", "https://api.openai.com/v1"
-        )
+        self.base_url = base_url or os.getenv("META_LLM_BASE_URL", "https://api.openai.com/v1")
         self.api_key = api_key or os.getenv("META_LLM_API_KEY", "")
         self.timeout = timeout
         self.last_error = ""
@@ -141,11 +114,8 @@ class LLMReasoner:
                 pass
         a = re.search(r'"?action"?\s*[:=]\s*"?(BUY|SELL|HOLD)"?', text, re.I)
         c = re.search(r'"?confidence"?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)', text)
-        return {
-            "action": a.group(1).upper() if a else "HOLD",
-            "confidence": float(c.group(1)) if c else 0.0,
-            "rationale": "",
-        }
+        return {"action": a.group(1).upper() if a else "HOLD",
+                "confidence": float(c.group(1)) if c else 0.0, "rationale": ""}
 
     def propose(self, context: Dict) -> Decision:
         now = time.time()
@@ -168,19 +138,13 @@ class LLMReasoner:
         )
         try:
             from openai import OpenAI
-
-            client = OpenAI(
-                api_key=self.api_key, base_url=self.base_url, timeout=self.timeout
-            )
+            client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
             last_err = ""
             for use_rf in (True, False):
                 try:
-                    kwargs = dict(
-                        model=self.model,
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.2,
-                        max_tokens=400,
-                    )
+                    kwargs = dict(model=self.model,
+                                  messages=[{"role": "user", "content": prompt}],
+                                  temperature=0.2, max_tokens=400)
                     if use_rf:
                         kwargs["response_format"] = {"type": "json_object"}
                     r = client.chat.completions.create(**kwargs)
@@ -189,32 +153,19 @@ class LLMReasoner:
                     if action not in ACTIONS:
                         action = "HOLD"
                     conf = float(data.get("confidence", 0) or 0)
-                    self._cache = Decision(
-                        action,
-                        conf,
-                        conf / 100.0,
-                        "llm",
-                        str(data.get("rationale", ""))[:200],
-                    )
+                    self._cache = Decision(action, conf, conf / 100.0, "llm",
+                                           str(data.get("rationale", ""))[:200])
                     return self._cache
                 except Exception as e:
                     last_err = "%s: %s" % (type(e).__name__, str(e))
                     low = last_err.lower()
-                    if (
-                        "429" in low
-                        or "rate limit" in low
-                        or "401" in low
-                        or "403" in low
-                        or "invalid" in low
-                        or "auth" in low
-                    ):
+                    if "429" in low or "rate limit" in low or "401" in low or "403" in low \
+                            or "invalid" in low or "auth" in low:
                         self._cooldown_until = time.time() + self.cooldown_sec
                         self.last_error = last_err
                         if self._cache:
                             return self._cache
-                        return Decision(
-                            "HOLD", 0.0, 0.0, "llm:cooldown", last_err[:200]
-                        )
+                        return Decision("HOLD", 0.0, 0.0, "llm:cooldown", last_err[:200])
             self.last_error = last_err
             return Decision("HOLD", 0.0, 0.0, "llm:error", last_err[:200])
         except Exception as e:
@@ -223,14 +174,8 @@ class LLMReasoner:
 
 
 class MetaEngine:
-    def __init__(
-        self,
-        dim: int = 6,
-        alpha: float = 0.6,
-        llm_weight: float = 0.35,
-        store_path: str = "meta_memory.sqlite",
-        reasoner: Optional[LLMReasoner] = None,
-    ):
+    def __init__(self, dim: int = 6, alpha: float = 0.6, llm_weight: float = 0.35,
+                 store_path: str = "meta_memory.sqlite", reasoner: Optional[LLMReasoner] = None):
         self.dim = dim
         self.bandit = LinUCB(len(ACTIONS), dim, alpha)
         self.store = OutcomeStore(store_path)
@@ -238,62 +183,35 @@ class MetaEngine:
         self.llm_weight = llm_weight
         self._last: Optional[Decision] = None
 
-    def decide(
-        self,
-        features: Sequence[float],
-        context: Optional[Dict] = None,
-        use_llm: bool = True,
-    ) -> Decision:
+    def decide(self, features: Sequence[float], context: Optional[Dict] = None,
+               use_llm: bool = True) -> Decision:
         x = np.asarray(features, dtype=float)[: self.dim]
         if x.shape[0] < self.dim:
             x = np.pad(x, (0, self.dim - x.shape[0]))
         blend = self.bandit.scores(x)
-        llm_d = (
-            self.llm.propose(context or {})
-            if use_llm
-            else Decision("HOLD", 0, 0, "llm:off")
-        )
+        llm_d = self.llm.propose(context or {}) if use_llm else Decision("HOLD", 0, 0, "llm:off")
         if llm_d.action in ACTIONS:
             blend[ACTIONS.index(llm_d.action)] += self.llm_weight * llm_d.score
         arm = int(np.argmax(blend))
-        d = Decision(
-            ACTIONS[arm],
-            llm_d.confidence,
-            float(blend[arm]),
-            "meta",
-            llm_d.rationale,
-            [float(v) for v in x],
-        )
+        d = Decision(ACTIONS[arm], llm_d.confidence, float(blend[arm]), "meta",
+                     llm_d.rationale, [float(v) for v in x])
         self._last = d
         return d
 
-    def record_outcome(
-        self,
-        reward: float,
-        features: Optional[Sequence[float]] = None,
-        action: Optional[str] = None,
-        meta: Optional[dict] = None,
-    ):
+    def record_outcome(self, reward: float, features: Optional[Sequence[float]] = None,
+                       action: Optional[str] = None, meta: Optional[dict] = None):
         d = self._last
         feats = features if features is not None else (d.features if d else None)
         act = (action or (d.action if d else "HOLD")).upper()
         if feats is None:
             raise ValueError("no features available; pass them explicitly")
-        self.bandit.update(
-            ACTIONS.index(act), np.asarray(feats, dtype=float), float(reward)
-        )
+        self.bandit.update(ACTIONS.index(act), np.asarray(feats, dtype=float), float(reward))
         self.store.log(act, reward, feats, (d.confidence if d else 0.0), meta)
 
     def stats(self) -> Dict:
-        return {
-            "experiences": self.store.count(),
-            "theta": {
-                a: (np.linalg.inv(self.bandit.A[i]) @ self.bandit.b[i])
-                .round(4)
-                .tolist()
-                for i, a in enumerate(ACTIONS)
-            },
-        }
+        return {"experiences": self.store.count(),
+                "theta": {a: (np.linalg.inv(self.bandit.A[i]) @ self.bandit.b[i]).round(4).tolist()
+                          for i, a in enumerate(ACTIONS)}}
 
 
 if __name__ == "__main__":
