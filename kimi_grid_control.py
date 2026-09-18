@@ -301,8 +301,7 @@ class KimiGridControl:
                 # with a BadRequest/400. Retry once without it: the system prompt
                 # already demands JSON-only and _parse_content strips ```json.
                 if request_kwargs and (
-                    "badrequest" in type(exc).__name__.lower()
-                    or "400" in str(exc)
+                    "badrequest" in type(exc).__name__.lower() or "400" in str(exc)
                 ):
                     log.warning(
                         "[%s] json_object rejected (%s) — retrying without "

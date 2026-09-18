@@ -1,5 +1,7 @@
 .PHONY: up down up-prod down-prod logs build build-prod clean clean-all test
 
+PROD_COMPOSE := docker-compose.prod.yml
+
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
@@ -23,7 +25,11 @@ build:
 # Production (PostgreSQL + Redis + Bot + Nginx)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-up-prod:
+# Fails fast with a clear message instead of a confusing compose error
+check-prod:
+	@test -f $(PROD_COMPOSE) || { echo "ERROR: $(PROD_COMPOSE) is missing. Use 'make up' (single-container) or add the prod compose file."; exit 1; }
+
+up-prod: check-prod
 	docker-compose -f docker-compose.prod.yml up -d
 
 down-prod:
