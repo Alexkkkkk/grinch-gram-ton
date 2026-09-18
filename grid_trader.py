@@ -8,8 +8,8 @@ import logging
 import math
 import os
 import threading
-import uuid
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
@@ -1186,7 +1186,6 @@ class GridTrader:
             self._trade_history = self._trade_history[-800:]
         self._save_trade_history()
 
-
     # -- Dashboard manual operations (real DeDust paths, no stubs) --------
     def manual_buy(self, amount_ton) -> dict:
         """Manual BUY: swap TON -> token via the live DeDust client."""
@@ -1207,9 +1206,7 @@ class GridTrader:
                 )
             except Exception:
                 price = 0.0
-            level = GridLevel(
-                id=-1, side="buy", price_ton=price, amount_ton=amount_ton
-            )
+            level = GridLevel(id=-1, side="buy", price_ton=price, amount_ton=amount_ton)
             res = self._execute_buy(level, price)
             if res.get("ok"):
                 self._trade_history.append(
