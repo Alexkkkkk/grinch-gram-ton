@@ -19,7 +19,7 @@ services:
       - PYTHONUNBUFFERED=1
       - WEB_CONCURRENCY=1
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./data:/app/data:rw
       - ./backups:/app/backups:rw
