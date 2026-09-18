@@ -90,7 +90,9 @@ class GridConfig:
     recenter_cooldown: int = field(
         default_factory=lambda: _int_env("GRID_RECENTER_COOLDOWN", 1800)
     )
-    min_order_ton: float = 15.0
+    min_order_ton: float = field(
+        default_factory=lambda: _float_env("GRID_MIN_ORDER_TON", 15.0)
+    )
     gas_reserve_ton: float = field(
         default_factory=lambda: _float_env("GAS_RESERVE_TON", 0.3)
     )
@@ -293,6 +295,45 @@ class ProtectionConfig:
 
 
 @dataclass
+class RiskConfig:
+    """Hard risk limits. Independent brakes on top of grid logic."""
+
+    enabled: bool = field(default_factory=lambda: _bool_env("RISK_LIMITS_ENABLED", True))
+    # 0 disables the corresponding limit
+    max_daily_loss_ton: float = field(
+        default_factory=lambda: _float_env("MAX_DAILY_LOSS_TON", 0.5)
+    )
+    max_daily_loss_pct: float = field(
+        default_factory=lambda: _float_env("MAX_DAILY_LOSS_PCT", 3.0)
+    )
+    max_trades_per_day: int = field(
+        default_factory=lambda: _int_env("MAX_TRADES_PER_DAY", 200)
+    )
+    max_trades_per_hour: int = field(
+        default_factory=lambda: _int_env("MAX_TRADES_PER_HOUR", 30)
+    )
+    # 0 falls back to GRID_INVESTMENT
+    max_position_ton: float = field(
+        default_factory=lambda: _float_env("MAX_POSITION_TON", 0.0)
+    )
+    max_gas_pct_of_profit: float = field(
+        default_factory=lambda: _float_env("MAX_GAS_PCT_OF_PROFIT", 35.0)
+    )
+    min_expected_net_pct: float = field(
+        default_factory=lambda: _float_env("MIN_EXPECTED_NET_PCT", 0.8)
+    )
+    loss_streak_pause: int = field(
+        default_factory=lambda: _int_env("LOSS_STREAK_PAUSE", 5)
+    )
+    pause_after_loss_streak_sec: int = field(
+        default_factory=lambda: _int_env("PAUSE_AFTER_LOSS_STREAK_SEC", 3600)
+    )
+    kill_switch_file: str = field(
+        default_factory=lambda: _str_env("KILL_SWITCH_FILE", "/tmp/grinch_stop")
+    )
+
+
+@dataclass
 class ShortConfig:
     enabled: bool = field(
         default_factory=lambda: _bool_env("SHORT_TRADING_ENABLED", True)
@@ -455,6 +496,7 @@ class Config(metaclass=_ConfigMeta):
         self.SELL_GAS_TON = self.FEES.sell_gas_ton
         self.BUY_GAS_TON = self.FEES.buy_gas_ton
         self.GRID = GridConfig()
+        self.RISK = RiskConfig()
         self.GRID_LEVELS = self.GRID.count  # backward compat alias
         self.GRID_SPREAD_PCT = self.GRID.step_pct  # backward compat alias
         self.TRAIL = TrailConfig()

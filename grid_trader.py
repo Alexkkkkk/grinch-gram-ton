@@ -17,6 +17,8 @@ from typing import List, Optional
 from core.base_components import GridLevel as BaseGridLevel
 from core.config import Config
 
+from risk_limits import RiskLimitExceeded, RiskLimits
+
 log = logging.getLogger("grid")
 
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")
@@ -110,6 +112,7 @@ class GridTrader:
         self._lock = threading.RLock()
         self._thread = None
         self._stop = threading.Event()
+        self._risk = RiskLimits()
         self._load_state()
         self._trade_history: List[dict] = []
         self._load_trade_history()
@@ -450,9 +453,18 @@ class GridTrader:
             # SELL
             for level in self._state.sell_levels:
                 if level.status == "waiting" and price_ton >= level.price_ton:
+                    try:
+                        self._risk.check_before_order(
+                            order_ton=level.entry_cost_ton or level.amount_ton or 0.0,
+                            expected_net_pct=self._state.step_pct,
+                            gas_ton=self._gas_per_tx() * 2.0,
+                        )
+                    except RiskLimitExceeded as exc:
+                        log.warning("[RISK] SELL L%s blocked: %s", level.id, exc)
+                        return
                     res = self._execute_sell(level, price_ton)
                     if res.get("ok"):
-                        self._record_trade("SELL", level, price_ton)
+                        self._record_trade("SELL", level, price_ton, res)
                         self._state.last_action = (
                             f"SELL L{level.id}: {level.amount_token:.0f} @ {price_ton:.6f} "
                             f"| profit {level.profit_ton:+.3f} TON"
@@ -490,7 +502,18 @@ class GridTrader:
                     ):
                         log.info("[Grid AI] Skipping BUY: %s", self._ai_pause_reason)
                         return
+                    try:
+                        self._risk.check_before_order(
+                            order_ton=level.amount_ton or 0.0,
+                            expected_net_pct=self._state.step_pct,
+                            gas_ton=self._gas_per_tx() * 2.0,
+                        )
+                    except RiskLimitExceeded as exc:
+                        log.warning("[RISK] BUY L%s blocked: %s", level.id, exc)
+                        return
                     res = self._execute_buy(level, price_ton)
+                    if res.get("ok"):
+                        self._record_trade("BUY", level, price_ton, res)
                     if res.get("ok"):
                         self._record_trade("BUY", level, price_ton)
                         self._state.last_action = f"BUY L{level.id}: {level.amount_token:.0f} @ {price_ton:.6f}"
@@ -1171,7 +1194,36 @@ class GridTrader:
             )
         )
 
-    def _record_trade(self, side, level, price):
+    def _realized_pnl_ton(self, side, level, price, res, gas_ton):
+        """Realized PnL in TON for a single fill.
+
+        Cost basis is matched-pair at level granularity: the grid never splits
+        a level, and ``_execute_sell`` fills a level whole or returns
+        ``ok=False``, so each SELL closes exactly the one BUY level it was
+        paired with. The basis is therefore that level's ``entry_cost_ton``
+        (TON actually spent plus one network fee) - no FIFO queue, no averaging,
+        and no partial-fill handling is required.
+        """
+        if str(side).upper() != "SELL":
+            return 0.0  # a BUY opens a position; nothing is realized yet
+        if level.profit_ton:
+            # Legacy USDT->TON path already computed net of both fees.
+            return float(level.profit_ton)
+        res = res or {}
+        basis = float(level.entry_cost_ton or level.amount_ton or 0)
+        received_usdt = float(res.get("received_usdt") or 0)
+        if received_usdt > 0 and price:
+            # GRID_SELL_AS_TON mode: proceeds are USDT, basis was TON.
+            return received_usdt / float(price) - basis - gas_ton
+        received_ton = float(res.get("received_ton") or 0)
+        if received_ton > 0:
+            return received_ton - basis - gas_ton
+        return 0.0
+
+    def _record_trade(self, side, level, price, res=None):
+        """Record a fill and feed its realized PnL into the hard risk limits."""
+        gas_ton = self._gas_per_tx()
+        realized_ton = self._realized_pnl_ton(side, level, price, res, gas_ton)
         trade = {
             "side": side,
             "level_id": level.id,
@@ -1179,12 +1231,19 @@ class GridTrader:
             "amount_token": level.amount_token,
             "amount_ton": level.amount_ton,
             "profit_ton": level.profit_ton,
+            "cost_basis_ton": level.entry_cost_ton or level.amount_ton,
+            "gas_ton": gas_ton,
+            "realized_pnl_ton": realized_ton,
             "timestamp": time.time(),
         }
         self._trade_history.append(trade)
         if len(self._trade_history) > 1000:
             self._trade_history = self._trade_history[-800:]
         self._save_trade_history()
+        try:
+            self._risk.record_trade(side, realized_ton, gas_ton)
+        except Exception as exc:  # bookkeeping must never stop trading
+            log.warning("[RISK] record_trade failed: %s", exc)
 
     # -- Dashboard manual operations (real DeDust paths, no stubs) --------
     def manual_buy(self, amount_ton) -> dict:
@@ -1222,6 +1281,7 @@ class GridTrader:
                     }
                 )
                 self._save_trade_history()
+                self._risk.record_trade("BUY", 0.0, self._gas_per_tx())
                 return {"ok": True, "price": price, "received": res.get("received")}
             return res
 
@@ -1253,6 +1313,13 @@ class GridTrader:
                     if res.get("ok"):
                         t["closed"] = True
                         t["closed_at"] = time.time()
+                        received = float(
+                            res.get("received_ton") or res.get("ton_received") or 0
+                        )
+                        basis = float(t.get("amount_ton") or 0) + self._gas_per_tx()
+                        pnl = received - basis - self._gas_per_tx()
+                        t["realized_pnl_ton"] = round(pnl, 6)
+                        self._risk.record_trade("SELL", pnl, self._gas_per_tx())
                         self._save_trade_history()
                         return {
                             "ok": True,
