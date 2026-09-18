@@ -11,14 +11,13 @@ Features not in Binance/Bybit grids:
   * Dry-run plan generator — virtual orders without execution.
 """
 
-import math
-import time
 import logging
-from dataclasses import dataclass, field, asdict
-from decimal import Decimal, ROUND_HALF_UP
+import time
+from dataclasses import asdict, dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
 from statistics import mean, pstdev
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("grid_pro")
 
