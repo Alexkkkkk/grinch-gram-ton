@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install 'black==24.3.0' 'ruff==0.3.4' mypy==1.9.0 bandit==1.9.4
+          pip install 'black==26.3.1' 'ruff==0.3.4' mypy==1.9.0 bandit==1.9.4
 
       - name: Check Python syntax
         run: |
