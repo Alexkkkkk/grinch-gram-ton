@@ -1,4 +1,3 @@
-from flask import request
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -9,8 +8,7 @@ from flask import request
 # They NEVER fabricate values: when a real source is unavailable the response
 # degrades to an explicit empty/zero payload instead of inventing data.
 # ═══════════════════════════════════════════════════════════════════════════════
-
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from core.config import Config
 
@@ -318,7 +316,9 @@ def liquidator():
     try:
         from db_store import settings_get_section
 
-        threshold = int((settings_get_section("liquidator") or {}).get("threshold") or 0)
+        threshold = int(
+            (settings_get_section("liquidator") or {}).get("threshold") or 0
+        )
     except Exception:
         threshold = 0
     return jsonify({"ok": True, "enabled": False, "threshold": threshold})
@@ -328,7 +328,10 @@ def liquidator():
 def liquidator_sell():
     # The liquidator module is not part of the codebase: the button stays
     # explicitly disabled instead of pretending to sell.
-    return jsonify({"ok": False, "error": "Liquidator disabled: module not configured"}), 503
+    return (
+        jsonify({"ok": False, "error": "Liquidator disabled: module not configured"}),
+        503,
+    )
 
 
 @stubs_bp.route("/api/liquidator/threshold", methods=["POST"])
@@ -338,7 +341,9 @@ def liquidator_threshold():
     try:
         from db_store import settings_update_section
 
-        settings_update_section("liquidator", {"threshold": int(data.get("threshold") or 0)})
+        settings_update_section(
+            "liquidator", {"threshold": int(data.get("threshold") or 0)}
+        )
         return jsonify({"ok": True, "threshold": int(data.get("threshold") or 0)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 503
