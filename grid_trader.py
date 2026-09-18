@@ -8,6 +8,7 @@ import logging
 import math
 import os
 import threading
+import uuid
 import time
 from dataclasses import asdict, dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
@@ -1184,6 +1185,95 @@ class GridTrader:
         if len(self._trade_history) > 1000:
             self._trade_history = self._trade_history[-800:]
         self._save_trade_history()
+
+
+    # -- Dashboard manual operations (real DeDust paths, no stubs) --------
+    def manual_buy(self, amount_ton) -> dict:
+        """Manual BUY: swap TON -> token via the live DeDust client."""
+        with self._lock:
+            try:
+                amount_ton = float(amount_ton or 0)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "bad_amount"}
+            if amount_ton < 1:
+                return {"ok": False, "error": "amount_below_minimum"}
+            if not self._dc or not hasattr(self._dc, "buy"):
+                return {"ok": False, "error": "no_dedust_client"}
+            try:
+                price = (
+                    float(self._price_feed() or 0)
+                    if callable(self._price_feed)
+                    else 0.0
+                )
+            except Exception:
+                price = 0.0
+            level = GridLevel(
+                id=-1, side="buy", price_ton=price, amount_ton=amount_ton
+            )
+            res = self._execute_buy(level, price)
+            if res.get("ok"):
+                self._trade_history.append(
+                    {
+                        "id": uuid.uuid4().hex[:12],
+                        "type": "manual_buy",
+                        "amount_ton": amount_ton,
+                        "amount_token": level.amount_token,
+                        "price_ton": price,
+                        "ts": time.time(),
+                        "closed": False,
+                        "tx_hash": level.tx_hash,
+                    }
+                )
+                self._save_trade_history()
+                return {"ok": True, "price": price, "received": res.get("received")}
+            return res
+
+    def manual_sell_all(self) -> dict:
+        """Manual SELL: close every filled BUY position via the live client."""
+        with self._lock:
+            if not self._dc or not hasattr(self._dc, "sell"):
+                return {"ok": False, "error": "no_dedust_client"}
+            closed = 0
+            for level in list(self._state.buy_levels):
+                if level.status == "filled" and level.amount_token > 0:
+                    if self._execute_sell(level, level.price_ton or 0.0).get("ok"):
+                        closed += 1
+            return {"ok": True, "closed": closed}
+
+    def close_trade(self, trade_id: str) -> dict:
+        """Close a tracked position: sell its token amount on DeDust."""
+        with self._lock:
+            for t in self._trade_history:
+                if str(t.get("id")) == str(trade_id):
+                    if t.get("closed"):
+                        return {"ok": False, "error": "already_closed"}
+                    amount = float(t.get("amount_token") or 0)
+                    if amount <= 0:
+                        return {"ok": False, "error": "zero_amount"}
+                    if not self._dc or not hasattr(self._dc, "sell"):
+                        return {"ok": False, "error": "no_dedust_client"}
+                    res = self._dc.sell(amount, min_net_ton=0.0)
+                    if res.get("ok"):
+                        t["closed"] = True
+                        t["closed_at"] = time.time()
+                        self._save_trade_history()
+                        return {
+                            "ok": True,
+                            "received_ton": res.get("received_ton")
+                            or res.get("ton_received"),
+                        }
+                    return res
+            return {"ok": False, "error": "trade_not_found"}
+
+    def delete_trade(self, trade_id: str) -> dict:
+        """Remove a tracked position WITHOUT selling (UI trash button)."""
+        with self._lock:
+            for i, t in enumerate(self._trade_history):
+                if str(t.get("id")) == str(trade_id):
+                    self._trade_history.pop(i)
+                    self._save_trade_history()
+                    return {"ok": True}
+            return {"ok": False, "error": "trade_not_found"}
 
     def get_trade_history(self):
         with self._lock:
