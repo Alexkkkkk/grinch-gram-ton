@@ -1,3 +1,5 @@
+import time
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -96,14 +98,14 @@ def ton_refresh():
 # ── Wallets ───────────────────────────────────────────────────────────────────
 @stubs_bp.route("/api/wallets")
 def wallets():
+    # Real wallet balance from the shared DeDust balance cache - the same
+    # source /api/balance uses, so the dashboard shows consistent numbers.
     balance = 0
     try:
-        from web.routes.api import _grid_trader  # type: ignore
+        from dedust_client import get_shared_balance
 
-        if _grid_trader is not None:
-            snap = _grid_trader.get_wallet_snapshot()
-            if isinstance(snap, dict):
-                balance = snap.get("ton", 0) or 0
+        bal = get_shared_balance() or {}
+        balance = float(bal.get("TON", 0) or 0)
     except Exception:
         balance = 0
     return jsonify(
@@ -409,3 +411,24 @@ def advisor_status():
 @stubs_bp.route("/api/ai/deep-retrain/status")
 def deep_retrain_status():
     return jsonify({"ok": True, "status": "idle", "running": False, "progress": 0})
+
+
+# ── AI Performance monitor (frontend beacon target) ──────────────────────
+_perf_last: dict = {}
+
+
+@stubs_bp.route("/api/perf", methods=["POST"])
+def perf_ingest():
+    """Accept Core Web Vitals beacons sent by static/js/ai-perf.js."""
+    data = request.get_json(silent=True, force=True) or {}
+    if isinstance(data, dict) and data:
+        _perf_last.clear()
+        _perf_last.update(data)
+        _perf_last["received_at"] = time.time()
+    return jsonify({"ok": True})
+
+
+@stubs_bp.route("/api/perf")
+def perf_last():
+    """Latest performance metrics received from the browser."""
+    return jsonify({"ok": True, "metrics": _perf_last})
