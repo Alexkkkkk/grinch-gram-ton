@@ -107,19 +107,24 @@ class RiskLimits:
             self.loss_streak += 1
         else:
             self.loss_streak = 0
-        if self.cfg.loss_streak_pause > 0 and self.loss_streak >= self.cfg.loss_streak_pause:
+        if (
+            self.cfg.loss_streak_pause > 0
+            and self.loss_streak >= self.cfg.loss_streak_pause
+        ):
             self.paused_until = time.time() + self.cfg.pause_after_loss_streak_sec
             self.loss_streak = 0
         self._save()
 
-    def record_cycle(self, stake_ton: float = 0.0, gross_ton: float = 0.0,
-                     gas_ton: float = 0.0):
+    def record_cycle(
+        self, stake_ton: float = 0.0, gross_ton: float = 0.0, gas_ton: float = 0.0
+    ):
         """Backward-compatible alias: one closed cycle == one realized SELL."""
         self.record_trade("SELL", float(gross_ton) - float(gas_ton), float(gas_ton))
 
     # ── gates ────────────────────────────────────────────────────────────────
-    def check_before_order(self, order_ton: float, expected_net_pct: float,
-                           gas_ton: float):
+    def check_before_order(
+        self, order_ton: float, expected_net_pct: float, gas_ton: float
+    ):
         """Raise RiskLimitExceeded if the order must not be sent."""
         if not self.cfg.enabled:
             return
@@ -133,8 +138,9 @@ class RiskLimits:
             raise RiskLimitExceeded(f"paused after loss streak, {left:.0f}s left")
 
         equity = self._equity_ton()
-        if (self.cfg.max_daily_loss_ton > 0
-                and self.realized_ton <= -abs(self.cfg.max_daily_loss_ton)):
+        if self.cfg.max_daily_loss_ton > 0 and self.realized_ton <= -abs(
+            self.cfg.max_daily_loss_ton
+        ):
             raise RiskLimitExceeded(
                 f"daily realized loss {self.realized_ton:+.4f} TON exhausted"
             )
@@ -145,10 +151,20 @@ class RiskLimits:
                     f"daily realized loss above {self.cfg.max_daily_loss_pct}% of equity"
                 )
 
-        if self.cfg.max_trades_per_day > 0 and self.trades_day >= self.cfg.max_trades_per_day:
-            raise RiskLimitExceeded(f"daily trade cap {self.cfg.max_trades_per_day} reached")
-        if self.cfg.max_trades_per_hour > 0 and self.trades_hour >= self.cfg.max_trades_per_hour:
-            raise RiskLimitExceeded(f"hourly trade cap {self.cfg.max_trades_per_hour} reached")
+        if (
+            self.cfg.max_trades_per_day > 0
+            and self.trades_day >= self.cfg.max_trades_per_day
+        ):
+            raise RiskLimitExceeded(
+                f"daily trade cap {self.cfg.max_trades_per_day} reached"
+            )
+        if (
+            self.cfg.max_trades_per_hour > 0
+            and self.trades_hour >= self.cfg.max_trades_per_hour
+        ):
+            raise RiskLimitExceeded(
+                f"hourly trade cap {self.cfg.max_trades_per_hour} reached"
+            )
 
         if self.cfg.max_position_ton > 0 and order_ton > self.cfg.max_position_ton:
             raise RiskLimitExceeded(
@@ -181,7 +197,8 @@ class RiskLimits:
             "gas_ton": round(self.gas_ton, 6),
             "gas_share_pct": (
                 round(self.gas_ton / self.gross_profit_ton * 100, 1)
-                if self.gross_profit_ton > 0 else None
+                if self.gross_profit_ton > 0
+                else None
             ),
             "loss_streak": self.loss_streak,
             "paused_sec_left": max(0, int(self.paused_until - time.time())),
@@ -190,6 +207,7 @@ class RiskLimits:
     def _equity_ton(self) -> float:
         try:
             from dedust_client import get_shared_balance
+
             bal = get_shared_balance() or {}
             return float(bal.get("TON", 0) or 0)
         except Exception:

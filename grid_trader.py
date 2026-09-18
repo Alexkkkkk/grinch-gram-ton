@@ -16,7 +16,6 @@ from typing import List, Optional
 
 from core.base_components import GridLevel as BaseGridLevel
 from core.config import Config
-
 from risk_limits import RiskLimitExceeded, RiskLimits
 
 log = logging.getLogger("grid")

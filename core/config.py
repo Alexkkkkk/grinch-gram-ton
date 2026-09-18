@@ -298,7 +298,9 @@ class ProtectionConfig:
 class RiskConfig:
     """Hard risk limits. Independent brakes on top of grid logic."""
 
-    enabled: bool = field(default_factory=lambda: _bool_env("RISK_LIMITS_ENABLED", True))
+    enabled: bool = field(
+        default_factory=lambda: _bool_env("RISK_LIMITS_ENABLED", True)
+    )
     # 0 disables the corresponding limit
     max_daily_loss_ton: float = field(
         default_factory=lambda: _float_env("MAX_DAILY_LOSS_TON", 0.5)
