@@ -67,8 +67,8 @@ class RiskLimits:
                 ),
                 encoding="utf-8",
             )
-        except OSError:
-            pass
+        except OSError as exc:
+            print(f"[RiskLimits] failed to save state to {self.state_path}: {exc}")
 
     def _roll(self):
         now = time.time()
