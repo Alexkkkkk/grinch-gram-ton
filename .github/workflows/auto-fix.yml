@@ -1,87 +1,151 @@
-name: Auto-Fix v2
+name: Auto-Fix
 
+# Replaces the previous stub that only copied a generated snippet into fixes/.
+# It now applies real, mechanical fixes and escalates what it cannot fix.
 on:
-  issues:
-    types: [opened, labeled]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
   workflow_dispatch:
-    inputs:
-      issue_number:
-        description: 'Issue number to fix'
-        required: true
-        type: string
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: auto-fix-${{ github.event.pull_request.number || github.event.workflow_run.head_sha || github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  analyze-and-fix:
+  # ── 1. On a same-repo PR: fix the branch in place ───────────────────────────
+  fix-pr:
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    if: contains(github.event.issue.labels.*.name, 'auto-error') || github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Recursion guard
+        id: guard
         run: |
-          pip install openai requests
+          A=$(git log -1 --format='%an')
+          echo "head_author=$A"
+          if [ "$A" = "GRINCH Auto-Fix Bot" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Analyze error with Intelligence Engine
+      - name: Install fixers
+        if: steps.guard.outputs.skip == 'false'
+        run: pip install 'black==26.3.1' 'ruff==0.3.4'
+
+      - name: Apply autofixes
         id: fix
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
+        if: steps.guard.outputs.skip == 'false'
         run: |
-          python3 scripts/generate_fix.py
-          echo "pattern=$(cat /tmp/fix_pattern.txt 2>/dev/null || echo 'unknown')" >> "$GITHUB_OUTPUT"
-          echo "confidence=$(cat /tmp/fix_confidence.txt 2>/dev/null || echo '0')" >> "$GITHUB_OUTPUT"
-          echo "severity=$(cat /tmp/fix_severity.txt 2>/dev/null || echo 'unknown')" >> "$GITHUB_OUTPUT"
+          ruff check . --fix --exit-zero
+          black . || true
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "no mechanical fixes needed"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat
+          fi
 
-      - name: Apply fix and create PR
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push fixes to the PR branch
+        if: steps.fix.outputs.changed == 'true'
         run: |
           git config user.name "GRINCH Auto-Fix Bot"
           git config user.email "auto-fix@grinch-gram.local"
+          git add -A
+          git commit -m "fix: apply automated ruff/black autofixes"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
 
-          BRANCH="auto-fix/issue-${{ github.event.issue.number || github.event.inputs.issue_number }}-$(date +%s)"
-          git checkout -b "$BRANCH"
+  # ── 2. On a failed CI run on main: fix it, or escalate ─────────────────────
+  fix-main:
+    if: >
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'failure' &&
+       github.event.workflow_run.head_branch == 'main') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-          # Apply fix if file exists
-          if [ -f /tmp/fix_code.py ]; then
-            mkdir -p fixes
-            cp /tmp/fix_code.py "fixes/fix_${{ github.event.issue.number || github.event.inputs.issue_number }}.py"
-            git add -A
-            git commit -m "auto-fix: resolve issue #${{ github.event.issue.number || github.event.inputs.issue_number }}"
-            git push origin "$BRANCH"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install fixers
+        run: pip install 'black==26.3.1' 'ruff==0.3.4'
+
+      - name: Try mechanical fixes
+        id: fix
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          ruff check . --fix --exit-zero
+          black . || true
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat
           fi
 
-          # Create PR
-          curl -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/pulls \
-            -d "{
-              \"title\": \"[AUTO-FIX] Resolve issue #${{ github.event.issue.number || github.event.inputs.issue_number }}\",
-              \"body\": \"Automatically generated fix.\\n\\nPattern: ${{ steps.fix.outputs.pattern }}\\nConfidence: ${{ steps.fix.outputs.confidence }}%\\nSeverity: ${{ steps.fix.outputs.severity }}\",
-              \"head\": \"$BRANCH\",
-              \"base\": \"main\",
-              \"labels\": [\"auto-fix\", \"bot\"]
-            }"
-
-      - name: Comment on issue
+      - name: Open a fix PR
+        if: steps.fix.outputs.changed == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
-            -d "{
-              \"body\": \"🤖 Auto-fix generated!\\n\\n- Pattern detected: ${{ steps.fix.outputs.pattern }}\\n- Confidence: ${{ steps.fix.outputs.confidence }}%\\n- Severity: ${{ steps.fix.outputs.severity }}\\n\\nA pull request has been created with the proposed fix.\"
-            }"
+          SHA="${{ steps.fix.outputs.sha }}"
+          SHORT=$(echo "$SHA" | cut -c1-8)
+          BR="auto-fix/ci-$SHORT"
+          git config user.name "GRINCH Auto-Fix Bot"
+          git config user.email "auto-fix@grinch-gram.local"
+          git checkout -b "$BR"
+          git add -A
+          git commit -m "fix(ci): automated ruff/black fixes for failed CI on $SHORT"
+          git push -u origin "$BR"
+          gh pr create --base main --head "$BR" \
+            --title "fix: automated autofixes for failed CI on $SHORT" \
+            --body "Mechanical fixes produced by ruff --fix and black after CI failed on main at $SHA. Review the diff before merging."
+          echo "Opened PR for $BR"
+
+      - name: Escalate when nothing is mechanically fixable
+        if: steps.fix.outputs.changed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ steps.fix.outputs.sha }}"
+          SHORT=$(echo "$SHA" | cut -c1-8)
+          URL="${{ github.event.workflow_run.html_url }}"
+          gh issue create \
+            --title "[AUTO-BUG] CI failed on main @ $SHORT" \
+            --label "auto-error" \
+            --body "CI failed on main at commit $SHA and no mechanical fix (ruff/black) was available, so a real code change is required.
+
+          Run: $URL
+          Branch: main
+
+          Labelled auto-error so the existing auto-fix chain and reviewers pick it up."

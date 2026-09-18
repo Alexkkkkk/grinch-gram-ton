@@ -1,10 +1,11 @@
 name: Auto-Format
 
+# Previously this ran on every push to any non-main branch, which is how stale,
+# already-merged branches kept receiving bot commits. It is now manual-only:
+# PR formatting is handled by the Auto-Fix workflow, which guards against
+# recursion and only ever touches the branch of the PR it was triggered by.
 on:
-  push:
-    branches-ignore: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,13 +14,12 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref || github.ref }}
+          ref: ${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
