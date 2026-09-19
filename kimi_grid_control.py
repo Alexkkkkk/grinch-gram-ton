@@ -8,6 +8,8 @@ the only component allowed to call the exchange client.
 import json
 import logging
 import os
+import random
+import re
 import threading
 import time
 from typing import Any, Dict, Optional
@@ -105,6 +107,18 @@ class KimiGridControl:
         self._last_request_at = 0.0
         self._last_decision: Optional[Dict[str, Any]] = None
         self._last_error = ""
+        # Rate-limit backoff (429): skip calls until this monotonic deadline.
+        self._rl_backoff_until = 0.0
+        # Cached verdict for response_format support: None = unknown,
+        # True = accepted, False = rejected (do not send it again).
+        self._response_format_ok: Optional[bool] = None
+        # Client-side TPM throttle. Live limits of this key were confirmed
+        # from x-ratelimit-* headers (TPM = 8000 tokens/min, free tier), so
+        # the client keeps its own accounting just below the hard cap.
+        # Events: (monotonic_ts, tokens) within the trailing 60s window.
+        self._tpm_events: list = []
+        self._tpm_budget = max(0.0, _float_env(f"{prefix}_TPM_BUDGET", 7500.0))
+        self._rl_attempts = 0
 
     def _get_client(self):
         if self._client is None:
@@ -117,6 +131,130 @@ class KimiGridControl:
                 max_retries=0,
             )
         return self._client
+
+    @staticmethod
+    def _estimate_tokens(*texts: str) -> int:
+        """Rough request size in tokens (~4 chars per token for JSON)."""
+        return max(1, sum(len(t or "") for t in texts) // 4)
+
+    def _tpm_reserve(self, estimated: int) -> bool:
+        """True when the request fits into the client-side TPM budget.
+
+        The estimate is accounted immediately; _tpm_account() replaces it
+        with the real usage total once the response arrives.
+        """
+        if self._tpm_budget <= 0:
+            return True
+        now = time.monotonic()
+        with self._lock:
+            self._tpm_events = [
+                (ts, tk) for ts, tk in self._tpm_events if now - ts < 60.0
+            ]
+            if sum(tk for _, tk in self._tpm_events) + estimated > self._tpm_budget:
+                return False
+            self._tpm_events.append((now, estimated))
+            return True
+
+    def _tpm_account(self, estimated: int, actual: int) -> None:
+        """Replace the pre-call estimate with the real usage total.
+
+        actual == 0 means the request failed and consumed nothing: the
+        estimate is simply released.
+        """
+        with self._lock:
+            now = time.monotonic()
+            self._tpm_events = [
+                (ts, tk) for ts, tk in self._tpm_events if now - ts < 60.0
+            ]
+            try:
+                idx = next(
+                    i
+                    for i, (_, tk) in enumerate(self._tpm_events)
+                    if tk == estimated
+                )
+                self._tpm_events.pop(idx)
+            except StopIteration:
+                pass
+            if actual > 0:
+                self._tpm_events.append((now, max(1, int(actual))))
+
+    @staticmethod
+    def _parse_duration(text: str) -> float:
+        """Parse Groq reset strings like '2m52.8s', '547ms', '1h0m0s' to seconds."""
+        total = 0.0
+        for value, unit in re.findall(r"(\d+(?:\.\d+)?)(ms|s|m|h)", text or ""):
+            amount = float(value)
+            if unit == "ms":
+                total += amount / 1000.0
+            elif unit == "s":
+                total += amount
+            elif unit == "m":
+                total += amount * 60.0
+            elif unit == "h":
+                total += amount * 3600.0
+        if total == 0.0 and text and text.strip().replace(".", "", 1).isdigit():
+            total = float(text.strip())
+        return total
+
+    def _learn_rate_limit(self, exc: Exception):
+        """Read retry-after / x-ratelimit-* headers from a 429 response.
+
+        Returns (pause_seconds, bucket, remedy): which limit died (RPM/TPM/TPD)
+        decides the pause length and the right long-term fix.
+        """
+        headers = {}
+        response = getattr(exc, "response", None)
+        if response is not None:
+            headers = getattr(response, "headers", None) or {}
+
+        def hget(name):
+            try:
+                value = headers.get(name)
+            except AttributeError:
+                value = None
+            return value.strip() if isinstance(value, str) else ""
+
+        retry_after = self._parse_duration(hget("retry-after"))
+        reset_tokens = self._parse_duration(hget("x-ratelimit-reset-tokens"))
+        reset_requests = self._parse_duration(hget("x-ratelimit-reset-requests"))
+        remaining_tokens = hget("x-ratelimit-remaining-tokens")
+        remaining_requests = hget("x-ratelimit-remaining-requests")
+        log.info(
+            "[%s-RL] 429 headers: retry-after=%s reset-tokens=%s "
+            "reset-requests=%s remaining-tokens=%s remaining-requests=%s",
+            self.provider.upper(),
+            hget("retry-after") or "-",
+            hget("x-ratelimit-reset-tokens") or "-",
+            hget("x-ratelimit-reset-requests") or "-",
+            remaining_tokens or "-",
+            remaining_requests or "-",
+        )
+        low = str(exc).lower()
+        default_pause = max(
+            15.0,
+            _float_env(
+                f"{self.provider.upper()}_RATE_LIMIT_BACKOFF_SEC", 1800.0
+            ),
+        )
+        if "per day" in low or "tpd" in low:
+            pause = retry_after or max(reset_tokens, reset_requests) or 21600.0
+            bucket = "TPD (daily token quota)"
+            remedy = "switch model or wait for the daily reset"
+        elif "rpm" in low or (not reset_tokens and reset_requests > 0) or (
+            remaining_requests == "0" and not remaining_tokens
+        ):
+            # Retry only when the server allows it AND the RPM bucket refilled,
+            # otherwise the very next request 429s again.
+            pause = max(retry_after, reset_requests) or 60.0
+            bucket = "RPM (requests per minute)"
+            remedy = "calls will queue up automatically"
+        else:
+            # Same rule for TPM: wait past retry-after AND the token reset,
+            # since an early retry would burn nothing but fail anyway.
+            pause = max(retry_after, reset_tokens) or default_pause
+            bucket = "TPM (tokens per minute)"
+            remedy = "shrink the prompt or cap max_completion_tokens"
+        return min(max(pause, 15.0), 86400.0), bucket, remedy
 
     @staticmethod
     def _parse_content(content: Any) -> Dict[str, Any]:
@@ -251,6 +389,10 @@ class KimiGridControl:
         with self._lock:
             if now - self._last_request_at < self.interval_sec:
                 return self._last_decision
+            if now < self._rl_backoff_until:
+                # Rate-limit backoff active: do not probe the API, reuse the
+                # last known decision until the reset window passes.
+                return self._last_decision
             self._last_request_at = now
 
         local = market.get("local", {})
@@ -284,8 +426,31 @@ class KimiGridControl:
         # серверы (Ollama/llamafile) старее могут его не принимать — системный
         # промпт требует JSON-only, а _parse_content умеет снимать ```json fence.
         request_kwargs: Dict[str, Any] = {}
-        if self.provider in ("groq", "kimi"):
+        if self.provider in ("groq", "kimi") and self._response_format_ok is not False:
             request_kwargs["response_format"] = {"type": "json_object"}
+        # Cap completion tokens: with a small per-minute token budget
+        # (free-tier Groq TPM can be as low as 8K) an uncapped completion
+        # drains the whole bucket in one request.
+        _max_out = _float_env(f"{self.provider.upper()}_MAX_OUTPUT_TOKENS", 0.0)
+        if _max_out > 0 and self.provider in ("groq", "kimi"):
+            request_kwargs["max_completion_tokens"] = int(_max_out)
+        # Client-side TPM gate: skip the cycle when the request would not
+        # fit into the remaining per-minute token budget.
+        est_tokens = self._estimate_tokens(system, user)
+        if not self._tpm_reserve(est_tokens):
+            with self._lock:
+                self._rl_backoff_until = max(
+                    self._rl_backoff_until, time.monotonic() + 15.0
+                )
+            log.info(
+                "[%s] client TPM budget reached (est ~%d tok in 60s window, "
+                "budget %.0f) — skipping this cycle",
+                self.provider.upper(),
+                est_tokens,
+                self._tpm_budget,
+            )
+            return self._last_decision
+        usage_accounted = False
         try:
             try:
                 response = self._get_client().chat.completions.create(
@@ -298,14 +463,26 @@ class KimiGridControl:
                 )
             except Exception as exc:
                 # Some Groq models reject response_format={"type": "json_object"}
-                # with a BadRequest/400. Retry once without it: the system prompt
-                # already demands JSON-only and _parse_content strips ```json.
-                if request_kwargs and (
-                    "badrequest" in type(exc).__name__.lower() or "400" in str(exc)
+                # with a BadRequest/400. Cache the rejection and retry once
+                # without it: the system prompt already demands JSON-only and
+                # _parse_content strips ```json. Without the cache every cycle
+                # burned two requests (and the retry could hit a 429).
+                if (
+                    "response_format" in request_kwargs
+                    and self._response_format_ok is not False
+                    and (
+                        "badrequest" in type(exc).__name__.lower()
+                        or "400" in str(exc)
+                    )
                 ):
+                    self._response_format_ok = False
+                    request_kwargs.pop("response_format", None)
+                    # The rejected request consumed no tokens: release the
+                    # estimate so the retry accounts its own usage.
+                    self._tpm_account(est_tokens, 0)
                     log.warning(
                         "[%s] json_object rejected (%s) — retrying without "
-                        "response_format",
+                        "response_format (verdict cached for future cycles)",
                         self.provider.upper(),
                         type(exc).__name__,
                     )
@@ -315,10 +492,18 @@ class KimiGridControl:
                             {"role": "system", "content": system},
                             {"role": "user", "content": user},
                         ],
+                        **request_kwargs,
                     )
                 else:
                     raise
             content = response.choices[0].message.content
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                self._tpm_account(
+                    est_tokens,
+                    int(getattr(usage, "total_tokens", 0) or 0),
+                )
+                usage_accounted = True
             decision = self._validate(
                 content and self._parse_content(content),
                 fallback_step,
@@ -326,6 +511,10 @@ class KimiGridControl:
                 wallet,
             )
         except Exception as exc:
+            # A failed request consumed no tokens: release the estimate,
+            # unless the success path already replaced it with real usage.
+            if not usage_accounted:
+                self._tpm_account(est_tokens, 0)
             raw_error = str(exc).lower()
             if "insufficient balance" in raw_error or "insufficient funds" in raw_error:
                 safe_error = "account balance is insufficient"
@@ -337,6 +526,42 @@ class KimiGridControl:
                 safe_error = "authentication or permission error"
             elif "429" in raw_error or "rate limit" in raw_error:
                 safe_error = "rate limit reached"
+                # Trust the server's own headers: retry-after and the reset
+                # windows say exactly which bucket (RPM/TPM/TPD) is exhausted
+                # and how long to wait instead of probing every cycle.
+                self._rl_attempts += 1
+                _pause, _bucket, _remedy = self._learn_rate_limit(exc)
+                # Respect Retry-After (lower bound) and escalate with
+                # exponential backoff + jitter on repeated 429s, capped
+                # so the controller never hot-loops the API.
+                _base = max(
+                    5.0,
+                    _float_env(
+                        f"{self.provider.upper()}_RATE_BACKOFF_BASE_SEC", 60.0
+                    ),
+                )
+                _cap = max(
+                    15.0,
+                    _float_env(
+                        f"{self.provider.upper()}_RATE_LIMIT_BACKOFF_SEC", 1800.0
+                    ),
+                )
+                _exp = min(
+                    _base * (2 ** min(self._rl_attempts, 6))
+                    + random.uniform(0.0, _base * 0.25),
+                    _cap,
+                )
+                _pause = max(_pause, min(_exp, _cap))
+                with self._lock:
+                    self._rl_backoff_until = time.monotonic() + _pause
+                log.warning(
+                    "[%s] 429: %s exhausted — pausing AI recommendations "
+                    "for %.0fs (remedy: %s)",
+                    self.provider.upper(),
+                    _bucket,
+                    _pause,
+                    _remedy,
+                )
             else:
                 safe_error = "request failed"
             self._last_error = f"{type(exc).__name__}: {safe_error}"
@@ -350,6 +575,7 @@ class KimiGridControl:
         with self._lock:
             self._last_decision = decision
             self._last_error = ""
+            self._rl_attempts = 0
         log.info(
             "[%s] decision=%s signal=%s confidence=%.1f step=%.2f investment=%s levels=%s/%s",
             self.provider.upper(),
@@ -373,5 +599,9 @@ class KimiGridControl:
                 "ready": decision is not None,
                 "model": self.model,
                 "last_error": self._last_error,
+                "backoff_sec_left": round(
+                    max(0.0, self._rl_backoff_until - time.monotonic()), 1
+                ),
+                "tpm_tokens_used": sum(tk for _, tk in self._tpm_events),
                 "decision": decision,
             }
