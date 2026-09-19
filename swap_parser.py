@@ -17,6 +17,8 @@ CLI:
   python3 swap_parser.py --watch <w> --store --db swaps.db   # массовая запись свапов кошелька
   python3 swap_parser.py --history --limit 50 --db swaps.db  # история свапов (таблица)
   python3 swap_parser.py --pnl --db swaps.db                 # PnL-отчёт по портфелю
+  python3 swap_parser.py --density --db swaps.db             # плотность свапов (по времени/часам/DEX)
+  python3 swap_parser.py --density --bucket day --db swaps.db # плотность по дням
 
 Модуль:
   from swap_parser import parse_swap, format_bot_message
@@ -619,6 +621,68 @@ class SwapStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def density(self, wallet: str | None = None, bucket: str = "hour") -> dict:
+        """Плотность свапов: распределение сделок и USD-объёма
+        по временным интервалам (bucket: hour|day), часам суток и DEX.
+        Плюс метрики концентрации (пиковый интервал, доля топ-3 интервалов)."""
+        where = "WHERE wallet=?" if wallet else ""
+        params = (wallet,) if wallet else ()
+        rows = [
+            dict(r)
+            for r in self.conn.execute(
+                f"SELECT * FROM swaps {where} ORDER BY ts ASC", params
+            ).fetchall()
+        ]
+        if not rows:
+            return {
+                "wallet": wallet or "все кошельки",
+                "swaps": 0,
+                "period": "—",
+                "bucket": bucket,
+                "buckets": [],
+                "hour_histogram": [],
+                "dex": {},
+            }
+        step = 3600 if bucket == "hour" else 86400
+        fmt = "%Y-%m-%d %H:00" if bucket == "hour" else "%Y-%m-%d"
+        agg: dict[int, dict] = {}
+        hours = [0] * 24
+        dex: dict[str, int] = {}
+        for r in rows:
+            ts = r["ts"] or 0
+            b = agg.setdefault(ts // step, {"swaps": 0, "usd": 0.0})
+            b["swaps"] += 1
+            b["usd"] += r["usd_in"] or 0.0
+            hours[time.gmtime(ts).tm_hour] += 1
+            dex[r["dex"] or "?"] = dex.get(r["dex"] or "?", 0) + 1
+        buckets = [
+            {
+                "bucket": time.strftime(fmt, time.gmtime(k * step)),
+                "swaps": b["swaps"],
+                "usd_volume": round(b["usd"], 4),
+            }
+            for k, b in sorted(agg.items())
+        ]
+        n = len(rows)
+        span = max(1, (rows[-1]["ts"] - rows[0]["ts"]) // step + 1)
+        peak = max(buckets, key=lambda x: x["swaps"])
+        top3 = sum(sorted((b["swaps"] for b in buckets), reverse=True)[:3])
+        return {
+            "wallet": wallet or "все кошельки",
+            "swaps": n,
+            "period": time.strftime("%Y-%m-%d %H:%M", time.gmtime(rows[0]["ts"]))
+            + " → "
+            + time.strftime("%Y-%m-%d %H:%M", time.gmtime(rows[-1]["ts"])),
+            "bucket": bucket,
+            "avg_per_bucket": round(n / span, 2),
+            "peak_bucket": peak,
+            "top3_share_pct": round(100 * top3 / n, 1),
+            "busiest_hour_utc": hours.index(max(hours)),
+            "hour_histogram": hours,
+            "dex": dex,
+            "buckets": buckets,
+        }
+
     def pnl(self, wallet: str | None = None, oracle=None) -> dict:
         where = "WHERE wallet=?" if wallet else ""
         params = (wallet,) if wallet else ()
@@ -719,6 +783,34 @@ def format_history(rows: list[dict]) -> str:
             f"{t:19} {str(r['dex'] or '?'):8} {ain:>20} {'→':^3} {aout:>20} {net:>12}"
         )
     return "\n".join(out)
+
+
+def format_density(rep: dict) -> str:
+    if not rep.get("swaps"):
+        return "История пуста — плотность считать нечего."
+    lines = [
+        "📊 <b>Плотность свапов</b>",
+        f"👤 {rep['wallet']}",
+        f"🔄 Свапов: <b>{rep['swaps']}</b>",
+        f"📅 Период: {rep['period']}",
+        f"⏱ Шаг: {rep['bucket']}",
+        f"📐 Средняя плотность: <b>{rep['avg_per_bucket']}</b> свапов на интервал",
+        f"🔥 Пик: {rep['peak_bucket']['bucket']} — {rep['peak_bucket']['swaps']} свапов "
+        f"(${rep['peak_bucket']['usd_volume']:,.2f})",
+        f"🎯 Концентрация (топ-3 интервала): {rep['top3_share_pct']}% сделок",
+        f"🕐 Самый активный час (UTC): {rep['busiest_hour_utc']}:00",
+    ]
+    if rep.get("dex"):
+        lines += ["", "🌐 <b>По DEX</b>"]
+        for d, c in sorted(rep["dex"].items(), key=lambda kv: -kv[1]):
+            lines.append(f"• {d}: {c}")
+    lines += ["", "⏳ <b>Распределение по интервалам</b>"]
+    for b in rep["buckets"]:
+        bar = "█" * min(20, b["swaps"])
+        lines.append(
+            f"{b['bucket']}  {b['swaps']:>4}  {bar:<20}  ${b['usd_volume']:,.2f}"
+        )
+    return "\n".join(lines)
 
 
 def format_pnl(rep: dict) -> str:
@@ -830,6 +922,8 @@ def main(argv: list[str]) -> int:
     do_store = False
     do_history = False
     do_pnl = False
+    do_density = False
+    bucket = "hour"
     i = 0
     while i < len(args):
         if args[i] == "--fixture-dir":
@@ -859,6 +953,12 @@ def main(argv: list[str]) -> int:
         elif args[i] == "--pnl":
             do_pnl = True
             i += 1
+        elif args[i] == "--density":
+            do_density = True
+            i += 1
+        elif args[i] == "--bucket":
+            bucket = args[i + 1].lower()
+            i += 2
         else:
             target = args[i]
             i += 1
@@ -877,7 +977,9 @@ def main(argv: list[str]) -> int:
         api.prices = oracle
 
     store = (
-        SwapStore(db_path) if (db_path or do_store or do_history or do_pnl) else None
+        SwapStore(db_path)
+        if (db_path or do_store or do_history or do_pnl or do_density)
+        else None
     )
 
     if do_history:
@@ -894,6 +996,17 @@ def main(argv: list[str]) -> int:
             json.dumps(rep, ensure_ascii=False, indent=1)
             if as_json
             else format_pnl(rep)
+        )
+        return 0
+    if do_density:
+        if bucket not in ("hour", "day"):
+            print("Ошибка: --bucket должен быть hour или day", file=sys.stderr)
+            return 2
+        rep = store.density(wallet=target, bucket=bucket)
+        print(
+            json.dumps(rep, ensure_ascii=False, indent=1)
+            if as_json
+            else format_density(rep)
         )
         return 0
 
