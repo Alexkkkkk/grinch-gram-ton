@@ -16,7 +16,20 @@ logger = logging.getLogger("health_monitor")
 
 GITHUB_API = "https://api.github.com"
 REPO = os.getenv("GITHUB_REPO", "Alexkkkkk/grinch-gram-ton")
-TOKEN = os.getenv("GITHUB_TOKEN", "")
+def _load_token():
+    t = (os.getenv("GITHUB_TOKEN") or "").strip()
+    if t:
+        return t
+    for _p in ("/run/secrets/GITHUB_TOKEN", "/opt/bot/secrets/GITHUB_TOKEN"):
+        try:
+            if os.path.exists(_p):
+                return open(_p).read().strip()
+        except Exception:
+            pass
+    return ""
+
+
+TOKEN = _load_token()
 HEALTH_URL = os.getenv("HEALTH_URL", "http://127.0.0.1:3000/api/health")
 CHECK_INTERVAL = 60  # seconds
 
@@ -88,7 +101,7 @@ def report_to_github(status: dict):
         return
 
     headers = {
-        "Authorization": f"token {TOKEN}",
+        "Authorization": f"Bearer {TOKEN}",
         "Accept": "application/vnd.github.v3+json",
     }
 
@@ -97,6 +110,9 @@ def report_to_github(status: dict):
     try:
         resp = requests.get(issues_url, headers=headers, timeout=30)
         issues = resp.json()
+        if not isinstance(issues, list):
+            logger.error("GitHub issues API error %s: %s", resp.status_code, issues)
+            return
 
         body = f"""## VPS Health Report
 

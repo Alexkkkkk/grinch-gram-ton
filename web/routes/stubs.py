@@ -437,6 +437,8 @@ def perf_last():
 @stubs_bp.route("/api/risk")
 def risk_status():
     """Live hard-risk-limit state: trades, realized PnL, gas share."""
-    from grid_trader import _grid_trader
+    from web.routes.api import _grid_trader
 
+    if _grid_trader is None or not hasattr(_grid_trader, "_risk"):
+        return jsonify({"ok": False, "error": "trader_not_ready"}), 503
     return jsonify(_grid_trader._risk.snapshot())
