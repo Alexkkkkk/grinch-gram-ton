@@ -386,9 +386,7 @@ def add_security_headers(response):
     except Exception:
         _https = False
     if _https:
-        h.setdefault(
-            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
-        )
+        h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     # Убираем «рекламу» технологии
     h["Server"] = "nginx"
     return response

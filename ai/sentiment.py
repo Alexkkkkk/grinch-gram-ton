@@ -16,6 +16,7 @@ import logging
 import os
 import threading
 import time
+
 try:  # defusedxml blocks XXE / entity-expansion on untrusted RSS feeds
     from defusedxml import ElementTree as ET
 except ImportError:  # pragma: no cover - defusedxml is pinned in requirements
