@@ -1,0 +1,39 @@
+name: Grok Branch Consolidator
+
+on:
+  schedule:
+    - cron: '30 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update every open PR branch that is behind main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const prs = await github.paginate(github.rest.pulls.list,
+              {owner, repo, state: 'open', per_page: 100});
+            if (!prs.length) { core.info('Открытых PR нет.'); return; }
+            for (const pr of prs) {
+              try {
+                const {data: cmp} = await github.rest.repos.compareCommitsWithBasehead(
+                  {owner, repo, basehead: `${pr.head.ref}...${pr.base.ref}`});
+                if (cmp.status === 'behind') {
+                  await github.rest.pulls.updateBranch(
+                    {owner, repo, pull_number: pr.number});
+                  core.info(`PR #${pr.number} (${pr.head.ref}) подтянут к ${pr.base.ref}`);
+                } else {
+                  core.info(`PR #${pr.number}: ${cmp.status}`);
+                }
+              } catch (e) {
+                core.warning(`PR #${pr.number}: ${e.message}`);
+              }
+            }
