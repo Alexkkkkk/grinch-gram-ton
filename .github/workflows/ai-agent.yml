@@ -1,5 +1,12 @@
 name: AI Agent
 
+# Приоритет AI-провайдеров (по наличию секретов):
+#   1. XAI_API_KEY  -> Grok (api.x.ai, модель grok-4.6)  — ОСНОВНОЙ
+#   2. ANTHROPIC_API_KEY -> Claude (агентный режим claude-code-action)
+#   3. OPENAI_API_KEY -> OpenAI gpt-4o-mini
+# Триггеры: "@grok" или "@claude" в комментарии, метка ai-fix на issue,
+# упавший CI на main.
+
 on:
   issue_comment:
     types: [created]
@@ -27,18 +34,34 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
-      has_anthropic: ${{ steps.keys.outputs.anthropic }}
-      has_openai: ${{ steps.keys.outputs.openai }}
+      provider: ${{ steps.keys.outputs.provider }}
       ci_failed: ${{ steps.ci.outputs.failed }}
       run_id: ${{ steps.ci.outputs.run_id }}
+      is_mention: ${{ steps.trg.outputs.mention }}
+      is_label: ${{ steps.trg.outputs.label }}
     steps:
       - id: keys
         env:
+          X: ${{ secrets.XAI_API_KEY }}
           A: ${{ secrets.ANTHROPIC_API_KEY }}
           O: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          if [ -n "$A" ]; then echo "anthropic=yes" >> "$GITHUB_OUTPUT"; else echo "anthropic=no" >> "$GITHUB_OUTPUT"; fi
-          if [ -n "$O" ]; then echo "openai=yes" >> "$GITHUB_OUTPUT"; else echo "openai=no" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$X" ]; then echo "provider=xai" >> "$GITHUB_OUTPUT"
+          elif [ -n "$A" ]; then echo "provider=claude" >> "$GITHUB_OUTPUT"
+          elif [ -n "$O" ]; then echo "provider=openai" >> "$GITHUB_OUTPUT"
+          else echo "provider=none" >> "$GITHUB_OUTPUT"; fi
+      - id: trg
+        run: |
+          M=no; L=no
+          if { [ "${{ github.event_name }}" = "issue_comment" ] || [ "${{ github.event_name }}" = "pull_request_review_comment" ]; } \
+             && { contains(github.event.comment.body, '@grok') || contains(github.event.comment.body, '@claude'); }; then
+            M=yes
+          fi
+          if [ "${{ github.event_name }}" = "issues" ] && [ "${{ github.event.label.name }}" = "ai-fix" ]; then
+            L=yes
+          fi
+          echo "mention=$M" >> "$GITHUB_OUTPUT"
+          echo "label=$L" >> "$GITHUB_OUTPUT"
       - id: ci
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ github.event.workflow_run.conclusion }}" = "failure" ] && [ "${{ github.event.workflow_run.head_branch }}" = "main" ]; then
@@ -48,14 +71,12 @@ jobs:
             echo "failed=no" >> "$GITHUB_OUTPUT"
           fi
 
-  # ---------- @claude / метка ai-fix: через Claude, если ключ есть ----------
-  claude-assist:
+  # ---------- Claude (fallback #1): агентный режим, умеет сам править код ----------
+  claude-agent:
     needs: detect
     if: >-
-      needs.detect.outputs.has_anthropic == 'yes' &&
-      ((github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-       (github.event_name == 'issues' && github.event.label.name == 'ai-fix'))
+      needs.detect.outputs.provider == 'claude' &&
+      (needs.detect.outputs.is_mention == 'yes' || needs.detect.outputs.is_label == 'yes')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -70,24 +91,31 @@ jobs:
           claude_args: |
             --allowed-tools "Bash(gh:*),Bash(git:*),Bash(pip:*),Bash(python:*),Read,Edit,Write,Glob,Grep"
 
-  # ---------- @claude: fallback на OpenAI (работает с существующим секретом) ----------
-  openai-assist:
+  # ---------- Grok / OpenAI: ответ в issue/PR (@grok или @claude) ----------
+  chat-assist:
     needs: detect
     if: >-
-      needs.detect.outputs.has_anthropic == 'no' &&
-      needs.detect.outputs.has_openai == 'yes' &&
-      ((github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')))
+      needs.detect.outputs.provider != 'claude' &&
+      needs.detect.outputs.provider != 'none' &&
+      needs.detect.outputs.is_mention == 'yes'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Ответ через OpenAI
+      - name: Ответ через AI
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PROVIDER: ${{ needs.detect.outputs.provider }}
+          NUM: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
         run: |
-          NUM="${{ github.event.issue.number }}"
-          REPO="${{ github.repository }}"
+          # Настройки провайдера: base URL и модель
+          if [ "$PROVIDER" = "xai" ]; then
+            export AI_BASE="https://api.x.ai/v1/chat/completions" AI_MODEL="grok-4.6" AI_NAME="Grok (xAI)"
+          else
+            export AI_BASE="https://api.openai.com/v1/chat/completions" AI_MODEL="gpt-4o-mini" AI_NAME="OpenAI"
+          fi
           {
             echo "## Заголовок"
             gh api "repos/$REPO/issues/$NUM" --jq '.title' || true
@@ -105,7 +133,7 @@ jobs:
           import json, os, urllib.request
           ctx = open('/tmp/context.md', encoding='utf-8').read()[:60000]
           body = {
-              "model": "gpt-4o-mini",
+              "model": os.environ["AI_MODEL"],
               "messages": [
                   {"role": "system", "content": "Ты ИИ-инженер репозитория grinch-gram-ton — Python-бота спотовой grid-торговли на TON/DeDust. Отвечай по-русски, кратко и по делу: анализируй вопрос/баг и предлагай конкретные правки кода."},
                   {"role": "user", "content": ctx},
@@ -113,23 +141,25 @@ jobs:
               "max_tokens": 2000,
           }
           req = urllib.request.Request(
-              "https://api.openai.com/v1/chat/completions",
+              os.environ["AI_BASE"],
               data=json.dumps(body).encode(),
-              headers={"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"],
+              headers={"Authorization": "Bearer " + os.environ.get("XAI_API_KEY") or os.environ.get("OPENAI_API_KEY", ""),
                        "Content-Type": "application/json"})
           with urllib.request.urlopen(req, timeout=180) as resp:
               r = json.load(resp)
           answer = r["choices"][0]["message"]["content"]
           open("/tmp/answer.md", "w", encoding="utf-8").write(
-              "🤖 **AI-ассистент (OpenAI):**\n\n" + answer)
+              "🤖 **AI-ассистент (" + os.environ["AI_NAME"] + "):**\n\n" + answer)
           PYEOF
-          [ -f /tmp/answer.md ] || echo "🤖 Ошибка вызова OpenAI — проверь секрет OPENAI_API_KEY." > /tmp/answer.md
+          [ -f /tmp/answer.md ] || echo "🤖 Ошибка вызова AI — проверь секреты XAI_API_KEY / OPENAI_API_KEY." > /tmp/answer.md
           gh issue comment "$NUM" --repo "$REPO" --body-file /tmp/answer.md
 
-  # ---------- Упавший CI на main: фикс через Claude, если ключ есть ----------
+  # ---------- Claude (fallback #1): агентный фикс упавшего CI ----------
   claude-fix-ci:
     needs: detect
-    if: needs.detect.outputs.has_anthropic == 'yes' && needs.detect.outputs.ci_failed == 'yes'
+    if: >-
+      needs.detect.outputs.provider == 'claude' &&
+      needs.detect.outputs.ci_failed == 'yes'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -153,63 +183,90 @@ jobs:
             --allowed-tools "Bash(gh:*),Bash(git:*),Bash(pip:*),Bash(python:*),Read,Edit,Write,Glob,Grep"
             --max-turns 40
 
-  # ---------- Упавший CI на main: фикс через OpenAI (fallback) ----------
-  openai-fix-ci:
+  # ---------- Grok / OpenAI: авто-фикс упавшего CI на main ИЛИ issue с меткой ai-fix ----------
+  autofix:
     needs: detect
-    if: needs.detect.outputs.has_anthropic == 'no' && needs.detect.outputs.has_openai == 'yes' && needs.detect.outputs.ci_failed == 'yes'
+    if: >-
+      needs.detect.outputs.provider != 'claude' &&
+      needs.detect.outputs.provider != 'none' &&
+      (needs.detect.outputs.ci_failed == 'yes' || needs.detect.outputs.is_label == 'yes')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           token: ${{ secrets.GH_PAT || github.token }}
           fetch-depth: 0
-      - name: AI-фикс упавшего CI и PR
+      - name: AI-фикс и PR
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PROVIDER: ${{ needs.detect.outputs.provider }}
           RUN_ID: ${{ needs.detect.outputs.run_id }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
         run: |
+          if [ "$PROVIDER" = "xai" ]; then
+            export AI_BASE="https://api.x.ai/v1/chat/completions" AI_MODEL="grok-4.6" AI_NAME="Grok (xAI)"
+          else
+            export AI_BASE="https://api.openai.com/v1/chat/completions" AI_MODEL="gpt-4o-mini" AI_NAME="OpenAI"
+          fi
           # Защита от цикла: не больше одного открытого ai-fix PR одновременно
           if gh pr list --state open --json headRefName --jq '.[].headRefName' | grep -q '^ai-fix/'; then
             echo "Уже есть открытый ai-fix PR — пропускаю"; exit 0
           fi
-          LOG=$(gh run view "$RUN_ID" --log-failed 2>/dev/null | tail -c 40000)
+          if [ -n "$ISSUE_NUM" ]; then
+            # Режим: issue с меткой ai-fix — контекст из issue
+            {
+              echo "ЗАДАЧА ИЗ ISSUE #$ISSUE_NUM:"
+              gh api "repos/$REPO/issues/$ISSUE_NUM" --jq '.title'
+              gh api "repos/$REPO/issues/$ISSUE_NUM" --jq '.body'
+              echo; echo "КОММЕНТАРИИ:"
+              gh api "repos/$REPO/issues/$ISSUE_NUM/comments" --jq '.[] | "- " + .body'
+            } > /tmp/task.md
+            echo "SOURCE=issue" >> "$GITHUB_ENV"
+          else
+            # Режим: упавший CI на main — контекст из лога падения
+            gh run view "$RUN_ID" --log-failed 2>/dev/null | tail -c 40000 > /tmp/task.md
+            echo "SOURCE=ci" >> "$GITHUB_ENV"
+          fi
           CHANGED=$(git show --name-only --format= HEAD | head -50)
-          export LOG CHANGED
+          export CHANGED
           python3 - <<'PYEOF'
           import json, os, subprocess, sys, urllib.request
 
           def sh(cmd):
               return subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
-          log = os.environ.get("LOG", "")
+          task = open('/tmp/task.md', encoding='utf-8', errors='replace').read()[:40000]
           changed = os.environ.get("CHANGED", "")
           sha = sh("git rev-parse --short HEAD").stdout.strip()
 
           prompt = (
-              "CI на ветке main упал. Ниже — лог упавших шагов и файлы последнего коммита.\n"
+              "Репозиторий grinch-gram-ton (Python, спотовая grid-торговля TON/DeDust). "
+              "Ниже — задача (упавший CI или баг из issue) и файлы последнего коммита.\n"
               "Верни СТРОГО один JSON-объект без markdown и текста вокруг:\n"
               '{"files": [{"path": "путь/файла.py", "content": "полное новое содержимое файла"}],'
-              ' "explanation": "краткое объяснение причины падения и фикса по-русски",'
+              ' "explanation": "краткое объяснение причины и фикса по-русски",'
               ' "confidence": "high" или "low"}\n'
               "Правь минимально, только суть бага. Конфиги CI не трогай. "
               "Если не уверена — files: [] и confidence: low.\n\n"
-              "ЛОГ УПАВШИХ ШАГОВ:\n" + log + "\n\nФАЙЛЫ ПОСЛЕДНЕГО КОММИТА:\n" + changed
+              "ЗАДАЧА:\n" + task + "\n\nФАЙЛЫ ПОСЛЕДНЕГО КОММИТА:\n" + changed
           )
-          body = {"model": "gpt-4o-mini",
+          key = os.environ.get("XAI_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+          body = {"model": os.environ["AI_MODEL"],
                   "messages": [{"role": "user", "content": prompt}],
                   "temperature": 0.1, "max_tokens": 8000}
           req = urllib.request.Request(
-              "https://api.openai.com/v1/chat/completions",
+              os.environ["AI_BASE"],
               data=json.dumps(body).encode(),
-              headers={"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"],
-                       "Content-Type": "application/json"})
+              headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
           try:
               with urllib.request.urlopen(req, timeout=300) as resp:
                   text = json.load(resp)["choices"][0]["message"]["content"].strip()
           except Exception as e:
-              open("/tmp/ai_expl.md", "w").write("Ошибка вызова OpenAI: %s" % e)
+              open("/tmp/ai_expl.md", "w").write("Ошибка вызова AI (" + os.environ["AI_NAME"] + "): %s" % e)
               sys.exit(2)
           if text.startswith("```"):
               text = text.strip("`")
@@ -223,7 +280,7 @@ jobs:
               sys.exit(2)
           expl = str(data.get("explanation", ""))
           open("/tmp/ai_expl.md", "w").write(
-              "## AI-разбор упавшего CI\n\n" + expl + "\n\nКоммит с багом: " + sha)
+              "## AI-разбор (" + os.environ["AI_NAME"] + ")\n\n" + expl + "\n\nКоммит с багом: " + sha)
           files = data.get("files") or []
           if data.get("confidence") != "high" or not files:
               sys.exit(2)
@@ -242,7 +299,7 @@ jobs:
           PYEOF
           if [ $? -ne 0 ]; then
             echo "AI не дал уверенного фикса — создаю issue для ручного разбора"
-            gh issue create --title "AI: упавший CI на $(git rev-parse --short HEAD) — нужен ручной фикс" \
+            gh issue create --title "AI: не удалось авто-исправить ($(git rev-parse --short HEAD)) — нужен ручной фикс" \
               --body "$(cat /tmp/ai_expl.md 2>/dev/null || echo 'нет данных')" || true
             exit 0
           fi
@@ -255,13 +312,13 @@ jobs:
           if [ "$FAIL" = "1" ]; then
             echo "Фикс не компилируется — PR не открываю"; exit 0
           fi
-          BR="ai-fix/ci-$(git rev-parse --short HEAD)-$(date +%H%M%S)"
+          BR="ai-fix/$( [ "$SOURCE" = "issue" ] && echo "issue-$ISSUE_NUM" || echo "ci-$(git rev-parse --short HEAD)")-$(date +%H%M%S)"
           git checkout -b "$BR"
           git config user.name "ai-bot"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          git commit -m "fix: AI auto-fix for failed CI on $(git rev-parse --short HEAD)"
+          git commit -m "fix: AI auto-fix ($AI_NAME)"
           git push origin "$BR"
           gh pr create --base main --head "$BR" \
-            --title "AI fix: упавший CI на $(git rev-parse --short HEAD)" \
+            --title "AI fix: $( [ "$SOURCE" = "issue" ] && echo "issue #$ISSUE_NUM" || echo "упавший CI на $(git rev-parse --short HEAD)")" \
             --body-file /tmp/ai_expl.md
