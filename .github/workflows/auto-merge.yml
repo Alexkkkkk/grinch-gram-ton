@@ -1,0 +1,71 @@
+name: AI Auto-Merge
+
+# Проверяет открытые PR:
+#  - ветка отстала от main / конфликт -> автоматически подтягивает main в ветку;
+#  - все проверки зелёные -> включает авто-слияние (squash);
+#  - проверки красные или не завершены -> НЕ мержит, ждёт.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+concurrency:
+  group: ai-auto-merge
+  cancel-in-progress: false
+
+jobs:
+  manage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Manage open pull requests
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          gh api "repos/$REPO/pulls?state=open&per_page=100" --paginate \
+            --jq '.[] | [.number, .head.ref, .user.login, .mergeable_state] | @tsv' > /tmp/prs.tsv || true
+          if [ ! -s /tmp/prs.tsv ]; then echo "Открытых PR нет"; exit 0; fi
+
+          while IFS=$'\t' read -r num branch author state; do
+            echo "== PR #$num  branch=$branch  author=$author  state=$state"
+
+            if [ "$state" = "dirty" ]; then
+              echo "   Конфликт с main -> подтягиваю main в ветку"
+              if gh api -X PUT "repos/$REPO/pulls/$num/update-branch" \
+                   -f update_method=merge >/dev/null 2>&1; then
+                echo "   Ветка обновлена, конфликт разрешён автоматически"
+              else
+                echo "   Не удалось обновить автоматически — нужен ручной мерж"
+              fi
+              continue
+            fi
+
+            sha=$(gh api "repos/$REPO/pulls/$num" --jq '.head.sha')
+            red=$(gh api "repos/$REPO/commits/$sha/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral" and .conclusion != null)] | length')
+            pending=$(gh api "repos/$REPO/commits/$sha/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.status != "completed")] | length')
+            echo "   Красных проверок: $red, незавершённых: $pending"
+
+            if [ "$pending" != "0" ]; then echo "   Жду завершения проверок"; continue; fi
+            if [ "$red" != "0" ]; then echo "   Проверки красные — слияние запрещено"; continue; fi
+
+            # Бот-авторы не мержатся автоматически (защита от циклов)
+            case "$author" in
+              *bot*|*Bot*) echo "   PR создан ботом — автослияние пропущено"; continue;;
+            esac
+
+            if gh pr merge "$num" --repo "$REPO" --squash --auto; then
+              echo "   Авто-слияние включено/выполнено"
+            else
+              echo "   Слияние не выполнено (нет прав или условия не выполнены)"
+            fi
+          done < /tmp/prs.tsv
