@@ -51,15 +51,14 @@ jobs:
           elif [ -n "$O" ]; then echo "provider=openai" >> "$GITHUB_OUTPUT"
           else echo "provider=none" >> "$GITHUB_OUTPUT"; fi
       - id: trg
+        env:
+          BODY: ${{ github.event.comment.body || '' }}
+          EVENT: ${{ github.event_name }}
+          LABEL: ${{ github.event.label.name || '' }}
         run: |
           M=no; L=no
-          if { [ "${{ github.event_name }}" = "issue_comment" ] || [ "${{ github.event_name }}" = "pull_request_review_comment" ]; } \
-             && { contains(github.event.comment.body, '@grok') || contains(github.event.comment.body, '@claude'); }; then
-            M=yes
-          fi
-          if [ "${{ github.event_name }}" = "issues" ] && [ "${{ github.event.label.name }}" = "ai-fix" ]; then
-            L=yes
-          fi
+          case "$BODY" in *"@grok"*|*"@claude"*) M=yes;; esac
+          if [ "$EVENT" = "issues" ] && [ "$LABEL" = "ai-fix" ]; then L=yes; fi
           echo "mention=$M" >> "$GITHUB_OUTPUT"
           echo "label=$L" >> "$GITHUB_OUTPUT"
       - id: ci
