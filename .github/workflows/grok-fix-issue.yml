@@ -17,13 +17,14 @@ jobs:
     if: |
       (github.event_name == 'issues' && github.event.label.name == 'grok-fix') ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/grok fix'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.GROK_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
+        if: ${{ !contains(vars.GROK_RUNNER || '', 'self-hosted') }}
         with:
           python-version: '3.11'
 
@@ -34,6 +35,8 @@ jobs:
           GROK_MODEL: grok-4.6
           GROK_MODE: fix
           GROK_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          GROK_TEST_GATE: '1'
+          GROK_TEST_CMD: ${{ vars.GROK_TEST_CMD }}
         run: python scripts/grok_agent.py
 
       - name: Create Pull Request
