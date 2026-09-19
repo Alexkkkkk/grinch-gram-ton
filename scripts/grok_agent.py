@@ -18,6 +18,7 @@ Env:
   GROK_ISSUE_NUMBER  issue number for fix mode
   XAI_BASE_URL       default https://api.x.ai/v1
 """
+
 from __future__ import annotations
 
 import json
@@ -44,12 +45,51 @@ MAX_FILE_BYTES = int(os.environ.get("GROK_MAX_FILE_BYTES", "20000"))
 MAX_EDITS = int(os.environ.get("GROK_MAX_EDITS", "25"))
 REPORT = Path("GROK_REPORT.md")
 
-CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".go", ".rs",
-            ".sol", ".java", ".kt", ".rb", ".php", ".cs", ".sh", ".yml", ".yaml",
-            ".toml", ".json", ".sql", ".c", ".h", ".cpp", ".hpp", ".env.example"}
-SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", "dist",
-             "build", ".next", "target", ".idea", ".vscode", "site-packages",
-             "coverage", ".mypy_cache", ".pytest_cache"}
+CODE_EXT = {
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".go",
+    ".rs",
+    ".sol",
+    ".java",
+    ".kt",
+    ".rb",
+    ".php",
+    ".cs",
+    ".sh",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".json",
+    ".sql",
+    ".c",
+    ".h",
+    ".cpp",
+    ".hpp",
+    ".env.example",
+}
+SKIP_DIRS = {
+    ".git",
+    "node_modules",
+    "venv",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".next",
+    "target",
+    ".idea",
+    ".vscode",
+    "site-packages",
+    "coverage",
+    ".mypy_cache",
+    ".pytest_cache",
+}
 
 
 def log(msg: str) -> None:
@@ -68,7 +108,8 @@ def http_json(url: str, payload=None, headers=None, retries: int = 4):
     for attempt in range(retries):
         try:
             req = urllib.request.Request(
-                url, data=data, headers=hdr, method="POST" if data else "GET")
+                url, data=data, headers=hdr, method="POST" if data else "GET"
+            )
             with urllib.request.urlopen(req, timeout=180) as r:
                 body = r.read().decode("utf-8", "replace")
                 return json.loads(body) if body else {}
@@ -98,9 +139,12 @@ def gh(path: str):
     try:
         return http_json(
             f"https://api.github.com/repos/{REPO}{path}",
-            headers={"Authorization": f"Bearer {GH_TOKEN}",
-                     "Accept": "application/vnd.github+json",
-                     "X-GitHub-Api-Version": "2022-11-28"})
+            headers={
+                "Authorization": f"Bearer {GH_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
     except Exception as exc:  # noqa: BLE001
         log(f"GitHub API warning on {path}: {exc}")
         return None
@@ -108,8 +152,9 @@ def gh(path: str):
 
 def tracked_files() -> list[Path]:
     try:
-        out = subprocess.run(["git", "ls-files"], capture_output=True,
-                             text=True, check=True).stdout
+        out = subprocess.run(
+            ["git", "ls-files"], capture_output=True, text=True, check=True
+        ).stdout
         files = [Path(p) for p in out.splitlines() if p.strip()]
     except Exception:  # noqa: BLE001
         files = [p for p in Path(".").rglob("*") if p.is_file()]
@@ -144,9 +189,11 @@ def failing_ci() -> str:
         return "No failing workflow runs."
     lines = []
     for r in runs["workflow_runs"]:
-        lines.append(f"- {r.get('name')} #{r.get('run_number')} "
-                     f"branch={r.get('head_branch')} "
-                     f"conclusion={r.get('conclusion')} url={r.get('html_url')}")
+        lines.append(
+            f"- {r.get('name')} #{r.get('run_number')} "
+            f"branch={r.get('head_branch')} "
+            f"conclusion={r.get('conclusion')} url={r.get('html_url')}"
+        )
     return "\n".join(lines)
 
 
@@ -158,8 +205,10 @@ def open_issues() -> str:
     for i in data:
         if "pull_request" in i:
             continue
-        lines.append(f"- #{i.get('number')} {i.get('title')} "
-                     f"[{', '.join(l['name'] for l in i.get('labels', []))}]")
+        lines.append(
+            f"- #{i.get('number')} {i.get('title')} "
+            f"[{', '.join(l['name'] for l in i.get('labels', []))}]"
+        )
     return "\n".join(lines) or "No open issues."
 
 
@@ -182,11 +231,16 @@ def call_grok(system: str, user: str) -> str:
         "model": MODEL,
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
-        "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": user}],
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
     }
-    resp = http_json(f"{XAI_BASE}/chat/completions", payload,
-                     headers={"Authorization": f"Bearer {XAI_KEY}"})
+    resp = http_json(
+        f"{XAI_BASE}/chat/completions",
+        payload,
+        headers={"Authorization": f"Bearer {XAI_KEY}"},
+    )
     return resp["choices"][0]["message"]["content"]
 
 
@@ -212,7 +266,11 @@ def safe_apply(edits: list[dict]) -> list[str]:
             continue
         target = Path(rel)
         target.parent.mkdir(parents=True, exist_ok=True)
-        old = target.read_text(encoding="utf-8", errors="replace") if target.exists() else ""
+        old = (
+            target.read_text(encoding="utf-8", errors="replace")
+            if target.exists()
+            else ""
+        )
         if old == content:
             log(f"no change: {rel}")
             continue
@@ -270,11 +328,18 @@ def main() -> int:
         f"- Proposed edits: {len(edits)}",
         f"- Applied edits: {len(applied)}",
         "",
-        "## Summary", "", data.get("summary", "(none)"), "",
-        "## Files changed", "",
-        *([f"- `{p}`" for p in applied] or ["_none_"]), "",
-        "## Recommendation for a human reviewer", "",
-        data.get("recommendation", "(none)"), "",
+        "## Summary",
+        "",
+        data.get("summary", "(none)"),
+        "",
+        "## Files changed",
+        "",
+        *([f"- `{p}`" for p in applied] or ["_none_"]),
+        "",
+        "## Recommendation for a human reviewer",
+        "",
+        data.get("recommendation", "(none)"),
+        "",
         "> Автономный агент. Проверьте diff перед мержем.",
     ]
     REPORT.write_text("\n".join(report), encoding="utf-8")
