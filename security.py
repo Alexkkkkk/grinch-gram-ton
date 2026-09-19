@@ -373,7 +373,7 @@ def add_security_headers(response):
     h.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
     h.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self' data:;",
     )
     # HSTS is only meaningful over TLS; sending it on plain HTTP is a no-op and
     # can strand operators on an HTTPS endpoint that is not configured yet.

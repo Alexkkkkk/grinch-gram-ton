@@ -20,9 +20,9 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:-apple-s
 header{display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid var(--border-color);margin-bottom:16px}
 </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/grid_style.css') }}">
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js" defer></script>
+<script src="{{ url_for('static', filename='js/socket.io.min.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/lightweight-charts.standalone.production.js') }}" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+<script src="{{ url_for('static', filename='js/chart.umd.min.js') }}" defer></script>
 </head>
 <body>
 <div class="container">
