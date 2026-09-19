@@ -16,7 +16,10 @@ import logging
 import os
 import threading
 import time
-import xml.etree.ElementTree as ET
+try:  # defusedxml blocks XXE / entity-expansion on untrusted RSS feeds
+    from defusedxml import ElementTree as ET
+except ImportError:  # pragma: no cover - defusedxml is pinned in requirements
+    import xml.etree.ElementTree as ET
 from collections import deque
 from typing import List, Optional, Tuple
 

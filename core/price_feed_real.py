@@ -443,7 +443,7 @@ def start_background_updates(interval: float = 10.0) -> None:
             try:
                 update_price()
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
             time.sleep(interval)
 
     _bg_thread = threading.Thread(target=_loop, daemon=True)

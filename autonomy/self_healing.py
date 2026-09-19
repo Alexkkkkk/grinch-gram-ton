@@ -214,9 +214,25 @@ class SelfHealingEngine:
         logger.warning("Executing heal: %s — %s", action_name, action["description"])
 
         try:
+            import re
+            import shlex
+
+            # Never hand these strings to a shell. A leading "cd <dir> && " is
+            # translated into subprocess cwd; any other metacharacter is a hard
+            # refusal rather than an interpolation risk.
+            cwd = "/opt/bot"
+            cmd = action["command"].strip()
+            if cmd.startswith("cd ") and " && " in cmd:
+                cwd = cmd[3:].split(" && ", 1)[0].strip()
+                cmd = cmd.split(" && ", 1)[1].strip()
+            if re.search(r"[;&|`$><\n\r]", cmd):
+                raise ValueError(
+                    "refusing to run command with shell metacharacters: " + cmd
+                )
             result = subprocess.run(
-                action["command"],
-                shell=True,
+                shlex.split(cmd),
+                shell=False,
+                cwd=cwd if os.path.isdir(cwd) else None,
                 capture_output=True,
                 text=True,
                 timeout=120,

@@ -200,9 +200,8 @@ def api_v7_all():
 
 @api_bp.route("/history")
 def api_history():
-    hours = request.args.get("hours", 24, type=int)
-    data = get_history_for_chart(hours)
-    return jsonify(data)
+    hours = max(1, min(request.args.get("hours", 24, type=int), 720))
+    return jsonify(_history_cached(hours))
 
 
 @api_bp.route("/candles")
@@ -654,3 +653,23 @@ def api_consciousness():
 
     evo = get_evolution()
     return jsonify(evo.get_consciousness())
+
+
+# ── /api/history memo ─────────────────────────────────────────────────────────
+# Rebuilding the 24h chart payload cost ~300 ms on every poll (the slowest route
+# in the container log). A 15 s TTL removes the repeated cost while keeping the
+# chart visually current.
+_history_cache: dict = {}
+
+
+def _history_cached(hours: int):
+    """Return the chart payload for `hours`, memoised for 15 seconds."""
+    import time as _time
+
+    entry = _history_cache.get(hours)
+    now = _time.time()
+    if entry is not None and now - entry[0] < 15:
+        return entry[1]
+    data = get_history_for_chart(hours)
+    _history_cache[hours] = (now, data)
+    return data

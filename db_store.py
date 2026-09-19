@@ -383,7 +383,7 @@ def _conn():
         try:
             pool_ref.putconn(conn, close=True)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         conn = pool_ref.getconn()
 
     _broken = False
@@ -396,7 +396,7 @@ def _conn():
         try:
             conn.rollback()
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         # Асинхронно пересоздаём пул (с backoff-гейтом), не блокируя поток
         threading.Thread(target=_try_rebuild_pool, daemon=True).start()
         raise
@@ -404,13 +404,13 @@ def _conn():
         try:
             conn.rollback()
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         raise
     finally:
         try:
             pool_ref.putconn(conn, close=_broken)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
 
 # ── Инициализируем при импорте ────────────────────────────────────────────────
@@ -595,7 +595,7 @@ def trades_upsert(trade: dict):
         try:
             closed_at = datetime.fromisoformat(str(closed_at_str))
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
     # Нормализуем поля перед записью (добавляем алиасы для дашборда)
     trade = _normalize_trade_fields(trade)
     TRADES_KEEP = (
@@ -694,7 +694,7 @@ def trades_bulk_insert(trades: list):
                         try:
                             closed_at = datetime.fromisoformat(str(closed_at_str))
                         except Exception:
-                            pass
+                            logger.debug("suppressed exception", exc_info=True)
                     cur.execute(
                         """
                         INSERT INTO bot_trades (id, data, closed_at)

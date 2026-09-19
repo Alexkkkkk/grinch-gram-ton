@@ -4,6 +4,8 @@ VPS Command Executor — safely executes commands on VPS and reports results.
 """
 
 import logging
+import re
+import shlex
 import subprocess
 from datetime import datetime
 from typing import Dict, List
@@ -21,6 +23,9 @@ class SafeExecutor:
         "python3": ["-m", "pytest", "-c"],
         "curl": ["-f", "-s", "-o"],
         "make": ["deploy", "test", "lint", "build"],
+        "uptime": [],
+        "free": ["-h"],
+        "df": ["-h"],
     }
 
     def __init__(self):
@@ -35,6 +40,13 @@ class SafeExecutor:
         base = parts[0]
         if base not in self.ALLOWED_COMMANDS:
             logger.warning("Command not allowed: %s", base)
+            return False
+
+        # Reject shell metacharacters outright: they are never needed now that
+        # the command runs without a shell, and their presence signals a
+        # crafted payload that would have been interpreted under `sh -c`.
+        if re.search(r"[;&|`$><\n\r]", command):
+            logger.error("Shell metacharacters blocked: %s", command)
             return False
 
         # Check for dangerous patterns
@@ -52,17 +64,19 @@ class SafeExecutor:
 
         return True
 
-    def execute(self, command: str, timeout: int = 60) -> Dict:
-        """Execute a validated command."""
+    def execute(self, command: str, timeout: int = 60, cwd: str = None) -> Dict:
+        """Execute a validated command without a shell (no `sh -c`)."""
         if not self.validate(command):
             return {"status": "blocked", "command": command}
 
-        logger.info("Executing: %s", command)
+        argv = shlex.split(command)
+        logger.info("Executing: %s", argv)
 
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                argv,
+                shell=False,
+                cwd=cwd,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
@@ -102,8 +116,15 @@ class SafeExecutor:
 
     def bot_logs(self, lines: int = 50) -> Dict:
         """Get bot logs."""
-        return self.execute(f"cd /opt/bot && docker-compose logs --tail={lines} bot")
+        return self.execute(
+            f"docker compose logs --tail={int(lines)} bot", cwd="/opt/bot"
+        )
 
     def system_info(self) -> Dict:
         """Get system information."""
-        return self.execute("uptime && free -h && df -h /")
+        return {
+            "status": "ok",
+            "uptime": self.execute("uptime"),
+            "memory": self.execute("free -h"),
+            "disk": self.execute("df -h /"),
+        }

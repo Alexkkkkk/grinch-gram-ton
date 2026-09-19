@@ -423,7 +423,7 @@ class ExperienceManager:
                     )
                     self._save_locked()
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
             self._apply_control_to_config()
             ctrl = self.data["control"]
         if open_trades:
@@ -936,7 +936,7 @@ class ExperienceManager:
                             Config.DCA.target_profit_pct = new_dca_target
                             ctrl["ai_dca_target_adapted"] = True
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
 
                 # ── Защита прибыли: снижаем порог если средняя победа небольшая  ──
                 try:
@@ -949,7 +949,7 @@ class ExperienceManager:
                             Config.PROTECTION.profit_protect_ton = optimal_protect
                             ctrl["ai_protect_adapted"] = True
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
             tp_changed = abs(new_tp - float(ctrl.get("take_profit_pct") or 0)) > 0.1
 
             changed = (

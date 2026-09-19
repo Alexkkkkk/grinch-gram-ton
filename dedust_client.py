@@ -118,7 +118,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
             if result is not None:
                 ton_val = float(result) / TON
     except Exception:
-        pass
+        log.debug("suppressed exception", exc_info=True)
 
     if ton_val is None and not hit_429:
         try:
@@ -134,7 +134,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
                 if bal is not None:
                     ton_val = float(bal) / TON
         except Exception:
-            pass
+            log.debug("suppressed exception", exc_info=True)
 
     # USDT balance: TonCenter v3 → TonAPI direct → TonAPI list
     # USDT decimals = 6
@@ -155,7 +155,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
                     if bal is not None:
                         usdt_val = float(bal) / (10**Config.USDT_DECIMALS)
         except Exception:
-            pass
+            log.debug("suppressed exception", exc_info=True)
 
     if usdt_val == 0.0 and not hit_429:
         try:
@@ -171,7 +171,7 @@ def _fetch_balance_and_update(force: bool, now: float) -> dict:
                 if bal is not None:
                     usdt_val = float(bal) / (10**Config.USDT_DECIMALS)
         except Exception:
-            pass
+            log.debug("suppressed exception", exc_info=True)
 
     if hit_429:
         # Применяем backoff: не долбим API 90 секунд после 429
@@ -327,7 +327,7 @@ class DedustClient:
                     try:
                         await provider.close_all()
                     except Exception:
-                        pass
+                        log.debug("suppressed exception", exc_info=True)
                 import asyncio as _aio
 
                 await _aio.sleep(1)
@@ -468,7 +468,7 @@ class DedustClient:
             if isinstance(addr, _ptc.Address):
                 return addr.to_str(is_user_friendly=True, is_bounceable=False)
         except Exception:
-            pass
+            log.debug("suppressed exception", exc_info=True)
         s = str(addr)
         if s.startswith("Address<") and s.endswith(">"):
             return s[8:-1]
@@ -625,7 +625,7 @@ class DedustClient:
                         log.info("[DeDust] ✅ Кошелёк задеплоен и активен!")
                         return True
                 except Exception:
-                    pass
+                    log.debug("suppressed exception", exc_info=True)
 
             log.error("[DeDust] ❌ Кошелёк не стал активным за 45 сек после деплоя")
             return False
@@ -1232,7 +1232,7 @@ class DedustClient:
             try:
                 get_shared_balance(force=True)
             except Exception:
-                pass
+                log.debug("suppressed exception", exc_info=True)
         return result
 
     # ─────────────────────────── swap: sell ────────────────────────────────
@@ -1499,7 +1499,7 @@ class DedustClient:
             try:
                 get_shared_balance(force=True)
             except Exception:
-                pass
+                log.debug("suppressed exception", exc_info=True)
         return result
 
     # ─────────────────────────── transfer TON ──────────────────────────────

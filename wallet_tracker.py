@@ -290,7 +290,7 @@ class WalletTracker:
                     raw = r.json().get("balance", "0") or "0"
                     new_bal[addr] = int(raw) / 1e9
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
             # FIX#21: не заменяем весь словарь при частичном сбое API.
             # Если new_bal пустой (все запросы упали) — оставляем старые данные.
             if new_bal:
