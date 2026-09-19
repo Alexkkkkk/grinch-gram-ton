@@ -1,0 +1,60 @@
+name: Grok Fix Issue
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  fix:
+    if: |
+      (github.event_name == 'issues' && github.event.label.name == 'grok-fix') ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '/grok fix'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Grok fix
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GROK_MODEL: grok-4.6
+          GROK_MODE: fix
+          GROK_ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: python scripts/grok_agent.py
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'fix(grok): resolve issue #${{ github.event.issue.number }}'
+          branch: grok/issue-${{ github.event.issue.number }}
+          delete-branch: true
+          title: '[Grok] Fix #${{ github.event.issue.number }}: ${{ github.event.issue.title }}'
+          body-path: GROK_REPORT.md
+          labels: grok, automated
+
+      - name: Comment on issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '🤖 Grok обработал задачу — открыт Pull Request. Проверьте diff перед мержем.'
+            })
