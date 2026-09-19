@@ -10,6 +10,8 @@ on:
         description: 'Grok model id'
         required: false
         default: 'grok-4.6'
+  repository_dispatch:
+    types: [grok-audit]
 
 permissions:
   contents: write
@@ -23,17 +25,20 @@ concurrency:
 
 jobs:
   grok:
-    runs-on: ubuntu-latest
+    # Если задана переменная репозитория GROK_RUNNER — берём self-hosted runner,
+    # иначе раннер GitHub по умолчанию.
+    runs-on: ${{ vars.GROK_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
+        if: ${{ !contains(vars.GROK_RUNNER || '', 'self-hosted') }}
         with:
           python-version: '3.11'
 
-      - name: Run Grok agent
+      - name: Run Grok agent (with test gate)
         env:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -41,7 +46,9 @@ jobs:
           GROK_MODE: audit
           GROK_MAX_FILES: '60'
           GROK_MAX_BYTES: '150000'
-        run: python scripts/grok_agent.py
+          GROK_TEST_GATE: '1'
+          GROK_TEST_CMD: ${{ vars.GROK_TEST_CMD }}
+        run: python3 scripts/grok_agent.py
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
