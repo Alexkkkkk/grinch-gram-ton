@@ -1,0 +1,55 @@
+name: Grok Idle Audit & Auto-Fix
+
+on:
+  schedule:
+    # каждые 3 часа — «режим простоя»
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Grok model id'
+        required: false
+        default: 'grok-4.6'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: grok-idle
+  cancel-in-progress: false
+
+jobs:
+  grok:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Grok agent
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GROK_MODEL: ${{ github.event.inputs.model || 'grok-4.6' }}
+          GROK_MODE: audit
+          GROK_MAX_FILES: '60'
+          GROK_MAX_BYTES: '150000'
+        run: python scripts/grok_agent.py
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore(grok): autonomous audit & fixes'
+          branch: grok/auto-fix
+          delete-branch: true
+          title: '[Grok] Авто-аудит и исправления'
+          body-path: GROK_REPORT.md
+          labels: grok, automated
