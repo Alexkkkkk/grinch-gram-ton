@@ -16,6 +16,8 @@ logger = logging.getLogger("health_monitor")
 
 GITHUB_API = "https://api.github.com"
 REPO = os.getenv("GITHUB_REPO", "Alexkkkkk/grinch-gram-ton")
+
+
 def _load_token():
     t = (os.getenv("GITHUB_TOKEN") or "").strip()
     if t:
