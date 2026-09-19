@@ -219,7 +219,7 @@ class QuantumBrain:
             try:
                 price = self._price_feed()
             except Exception:
-                pass
+                log.debug("suppressed exception", exc_info=True)
         if price <= 0 and self.state.price_history:
             price = self.state.price_history[-1]
         if price > 0:
@@ -504,7 +504,7 @@ class QuantumBrain:
                     "buy_levels": len(grid_state.get("buy_levels", []) or []),
                 }
             except Exception:
-                pass
+                log.debug("suppressed exception", exc_info=True)
 
         market = {
             "price": round(self.state.price, 8),

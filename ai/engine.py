@@ -184,7 +184,7 @@ class AIEngine:
                     p = model.predict_proba(Xs)[0]
                     probs.append(p)
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception", exc_info=True)
         if not probs:
             return self._default_signal()
 
@@ -311,4 +311,4 @@ def _release_memory():
 
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except Exception:
-        pass
+        logger.debug("suppressed exception", exc_info=True)

@@ -488,7 +488,7 @@ class GridTrader:
                                     * 100,
                                 )
                             except Exception:
-                                pass
+                                log.debug("suppressed exception", exc_info=True)
                     self._save_state()
                     return
 
@@ -529,7 +529,7 @@ class GridTrader:
                                     profit_pct=0,
                                 )
                             except Exception:
-                                pass
+                                log.debug("suppressed exception", exc_info=True)
                     self._save_state()
                     return
 
@@ -1002,7 +1002,7 @@ class GridTrader:
 
                         get_brain().notify_trade_closed(level.profit_ton)
                     except Exception:
-                        pass
+                        log.debug("suppressed exception", exc_info=True)
                     return {
                         "ok": True,
                         "received": received_ton,

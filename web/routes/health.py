@@ -1,5 +1,6 @@
 """Advanced health dashboard — comprehensive system status."""
 
+import os
 import time
 from datetime import datetime, timezone
 
@@ -90,7 +91,7 @@ def full_health():
                 },
             },
             "docker": docker_status,
-            "version": "3.1.0",
+            "version": os.getenv("APP_VERSION", "3.2.0"),
         }
     )
 

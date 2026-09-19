@@ -12,6 +12,8 @@ services:
       dockerfile: Dockerfile
       additional_contexts:
         pip-cache: /tmp/pip-cache
+    # Tag by commit SHA so every deploy is identifiable and rollback-able.
+    image: bot-bot:${GIT_SHA:-local}
     container_name: quantum-bot
     restart: unless-stopped
     env_file: .env
@@ -24,10 +26,11 @@ services:
       - ./data:/app/data:rw
       - ./backups:/app/backups:rw
       - ./logs:/app/logs:rw
+      # NOTE: meta_engine.py / meta_bridge.py / quantum_brain.py used to be
+      # bind-mounted from the host. That made them invisible to `docker build`,
+      # so a git pull mutated running code without any image rebuild. They are
+      # now baked into the image (Dockerfile copies *.py at the repo root).
       - ./models:/app/models:ro
-      - ./meta_engine.py:/app/meta_engine.py:ro
-      - ./meta_bridge.py:/app/meta_bridge.py:ro
-      - ./quantum_brain.py:/app/quantum_brain.py:ro
     networks:
       - grinch-net
     deploy:

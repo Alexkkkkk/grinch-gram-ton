@@ -24,7 +24,20 @@ def create_app() -> Flask:
         template_folder=os.path.join(project_root, "templates"),
         static_folder=os.path.join(project_root, "static"),
     )
-    app.json_encoder = NpEncoder
+    # Flask 2.3+ removed the `json_encoder` hook; Flask 3.x requires a provider.
+    # Without this, NumPy scalars/arrays in API payloads raise TypeError -> 500.
+    try:
+        from flask.json.provider import DefaultJSONProvider
+
+        class NpJSONProvider(DefaultJSONProvider):
+            """Serialise NumPy scalars/arrays in JSON responses."""
+
+            default = staticmethod(NpEncoder().default)
+
+        app.json = NpJSONProvider(app)
+    except Exception as exc:  # pragma: no cover - legacy Flask fallback
+        app.json_encoder = NpEncoder  # type: ignore[attr-defined]
+        logger.warning("Legacy json_encoder fallback: %s", exc)
 
     # SECURITY: SECRET_KEY must be set in production
     secret_key = Config.SECRET_KEY
@@ -82,7 +95,11 @@ def create_app() -> Flask:
             if result is not None:
                 return result
 
-        logger.info("Security middleware enabled")
+        @app.after_request
+        def security_headers(response):
+            return security.add_security_headers(response)
+
+        logger.info("Security middleware enabled (rate-limit + CSP + headers)")
     except ImportError:
         logger.warning("security module not available")
     except Exception as e:

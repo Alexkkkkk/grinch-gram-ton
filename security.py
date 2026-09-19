@@ -375,9 +375,18 @@ def add_security_headers(response):
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;",
     )
-    h.setdefault(
-        "Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload"
-    )
+    # HSTS is only meaningful over TLS; sending it on plain HTTP is a no-op and
+    # can strand operators on an HTTPS endpoint that is not configured yet.
+    try:
+        from flask import request as _request
+
+        _https = _request.is_secure or (
+            _request.headers.get("X-Forwarded-Proto") == "https"
+        )
+    except Exception:
+        _https = False
+    if _https:
+        h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     # Убираем «рекламу» технологии
     h["Server"] = "nginx"
     return response

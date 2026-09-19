@@ -483,7 +483,7 @@ class HyperEvolver:
                         r2 = 1.0 - ss_res / (ss_tot + 1e-10)
                         fold_r2s.append(r2)
                     except Exception:
-                        pass
+                        log.debug("suppressed exception", exc_info=True)
                 avg_r2 = sum(fold_r2s) / len(fold_r2s) if fold_r2s else -999.0
                 if avg_r2 > best_r2:
                     best_r2 = avg_r2
@@ -969,7 +969,7 @@ class GridAI:
                     sgd_prob = float(self._dca_sgd.predict_proba([feat])[0][1])
                     prob = 0.75 * prob + 0.25 * sgd_prob
                 except Exception:
-                    pass
+                    log.debug("suppressed exception", exc_info=True)
 
             return round(max(0.0, min(100.0, prob * 100)), 1)
 
@@ -1219,7 +1219,7 @@ class GridAI:
                 result = 0.6 * ml_target + 0.4 * heuristic_target
                 return round(max(step_pct * 0.7, min(step_pct * 1.8, result)), 2)
             except Exception:
-                pass
+                log.debug("suppressed exception", exc_info=True)
 
         # Эвристика с учётом рыночного контекста
         mkt = self._mkt_ctx
@@ -1909,7 +1909,7 @@ class GridAI:
                 try:
                     base_preds.append(float(m.predict([feat])[0]))
                 except Exception:
-                    pass
+                    log.debug("suppressed exception", exc_info=True)
 
         if not base_preds:
             return []
@@ -1924,7 +1924,7 @@ class GridAI:
                 avg_base = sum(base_preds) / len(base_preds)
                 return [0.6 * avg_base + 0.4 * meta_pred]
             except Exception:
-                pass
+                log.debug("suppressed exception", exc_info=True)
 
         # SGD — дополнительный голос
         if self._step_sgd is not None:
@@ -1932,7 +1932,7 @@ class GridAI:
                 sgd_pred = float(self._step_sgd.predict([feat])[0])
                 base_preds.append(sgd_pred)
             except Exception:
-                pass
+                log.debug("suppressed exception", exc_info=True)
 
         return base_preds
 
@@ -1944,7 +1944,7 @@ class GridAI:
                 try:
                     probs.append(float(m.predict_proba([feat])[0][1]))
                 except Exception:
-                    pass
+                    log.debug("suppressed exception", exc_info=True)
         return probs
 
     def _simulate_best_step(
@@ -1991,7 +1991,7 @@ class GridAI:
                         best_pnl = predicted_pnl
                         best_step = step
                 except Exception:
-                    pass
+                    log.debug("suppressed exception", exc_info=True)
 
             return best_step
 
@@ -2327,7 +2327,7 @@ class GridAI:
                     )
                     dir_accs.append(dir_correct / len(y_te))
                 except Exception:
-                    pass
+                    log.debug("suppressed exception", exc_info=True)
 
             r2 = sum(r2_scores) / len(r2_scores) if r2_scores else 0.0
             acc = sum(dir_accs) / len(dir_accs) if dir_accs else 0.5
@@ -2574,7 +2574,7 @@ class GridAI:
                                     ]
                                     oof_preds.append(fold_preds)
                                 except Exception:
-                                    pass
+                                    log.debug("suppressed exception", exc_info=True)
 
                             if oof_preds:
                                 for col, fp in enumerate(oof_preds):

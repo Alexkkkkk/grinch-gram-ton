@@ -407,7 +407,7 @@ class BrainFusion:
                 scanner_fresh = True
                 scanner_label = sc_sig.get("label")
         except Exception:
-            pass
+            log.debug("suppressed exception", exc_info=True)
 
         # ── v7: Quantum Intelligence Suite ────────────────────────────────
         v7_fresh = (now - self._v7_updated_at) < self._v7_ttl

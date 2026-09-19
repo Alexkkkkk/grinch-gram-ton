@@ -205,7 +205,7 @@ class SwarmAgent:
                 )
                 reasons.append(f"RSI overbought ({rsi:.1f})")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         # 2. EMA crossover
         try:
@@ -224,7 +224,7 @@ class SwarmAgent:
                 )
                 reasons.append(f"EMA bearish ({trend:.2f}%)")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         # 3. Bollinger Bands
         try:
@@ -244,7 +244,7 @@ class SwarmAgent:
                 )
                 reasons.append(f"BB reverse ({price:.4f} > {bb_upper:.4f})")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         # 4. Volume anomaly
         try:
@@ -260,7 +260,7 @@ class SwarmAgent:
                     scores["sell"] += self.genome.w_volume
                     reasons.append("Volume spike -price")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         # 5. Momentum
         try:
@@ -276,7 +276,7 @@ class SwarmAgent:
                 )
                 reasons.append(f"Momentum down ({mom:.2f}%)")
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
         # Определяем сигнал
         total_buy = scores["buy"]

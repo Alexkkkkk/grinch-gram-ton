@@ -1,6 +1,9 @@
 """Risk management — stops, trailing, circuit breakers."""
 
-from .circuit_breaker import CircuitBreaker
+# Single canonical definition: the repo-root `circuit_breaker` module.
+# trading/risk/circuit_breaker.py previously held a *second* CircuitBreaker class.
+from circuit_breaker import CircuitBreaker  # noqa: F401
+
 from .sizing import PositionSizer
 from .stop_loss import StopLossEngine
 from .trailing import TrailingStopEngine

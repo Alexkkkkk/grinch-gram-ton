@@ -58,7 +58,7 @@ def _tick_writer_loop():
                     break
             _db.ticks_insert_batch(batch)
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
         finally:
             for _ in batch:
                 _tick_q.task_done()

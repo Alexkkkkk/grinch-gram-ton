@@ -34,6 +34,8 @@ requests>=2.32.0,<3
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 python-dotenv==1.2.3
+# Hardened XML parser — RSS/news feeds are untrusted input (CWE-611 / CWE-776).
+defusedxml==0.7.1
 openai==1.109.1
 email-validator==2.3.0
 apscheduler==3.11.3
