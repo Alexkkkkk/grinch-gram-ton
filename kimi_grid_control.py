@@ -168,9 +168,7 @@ class KimiGridControl:
             ]
             try:
                 idx = next(
-                    i
-                    for i, (_, tk) in enumerate(self._tpm_events)
-                    if tk == estimated
+                    i for i, (_, tk) in enumerate(self._tpm_events) if tk == estimated
                 )
                 self._tpm_events.pop(idx)
             except StopIteration:
@@ -232,16 +230,16 @@ class KimiGridControl:
         low = str(exc).lower()
         default_pause = max(
             15.0,
-            _float_env(
-                f"{self.provider.upper()}_RATE_LIMIT_BACKOFF_SEC", 1800.0
-            ),
+            _float_env(f"{self.provider.upper()}_RATE_LIMIT_BACKOFF_SEC", 1800.0),
         )
         if "per day" in low or "tpd" in low:
             pause = retry_after or max(reset_tokens, reset_requests) or 21600.0
             bucket = "TPD (daily token quota)"
             remedy = "switch model or wait for the daily reset"
-        elif "rpm" in low or (not reset_tokens and reset_requests > 0) or (
-            remaining_requests == "0" and not remaining_tokens
+        elif (
+            "rpm" in low
+            or (not reset_tokens and reset_requests > 0)
+            or (remaining_requests == "0" and not remaining_tokens)
         ):
             # Retry only when the server allows it AND the RPM bucket refilled,
             # otherwise the very next request 429s again.
@@ -471,8 +469,7 @@ class KimiGridControl:
                     "response_format" in request_kwargs
                     and self._response_format_ok is not False
                     and (
-                        "badrequest" in type(exc).__name__.lower()
-                        or "400" in str(exc)
+                        "badrequest" in type(exc).__name__.lower() or "400" in str(exc)
                     )
                 ):
                     self._response_format_ok = False
@@ -536,9 +533,7 @@ class KimiGridControl:
                 # so the controller never hot-loops the API.
                 _base = max(
                     5.0,
-                    _float_env(
-                        f"{self.provider.upper()}_RATE_BACKOFF_BASE_SEC", 60.0
-                    ),
+                    _float_env(f"{self.provider.upper()}_RATE_BACKOFF_BASE_SEC", 60.0),
                 )
                 _cap = max(
                     15.0,
