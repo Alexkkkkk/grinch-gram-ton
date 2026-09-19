@@ -22,6 +22,7 @@ Env:
   GROK_TEST_GATE     1 = revert all edits if tests fail (default 1)
   GROK_TEST_TIMEOUT  seconds, default 1800
 """
+
 from __future__ import annotations
 
 import json
@@ -34,22 +35,33 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+
 def _resolve_provider():
     """Pick the first configured LLM provider, so the agent runs with whatever
     key the repository already has: xAI Grok -> Groq -> OpenAI."""
     if os.environ.get("XAI_API_KEY", "").strip():
-        return ("xai", os.environ.get("XAI_BASE_URL", "https://api.x.ai/v1").rstrip("/"),
-                os.environ["XAI_API_KEY"].strip(),
-                os.environ.get("GROK_MODEL", "grok-4.6").strip())
+        return (
+            "xai",
+            os.environ.get("XAI_BASE_URL", "https://api.x.ai/v1").rstrip("/"),
+            os.environ["XAI_API_KEY"].strip(),
+            os.environ.get("GROK_MODEL", "grok-4.6").strip(),
+        )
     if os.environ.get("GROQ_API_KEY", "").strip():
-        return ("groq", "https://api.groq.com/openai/v1",
-                os.environ["GROQ_API_KEY"].strip(),
-                os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip())
+        return (
+            "groq",
+            "https://api.groq.com/openai/v1",
+            os.environ["GROQ_API_KEY"].strip(),
+            os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
+        )
     if os.environ.get("OPENAI_API_KEY", "").strip():
-        return ("openai", os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
-                os.environ["OPENAI_API_KEY"].strip(),
-                os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip())
+        return (
+            "openai",
+            os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+            os.environ["OPENAI_API_KEY"].strip(),
+            os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip(),
+        )
     return (None, "", "", "")
+
 
 PROVIDER, XAI_BASE, XAI_KEY, MODEL = _resolve_provider()
 GH_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
@@ -62,16 +74,60 @@ MAX_TOTAL_BYTES = int(os.environ.get("GROK_MAX_BYTES", "150000"))
 MAX_FILE_BYTES = int(os.environ.get("GROK_MAX_FILE_BYTES", "20000"))
 MAX_EDITS = int(os.environ.get("GROK_MAX_EDITS", "25"))
 TEST_CMD = os.environ.get("GROK_TEST_CMD", "").strip()
-TEST_GATE = os.environ.get("GROK_TEST_GATE", "1").strip().lower() not in ("0", "false", "no", "off")
+TEST_GATE = os.environ.get("GROK_TEST_GATE", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+    "off",
+)
 TEST_TIMEOUT = int(os.environ.get("GROK_TEST_TIMEOUT", "1800"))
 REPORT = Path("GROK_REPORT.md")
 
-CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".mjs", ".cjs", ".go", ".rs",
-            ".sol", ".java", ".kt", ".rb", ".php", ".cs", ".sh", ".yml", ".yaml",
-            ".toml", ".json", ".sql", ".c", ".h", ".cpp", ".hpp", ".env.example"}
-SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", "dist",
-             "build", ".next", "target", ".idea", ".vscode", "site-packages",
-             "coverage", ".mypy_cache", ".pytest_cache"}
+CODE_EXT = {
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".go",
+    ".rs",
+    ".sol",
+    ".java",
+    ".kt",
+    ".rb",
+    ".php",
+    ".cs",
+    ".sh",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".json",
+    ".sql",
+    ".c",
+    ".h",
+    ".cpp",
+    ".hpp",
+    ".env.example",
+}
+SKIP_DIRS = {
+    ".git",
+    "node_modules",
+    "venv",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".next",
+    "target",
+    ".idea",
+    ".vscode",
+    "site-packages",
+    "coverage",
+    ".mypy_cache",
+    ".pytest_cache",
+}
 
 
 def log(msg: str) -> None:
@@ -90,7 +146,8 @@ def http_json(url: str, payload=None, headers=None, retries: int = 4):
     for attempt in range(retries):
         try:
             req = urllib.request.Request(
-                url, data=data, headers=hdr, method="POST" if data else "GET")
+                url, data=data, headers=hdr, method="POST" if data else "GET"
+            )
             with urllib.request.urlopen(req, timeout=180) as r:
                 body = r.read().decode("utf-8", "replace")
                 return json.loads(body) if body else {}
@@ -120,9 +177,12 @@ def gh(path: str):
     try:
         return http_json(
             f"https://api.github.com/repos/{REPO}{path}",
-            headers={"Authorization": f"Bearer {GH_TOKEN}",
-                     "Accept": "application/vnd.github+json",
-                     "X-GitHub-Api-Version": "2022-11-28"})
+            headers={
+                "Authorization": f"Bearer {GH_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
     except Exception as exc:  # noqa: BLE001
         log(f"GitHub API warning on {path}: {exc}")
         return None
@@ -130,8 +190,9 @@ def gh(path: str):
 
 def tracked_files() -> list[Path]:
     try:
-        out = subprocess.run(["git", "ls-files"], capture_output=True,
-                             text=True, check=True).stdout
+        out = subprocess.run(
+            ["git", "ls-files"], capture_output=True, text=True, check=True
+        ).stdout
         files = [Path(p) for p in out.splitlines() if p.strip()]
     except Exception:  # noqa: BLE001
         files = [p for p in Path(".").rglob("*") if p.is_file()]
@@ -166,9 +227,11 @@ def failing_ci() -> str:
         return "No failing workflow runs."
     lines = []
     for r in runs["workflow_runs"]:
-        lines.append(f"- {r.get('name')} #{r.get('run_number')} "
-                     f"branch={r.get('head_branch')} "
-                     f"conclusion={r.get('conclusion')} url={r.get('html_url')}")
+        lines.append(
+            f"- {r.get('name')} #{r.get('run_number')} "
+            f"branch={r.get('head_branch')} "
+            f"conclusion={r.get('conclusion')} url={r.get('html_url')}"
+        )
     return "\n".join(lines)
 
 
@@ -180,8 +243,10 @@ def open_issues() -> str:
     for i in data:
         if "pull_request" in i:
             continue
-        lines.append(f"- #{i.get('number')} {i.get('title')} "
-                     f"[{', '.join(l['name'] for l in i.get('labels', []))}]")
+        lines.append(
+            f"- #{i.get('number')} {i.get('title')} "
+            f"[{', '.join(l['name'] for l in i.get('labels', []))}]"
+        )
     return "\n".join(lines) or "No open issues."
 
 
@@ -204,11 +269,16 @@ def call_grok(system: str, user: str) -> str:
         "model": MODEL,
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
-        "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": user}],
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
     }
-    resp = http_json(f"{XAI_BASE}/chat/completions", payload,
-                     headers={"Authorization": f"Bearer {XAI_KEY}"})
+    resp = http_json(
+        f"{XAI_BASE}/chat/completions",
+        payload,
+        headers={"Authorization": f"Bearer {XAI_KEY}"},
+    )
     return resp["choices"][0]["message"]["content"]
 
 
@@ -234,7 +304,11 @@ def safe_apply(edits: list[dict]) -> list[str]:
             continue
         target = Path(rel)
         target.parent.mkdir(parents=True, exist_ok=True)
-        old = target.read_text(encoding="utf-8", errors="replace") if target.exists() else ""
+        old = (
+            target.read_text(encoding="utf-8", errors="replace")
+            if target.exists()
+            else ""
+        )
         if old == content:
             log(f"no change: {rel}")
             continue
@@ -252,11 +326,15 @@ def detect_test_cmd() -> str | None:
         return TEST_CMD
     if Path("package.json").exists():
         return "npm ci --no-audit --no-fund && npm test --if-present"
-    py_project = any(Path(p).exists() for p in
-                     ("pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml", "tests"))
+    py_project = any(
+        Path(p).exists()
+        for p in ("pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml", "tests")
+    )
     if py_project:
-        return ("python -m pip install -q -r requirements.txt 2>/dev/null; "
-                "python -m pytest -q")
+        return (
+            "python -m pip install -q -r requirements.txt 2>/dev/null; "
+            "python -m pytest -q"
+        )
     if Path("Dockerfile").exists():
         return "docker build -t grok-ci-check ."
     return None
@@ -270,8 +348,9 @@ def run_test_gate() -> tuple[bool, str, str]:
         return True, "(none detected)", "No tests found - gate skipped."
     log(f"test gate: running `{cmd}`")
     try:
-        p = subprocess.run(cmd, shell=True, capture_output=True, text=True,
-                           timeout=TEST_TIMEOUT)
+        p = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=TEST_TIMEOUT
+        )
         out = (p.stdout or "") + (p.stderr or "")
         ok = p.returncode == 0
         log(f"test gate: exit={p.returncode} -> {'PASS' if ok else 'FAIL'}")
@@ -285,8 +364,9 @@ def run_test_gate() -> tuple[bool, str, str]:
 def revert_worktree() -> None:
     """Drop every agent edit so a failing gate cannot reach a Pull Request."""
     subprocess.run(["git", "checkout", "--", "."], capture_output=True, text=True)
-    subprocess.run(["git", "clean", "-fd", "-e", REPORT.name],
-                   capture_output=True, text=True)
+    subprocess.run(
+        ["git", "clean", "-fd", "-e", REPORT.name], capture_output=True, text=True
+    )
     log("worktree reverted to HEAD")
 
 
@@ -322,8 +402,10 @@ def build_user_prompt() -> str:
 
 def main() -> int:
     if not XAI_KEY:
-        log("ERROR: no API key - set XAI_API_KEY (Grok), GROQ_API_KEY (Groq) "
-            "or OPENAI_API_KEY as a repository secret.")
+        log(
+            "ERROR: no API key - set XAI_API_KEY (Grok), GROQ_API_KEY (Groq) "
+            "or OPENAI_API_KEY as a repository secret."
+        )
         return 2
     log(f"provider={PROVIDER} model={MODEL} repo={REPO or 'local'} gate={TEST_GATE}")
     user = build_user_prompt()
@@ -341,22 +423,31 @@ def main() -> int:
             applied = []
 
     lines = [
-        f"# Grok autonomous run ({MODE})", "",
+        f"# Grok autonomous run ({MODE})",
+        "",
         f"- Model: `{MODEL}`",
         f"- Files scanned: {len(tracked_files())}",
         f"- Proposed edits: {len(edits)}",
         f"- Applied edits: {len(applied)}",
         f"- Test gate: {'PASSED' if gate_ok else 'FAILED (edits reverted)'}",
-        f"- Test command: `{gate_cmd}`", "",
-        "## Summary", "", data.get("summary", "(none)"), "",
-        "## Files changed", "",
-        *([f"- `{p}`" for p in applied] or ["_none_ - repository already clean_"]), "",
+        f"- Test command: `{gate_cmd}`",
+        "",
+        "## Summary",
+        "",
+        data.get("summary", "(none)"),
+        "",
+        "## Files changed",
+        "",
+        *([f"- `{p}`" for p in applied] or ["_none_ - repository already clean_"]),
+        "",
     ]
     if not gate_ok:
         lines += ["## Test output (failure)", "", "```", gate_out, "```", ""]
     lines += [
-        "## Recommendation for a human reviewer", "",
-        data.get("recommendation", "(none)"), "",
+        "## Recommendation for a human reviewer",
+        "",
+        data.get("recommendation", "(none)"),
+        "",
         "> Автономный агент. Проверьте diff перед мержем.",
     ]
     REPORT.write_text("\n".join(lines), encoding="utf-8")
