@@ -47,7 +47,7 @@
     <div class="meta"><span class="warn">Доступ только после авторизации.</span> Выполнение ограничено серверным allowlist.</div>
   </section>
 </main>
-<script>
+<script nonce="{{ csp_nonce }}">
 const csrfToken = {{ csrf_token|tojson }};
 const commandForm = document.querySelector('#commandForm'), commandInput = document.querySelector('#commandInput');
 const actions = [

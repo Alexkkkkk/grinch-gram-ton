@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/static/css/dex-pro-theme.css?v=1">
 <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" crossorigin="anonymous"></script>
 <script src="/static/js/lightweight-charts.standalone.production.js"></script>
-<script>if("serviceWorker"in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/static/js/ai-sw.js").then(function(r){console.log("[AI-SW] Registered:",r.scope)}).catch(function(e){console.log("[AI-SW] Failed:",e)})})}</script>
+<script nonce="{{ csp_nonce }}">if("serviceWorker"in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/static/js/ai-sw.js").then(function(r){console.log("[AI-SW] Registered:",r.scope)}).catch(function(e){console.log("[AI-SW] Failed:",e)})})}</script>
 </head>
 <body data-theme="dark">
 <div class="app">
@@ -1885,13 +1885,13 @@
 </div><!-- /.app -->
 
 <script src="/static/js/socket.io.min.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}">
   window._socketio_path = "/socket.io";
   window._socketio_url  = window.location.origin;
   window._initAI = {{ init_ai | tojson | safe }};
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function initTonConnect() {
   if (window.tonConnectUI) return;
   if (typeof TON_CONNECT_UI === "undefined") return setTimeout(initTonConnect, 300);
@@ -1906,7 +1906,7 @@
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 (function initGrinchChart() {
   if (typeof LightweightCharts === "undefined") return setTimeout(initGrinchChart, 300);
   const el = document.getElementById("grinch-chart");
@@ -1956,7 +1956,7 @@
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 function switchMainTab(tab) {
   ['market','trades','wallet','ai','settings'].forEach(t => {
     document.getElementById('tab-'+t).classList.toggle('tab-hidden', t!==tab);
@@ -2498,7 +2498,7 @@ setInterval(advLoadStatus, 5000);
 <!-- ═══════════════════════════════════════════════════════════════════════════
      КОШЕЛЁК: Полное отслеживание TON + GRINCH (wallet_manager.py)
      ══════════════════════════════════════════════════════════════════════════ -->
-<script>
+<script nonce="{{ csp_nonce }}">
 (function() {
 'use strict';
 
@@ -3000,10 +3000,10 @@ window.switchEqTab       = switchEqTab;
 </script>
 
 <div id="toast-container"></div>
-<script>window._csrfToken = "{{ session.get('_csrf', '') | e }}";</script>
+<script nonce="{{ csp_nonce }}">window._csrfToken = "{{ session.get('_csrf', '') | e }}";</script>
 <script src="/static/js/app.js?v=2"></script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // ══════════════════════════════════════════════════════
 //  AMM LIVE PREVIEW — polling /api/amm/preview каждые 12с
 // ══════════════════════════════════════════════════════

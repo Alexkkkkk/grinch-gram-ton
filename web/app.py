@@ -107,6 +107,20 @@ def create_app() -> Flask:
 
     # Request timing + security headers
     @app.before_request
+    def csp_nonce_before_request():
+        import secrets
+
+        from flask import g as _g
+
+        _g.csp_nonce = secrets.token_urlsafe(16)
+
+    @app.context_processor
+    def inject_csp_nonce():
+        from flask import g as _g
+
+        return {"csp_nonce": getattr(_g, "csp_nonce", "")}
+
+    @app.before_request
     def before_request():
         request._start_time = time.time()
 

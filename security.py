@@ -364,8 +364,31 @@ def record_login_success(ip: str):
 # ══════════════════════════════════════════════════════════════════════════
 #  Security HTTP-headers (after_request)
 # ══════════════════════════════════════════════════════════════════════════
+def generate_nonce() -> str:
+    """Per-request CSP nonce (128-bit, URL-safe)."""
+    import secrets
+
+    return secrets.token_urlsafe(16)
+
+
+def _build_csp(nonce: str) -> str:
+    return (
+        "default-src 'self'; script-src 'self' 'nonce-%s'; script-src-attr 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; "
+        "font-src 'self' data:; object-src 'none'; base-uri 'self'; "
+        "frame-ancestors 'self'; form-action 'self';"
+    ) % nonce
+
+
 def add_security_headers(response):
     h = response.headers
+    try:
+        from flask import g as _g
+
+        nonce = getattr(_g, "csp_nonce", "") or generate_nonce()
+        _g.csp_nonce = nonce
+    except Exception:
+        nonce = generate_nonce()
     h.setdefault("X-Content-Type-Options", "nosniff")
     h.setdefault("X-Frame-Options", "SAMEORIGIN")
     h.setdefault("X-XSS-Protection", "1; mode=block")
@@ -373,7 +396,7 @@ def add_security_headers(response):
     h.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
     h.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self' data:;",
+        _build_csp(nonce),
     )
     # HSTS is only meaningful over TLS; sending it on plain HTTP is a no-op and
     # can strand operators on an HTTPS endpoint that is not configured yet.
