@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
-"""
-Grok autonomous repository agent (stdlib only).
+"""Grok / multi-LLM autonomous repository agent (stdlib only).
 
-Modes
------
 audit : inspect repo -> find bugs / TODOs / failing CI / open issues
-        -> ask Grok for fixes -> run the test gate -> apply (or revert).
+        -> ask the LLM for fixes -> run the test gate -> apply (or revert).
 fix   : same, but scoped to one GitHub issue (GROK_ISSUE_NUMBER).
 
-The workflow then turns the working-tree changes into a Pull Request.
+Provider order (first configured wins): xAI Grok -> OpenAI -> Groq.
+Within a provider every candidate model is tried, so a key that lacks one
+model still works via the next one.
 
 Env:
-  XAI_API_KEY        required  (xAI / Grok API key)
-  GITHUB_TOKEN       provided by Actions
-  GITHUB_REPOSITORY  owner/repo
-  GROK_MODEL         default grok-4.6
-  GROK_MODE          audit | fix
-  GROK_ISSUE_NUMBER  issue number for fix mode
-  XAI_BASE_URL       default https://api.x.ai/v1
-  GROK_TEST_CMD      explicit test command (else auto-detected)
-  GROK_TEST_GATE     1 = revert all edits if tests fail (default 1)
-  GROK_TEST_TIMEOUT  seconds, default 1800
+  XAI_API_KEY / OPENAI_API_KEY / GROQ_API_KEY   at least one required
+  GITHUB_TOKEN, GITHUB_REPOSITORY
+  GROK_MODEL, OPENAI_MODEL, GROQ_MODEL   pin a model
+  GROK_PROVIDER_ORDER                    e.g. "openai,groq,xai"
+  GROK_MODE (audit|fix), GROK_ISSUE_NUMBER
+  GROK_TEST_CMD, GROK_TEST_GATE, GROK_TEST_TIMEOUT
 """
 
 from __future__ import annotations
@@ -35,35 +30,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-
-def _resolve_provider():
-    """Pick the first configured LLM provider, so the agent runs with whatever
-    key the repository already has: xAI Grok -> Groq -> OpenAI."""
-    if os.environ.get("XAI_API_KEY", "").strip():
-        return (
-            "xai",
-            os.environ.get("XAI_BASE_URL", "https://api.x.ai/v1").rstrip("/"),
-            os.environ["XAI_API_KEY"].strip(),
-            os.environ.get("GROK_MODEL", "grok-4.6").strip(),
-        )
-    if os.environ.get("GROQ_API_KEY", "").strip():
-        return (
-            "groq",
-            "https://api.groq.com/openai/v1",
-            os.environ["GROQ_API_KEY"].strip(),
-            os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
-        )
-    if os.environ.get("OPENAI_API_KEY", "").strip():
-        return (
-            "openai",
-            os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
-            os.environ["OPENAI_API_KEY"].strip(),
-            os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip(),
-        )
-    return (None, "", "", "")
-
-
-PROVIDER, XAI_BASE, XAI_KEY, MODEL = _resolve_provider()
 GH_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 REPO = os.environ.get("GITHUB_REPOSITORY", "").strip()
 MODE = os.environ.get("GROK_MODE", "audit").strip().lower()
@@ -82,6 +48,20 @@ TEST_GATE = os.environ.get("GROK_TEST_GATE", "1").strip().lower() not in (
 )
 TEST_TIMEOUT = int(os.environ.get("GROK_TEST_TIMEOUT", "1800"))
 REPORT = Path("GROK_REPORT.md")
+
+DEFAULT_MODELS = {
+    "xai": ["grok-4.6", "grok-4", "grok-3", "grok-2-latest"],
+    "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-3.5-turbo"],
+    "groq": [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "llama-3.1-70b-versatile",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3-32b",
+        "deepseek-r1-distill-llama-70b",
+        "gemma2-9b-it",
+    ],
+}
 
 CODE_EXT = {
     ".py",
@@ -134,8 +114,10 @@ def log(msg: str) -> None:
     print(f"[grok-agent] {msg}", flush=True)
 
 
-def http_json(url: str, payload=None, headers=None, retries: int = 4):
-    """Tiny HTTP client with exponential backoff for 429 / 5xx / network errors."""
+def http_json(
+    url: str, payload=None, headers=None, retries: int = 3, timeout: int = 180
+):
+    """HTTP client with exponential backoff for 429 / 5xx / network errors."""
     data = json.dumps(payload).encode() if payload is not None else None
     hdr = {"User-Agent": "grok-agent", "Accept": "application/json"}
     if headers:
@@ -148,7 +130,7 @@ def http_json(url: str, payload=None, headers=None, retries: int = 4):
             req = urllib.request.Request(
                 url, data=data, headers=hdr, method="POST" if data else "GET"
             )
-            with urllib.request.urlopen(req, timeout=180) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 body = r.read().decode("utf-8", "replace")
                 return json.loads(body) if body else {}
         except urllib.error.HTTPError as e:
@@ -171,6 +153,39 @@ def http_json(url: str, payload=None, headers=None, retries: int = 4):
     raise RuntimeError(f"request failed: {last}")
 
 
+def provider_chain():
+    """Ordered list of (name, base_url, api_key, pinned_model)."""
+    entries = {
+        "xai": (
+            os.environ.get("XAI_BASE_URL", "https://api.x.ai/v1").rstrip("/"),
+            os.environ.get("XAI_API_KEY", "").strip(),
+            os.environ.get("GROK_MODEL", "").strip(),
+        ),
+        "openai": (
+            os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+            os.environ.get("OPENAI_API_KEY", "").strip(),
+            os.environ.get("OPENAI_MODEL", "").strip(),
+        ),
+        "groq": (
+            os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip(
+                "/"
+            ),
+            os.environ.get("GROQ_API_KEY", "").strip(),
+            os.environ.get("GROQ_MODEL", "").strip(),
+        ),
+    }
+    order = os.environ.get("GROK_PROVIDER_ORDER", "xai,openai,groq")
+    chain = []
+    for name in [n.strip() for n in order.split(",") if n.strip()]:
+        base, key, pinned = entries.get(name, ("", "", ""))
+        if key:
+            chain.append((name, base, key, pinned))
+    return chain
+
+
+PROVIDERS = provider_chain()
+
+
 def gh(path: str):
     if not (GH_TOKEN and REPO):
         return None
@@ -188,7 +203,7 @@ def gh(path: str):
         return None
 
 
-def tracked_files() -> list[Path]:
+def tracked_files():
     try:
         out = subprocess.run(
             ["git", "ls-files"], capture_output=True, text=True, check=True
@@ -200,14 +215,17 @@ def tracked_files() -> list[Path]:
     for p in files:
         if any(part in SKIP_DIRS for part in p.parts):
             continue
-        if p.suffix.lower() in CODE_EXT and p.stat().st_size <= MAX_FILE_BYTES:
-            result.append(p)
+        try:
+            if p.suffix.lower() in CODE_EXT and p.stat().st_size <= MAX_FILE_BYTES:
+                result.append(p)
+        except OSError:
+            continue
         if len(result) >= MAX_FILES:
             break
     return result
 
 
-def repomap(files: list[Path]) -> str:
+def repomap(files):
     blocks, total = [], 0
     for p in files:
         try:
@@ -221,70 +239,79 @@ def repomap(files: list[Path]) -> str:
     return "\n\n".join(blocks)
 
 
-def failing_ci() -> str:
+def failing_ci():
     runs = gh("/actions/runs?status=failure&per_page=5")
     if not runs or not runs.get("workflow_runs"):
         return "No failing workflow runs."
-    lines = []
-    for r in runs["workflow_runs"]:
-        lines.append(
-            f"- {r.get('name')} #{r.get('run_number')} "
-            f"branch={r.get('head_branch')} "
-            f"conclusion={r.get('conclusion')} url={r.get('html_url')}"
-        )
-    return "\n".join(lines)
+    return "\n".join(
+        f"- {r.get('name')} #{r.get('run_number')} branch={r.get('head_branch')} "
+        f"conclusion={r.get('conclusion')} url={r.get('html_url')}"
+        for r in runs["workflow_runs"]
+    )
 
 
-def open_issues() -> str:
+def open_issues():
     data = gh("/issues?state=open&per_page=15")
     if not data:
         return "No open issues."
-    lines = []
-    for i in data:
-        if "pull_request" in i:
-            continue
-        lines.append(
-            f"- #{i.get('number')} {i.get('title')} "
-            f"[{', '.join(l['name'] for l in i.get('labels', []))}]"
-        )
+    lines = [
+        f"- #{i.get('number')} {i.get('title')} "
+        f"[{', '.join(l['name'] for l in i.get('labels', []))}]"
+        for i in data
+        if "pull_request" not in i
+    ]
     return "\n".join(lines) or "No open issues."
 
 
-def open_branches() -> str:
+def open_branches():
     data = gh("/branches?per_page=50")
-    if not data:
-        return "unknown"
-    return ", ".join(b["name"] for b in data)
+    return ", ".join(b["name"] for b in data) if data else "unknown"
 
 
-def issue_body(number: str) -> str:
+def issue_body(number):
     data = gh(f"/issues/{number}")
     if not data:
         return ""
     return f"#{data.get('number')} {data.get('title')}\n\n{data.get('body') or ''}"
 
 
-def call_grok(system: str, user: str) -> str:
-    payload = {
-        "model": MODEL,
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-    }
-    resp = http_json(
-        f"{XAI_BASE}/chat/completions",
-        payload,
-        headers={"Authorization": f"Bearer {XAI_KEY}"},
-    )
-    return resp["choices"][0]["message"]["content"]
+def call_llm(system, user):
+    """Try every configured provider, and every candidate model, until one answers."""
+    if not PROVIDERS:
+        raise RuntimeError(
+            "no API key: set XAI_API_KEY (Grok), OPENAI_API_KEY or GROQ_API_KEY"
+        )
+    last_err = None
+    for name, base, key, pinned in PROVIDERS:
+        models = ([pinned] if pinned else []) + [
+            m for m in DEFAULT_MODELS.get(name, []) if m != pinned
+        ]
+        for model in models:
+            payload = {
+                "model": model,
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            }
+            try:
+                resp = http_json(
+                    f"{base}/chat/completions",
+                    payload,
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                log(f"LLM ok: provider={name} model={model}")
+                return resp["choices"][0]["message"]["content"], name, model
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                log(f"LLM {name}/{model} failed: {str(exc)[:160]}")
+    raise RuntimeError(f"all providers/models failed: {last_err}")
 
 
-def parse_json(text: str) -> dict:
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
+def parse_json(text):
+    text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -294,7 +321,7 @@ def parse_json(text: str) -> dict:
         return json.loads(m.group(0))
 
 
-def safe_apply(edits: list[dict]) -> list[str]:
+def safe_apply(edits):
     applied = []
     for e in edits[:MAX_EDITS]:
         rel = str(e.get("path", "")).strip().lstrip("/")
@@ -318,10 +345,7 @@ def safe_apply(edits: list[dict]) -> list[str]:
     return applied
 
 
-# --------------------------------------------------------------------------
-# Test gate: prove the edits do not break the repository before opening a PR.
-# --------------------------------------------------------------------------
-def detect_test_cmd() -> str | None:
+def detect_test_cmd():
     if TEST_CMD:
         return TEST_CMD
     if Path("package.json").exists():
@@ -331,17 +355,13 @@ def detect_test_cmd() -> str | None:
         for p in ("pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml", "tests")
     )
     if py_project:
-        return (
-            "python -m pip install -q -r requirements.txt 2>/dev/null; "
-            "python -m pytest -q"
-        )
+        return "python -m pip install -q -r requirements.txt 2>/dev/null; python -m pytest -q"
     if Path("Dockerfile").exists():
         return "docker build -t grok-ci-check ."
     return None
 
 
-def run_test_gate() -> tuple[bool, str, str]:
-    """Returns (ok, command, tail_of_output). ok=True also when no command found."""
+def run_test_gate():
     cmd = detect_test_cmd()
     if not cmd:
         log("test gate: no test command detected, skipping")
@@ -361,8 +381,7 @@ def run_test_gate() -> tuple[bool, str, str]:
         return False, cmd, f"runner error: {exc}"
 
 
-def revert_worktree() -> None:
-    """Drop every agent edit so a failing gate cannot reach a Pull Request."""
+def revert_worktree():
     subprocess.run(["git", "checkout", "--", "."], capture_output=True, text=True)
     subprocess.run(
         ["git", "clean", "-fd", "-e", REPORT.name], capture_output=True, text=True
@@ -383,7 +402,7 @@ SYSTEM = (
 )
 
 
-def build_user_prompt() -> str:
+def build_user_prompt():
     files = tracked_files()
     parts = [
         f"Repository: {REPO or 'local'}",
@@ -400,17 +419,20 @@ def build_user_prompt() -> str:
     return "\n\n".join(parts)
 
 
-def main() -> int:
-    if not XAI_KEY:
+def main():
+    if not PROVIDERS:
         log(
-            "ERROR: no API key - set XAI_API_KEY (Grok), GROQ_API_KEY (Groq) "
-            "or OPENAI_API_KEY as a repository secret."
+            "ERROR: no API key - set XAI_API_KEY (Grok), OPENAI_API_KEY or GROQ_API_KEY."
         )
         return 2
-    log(f"provider={PROVIDER} model={MODEL} repo={REPO or 'local'} gate={TEST_GATE}")
+    log(
+        "providers="
+        + ",".join(p[0] for p in PROVIDERS)
+        + f" mode={MODE} repo={REPO or 'local'} gate={TEST_GATE}"
+    )
     user = build_user_prompt()
     log(f"prompt bytes={len(user)}")
-    raw = call_grok(SYSTEM, user)
+    raw, provider, model = call_llm(SYSTEM, user)
     data = parse_json(raw)
     edits = data.get("edits") or []
     applied = safe_apply(edits)
@@ -425,7 +447,7 @@ def main() -> int:
     lines = [
         f"# Grok autonomous run ({MODE})",
         "",
-        f"- Model: `{MODEL}`",
+        f"- Provider / model: `{provider}` / `{model}`",
         f"- Files scanned: {len(tracked_files())}",
         f"- Proposed edits: {len(edits)}",
         f"- Applied edits: {len(applied)}",
