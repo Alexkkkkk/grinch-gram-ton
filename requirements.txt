@@ -33,7 +33,7 @@ cryptography==50.0.2
 requests>=2.32.0,<3
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 # Hardened XML parser — RSS/news feeds are untrusted input (CWE-611 / CWE-776).
 defusedxml==0.7.1
 openai==1.109.1
