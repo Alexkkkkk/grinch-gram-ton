@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Update every open PR branch that is behind main
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const {owner, repo} = context.repo;
