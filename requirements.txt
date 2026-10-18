@@ -11,7 +11,7 @@ flask-sqlalchemy==3.1.1
 flask-compress==1.25
 gunicorn==23.0.0
 # eventlet removed — using threading mode to avoid blocking/context errors
-orjson==3.12.0
+orjson==3.13.0
 
 # ── Database ───────────────────────────────────────────────────────────────────
 psycopg2-binary==2.9.12
