@@ -1,5 +1,4 @@
-# github: [Alexkkkkk]
-# patreon: # Replace with a single Patreon username
-# open_collective: # Replace with a single Open Collective username
-# ko_fi: # Replace with a single Ko-fi username
-# custom: ["https://ton.org", "https://dedust.io"]
+# GitHub displays this link in the repository's Sponsor button.
+# Donations are voluntary and go directly to the published project wallet.
+custom:
+  - https://tonviewer.com/UQCZ10Eh8IJ5sFC6JKn-YralMF45Bk5fkNT6SqTHSIRGxfQv
