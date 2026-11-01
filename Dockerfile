@@ -4,7 +4,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Build stage ────────────────────────────────────────────────────────────────
-FROM python:3.11-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # ── Runtime stage ──────────────────────────────────────────────────────────────
-FROM python:3.11-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
