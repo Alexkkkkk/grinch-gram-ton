@@ -8,7 +8,7 @@
 flask==3.1.3
 flask-socketio==5.7.0
 flask-sqlalchemy==3.1.1
-flask-compress==1.25
+flask-compress==1.26
 gunicorn==23.0.0
 # eventlet removed — using threading mode to avoid blocking/context errors
 orjson==3.13.0
